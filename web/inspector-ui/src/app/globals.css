@@ -1,56 +1,58 @@
 @import "tailwindcss";
 
 :root {
-  --background: #05070c;
-  --foreground: #f4f6fb;
-  --panel: #090c15;
-  --panel-card: #0c101d;
-  --border-subtle: rgba(255, 255, 255, 0.08);
-  --border-active: rgba(56, 189, 248, 0.5);
+  --background: #030508;
+  --foreground: #f3f5f9;
+  --panel: #07090e;
+  --panel-card: #0b0e17;
+  --border-subtle: rgba(255, 255, 255, 0.07);
+  --border-active: rgba(56, 189, 248, 0.4);
   --accent-cyan: #38bdf8;
   --accent-emerald: #10b981;
   --accent-amber: #f59e0b;
   --accent-rose: #f43f5e;
-  --accent-purple: #a855f7;
+  --accent-indigo: #6366f1;
 }
 
 body {
   color: var(--foreground);
   background-color: var(--background);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", "Helvetica Neue", Arial, sans-serif;
   background-image: 
-    radial-gradient(circle at 50% -10%, rgba(56, 189, 248, 0.12) 0%, transparent 50%),
-    radial-gradient(circle at 90% 90%, rgba(16, 185, 129, 0.08) 0%, transparent 45%),
-    radial-gradient(circle at 10% 80%, rgba(168, 85, 247, 0.06) 0%, transparent 40%),
-    radial-gradient(rgba(255, 255, 255, 0.07) 1px, transparent 1px);
-  background-size: 100% 100%, 100% 100%, 100% 100%, 24px 24px;
+    radial-gradient(circle at 50% 0%, rgba(56, 189, 248, 0.08) 0%, transparent 60%),
+    radial-gradient(circle at 100% 100%, rgba(16, 185, 129, 0.05) 0%, transparent 50%),
+    radial-gradient(circle at 0% 80%, rgba(99, 102, 241, 0.04) 0%, transparent 45%),
+    radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 100% 100%, 28px 28px;
   background-position: 0 0, 0 0, 0 0, -1px -1px;
+  min-height: 100vh;
 }
 
-/* Custom Modal/Baseten scrollbars */
+/* Custom sleek scrollbar for Baseten/Modal look */
 ::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #05070c;
+  background: #04060a;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
-  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.28);
 }
 
-@keyframes pulse-slow {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.75; transform: scale(0.985); }
+@keyframes pulse-ring {
+  0% { transform: scale(0.95); opacity: 0.8; }
+  50% { transform: scale(1.15); opacity: 0.3; }
+  100% { transform: scale(0.95); opacity: 0.8; }
 }
 
-@keyframes scanline {
-  0% { transform: translateY(-100%); }
-  100% { transform: translateY(1200%); }
+@keyframes laser-sweep {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
 }
 
 @keyframes shimmer {
@@ -58,68 +60,87 @@ body {
   50%, 100% { transform: translateX(250%); }
 }
 
-@keyframes float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-4px); }
+@keyframes scanline {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(1000%); }
 }
 
-.animate-pulse-slow {
-  animation: pulse-slow 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+.animate-pulse-ring {
+  animation: pulse-ring 2.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
-.animate-float {
-  animation: float 4s ease-in-out infinite;
-}
-
-.shimmer-effect {
+.shimmer-badge {
   position: relative;
   overflow: hidden;
 }
-.shimmer-effect::before {
+.shimmer-badge::after {
   content: "";
   position: absolute;
-  top: 0; left: 0; width: 60%; height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.15), transparent);
-  transform: skewX(-20deg);
-  animation: shimmer 3.5s infinite;
+  top: 0; left: 0; width: 50%; height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.16), transparent);
+  transform: skewX(-25deg);
+  animation: shimmer 3s infinite;
   pointer-events: none;
 }
 
-.scanline-effect {
-  position: relative;
-  overflow: hidden;
-}
-.scanline-effect::after {
-  content: "";
-  position: absolute;
-  top: 0; left: 0; right: 0; height: 1.5px;
-  background: linear-gradient(90deg, transparent, rgba(56, 189, 248, 0.5), transparent);
-  animation: scanline 4s linear infinite;
-  pointer-events: none;
-}
-
-/* Glassmorphic border illumination */
-.glass-panel {
-  background: rgba(12, 16, 29, 0.65);
-  backdrop-filter: blur(16px);
+/* Modal-grade glass cards */
+.modal-card {
+  background: rgba(11, 14, 23, 0.72);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+  box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.6), inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
 }
 
-.glass-panel:hover {
-  border-color: rgba(255, 255, 255, 0.15);
+.modal-card:hover {
+  border-color: rgba(255, 255, 255, 0.14);
 }
 
-/* Grid card top-border light leak */
-.light-leak {
+.modal-glow-cyan {
+  box-shadow: 0 0 40px -10px rgba(56, 189, 248, 0.18), 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+}
+
+.modal-glow-emerald {
+  box-shadow: 0 0 40px -10px rgba(16, 185, 129, 0.18), 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+}
+
+.modal-glow-rose {
+  box-shadow: 0 0 40px -10px rgba(244, 63, 94, 0.18), 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+}
+
+/* Pipeline trace connection line */
+.pipeline-connector {
   position: relative;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
 }
-.light-leak::before {
+.pipeline-connector.active {
+  background: rgba(56, 189, 248, 0.25);
+}
+.pipeline-connector.active::after {
   content: "";
   position: absolute;
-  top: 0;
-  left: 20%;
-  right: 20%;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(56, 189, 248, 0.6), transparent);
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: linear-gradient(90deg, transparent, #38bdf8, transparent);
+  animation: laser-sweep 1.6s ease-in-out infinite;
+}
+.pipeline-connector.completed {
+  background: rgba(16, 185, 129, 0.45);
+}
+
+/* Terminal scanline effect */
+.terminal-window {
+  position: relative;
+  background: #05070c;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow: 0 12px 48px -12px rgba(0, 0, 0, 0.8), inset 0 1px 0 0 rgba(255, 255, 255, 0.06);
+}
+.terminal-window::after {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(56, 189, 248, 0.4), transparent);
+  animation: scanline 5s linear infinite;
+  pointer-events: none;
 }
