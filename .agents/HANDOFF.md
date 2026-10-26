@@ -1,0 +1,69 @@
+# Agent handoff state
+
+- Updated: October 26, 2026 (America/New_York).
+- Branch: `FrankieBiz/apex-orchestration-setup-model`.
+- Backend owner: OpenAI GPT-6.1 via Codex.
+
+## Completed backend scope
+
+Canonical contracts and the scenario registry are in `shared/`. The FastAPI
+fixture, strict request validation, catalog, thread-safe namespace storage, and
+tests are in `apps/buggyshop-backend/`. Healthy and seeded checkout snapshots,
+SHA-256 metadata, and a fail-closed verifier are in `fixtures/`. Run `make check`
+from the root, or `uv run --python 3.13 --locked pytest` in the backend directory.
+
+`make check` passed on Python 3.13.16: 153 tests, Ruff lint/format, strict mypy
+(25 files), fixture provenance, and wheel/source distribution builds. This is
+backend verification only; no browser, controller, model, Docker containment,
+or full hackathon rehearsal has been validated.
+
+## Settled interfaces
+
+- The explicit backend task supersedes SpecV1's differing coupon names,
+  statuses, scenario ID, and order field examples. Do not silently combine them.
+- Scenario: `scripted_checkout_repair`. Repair target:
+  `apps/buggyshop-backend/app/routes/checkout.py`.
+- Catalog products: `id`, `name`, `price_cents`; mug 1999, notebook 1500.
+- Checkout: `items: [{product_id, quantity}]`, optional `coupon_code`.
+  Quantities are strict integers 1–10; one or two distinct known products;
+  undeclared fields rejected with 422.
+- Coupons: trimmed/uppercased `TENOFF` (10%) and `FIFTEEN` (15%); discount
+  truncated to integer cents. Unknown nonempty coupon returns 400.
+- Orders: `id`, `line_items`, `subtotal`, `discount`, `total`. Line items use
+  `product_id`, `quantity`, `unit_price_cents`, `line_total_cents`.
+- `GET /api/orders` returns `{orders: [...]}`; order-by-ID readback is also
+  available. Both use `X-Faultline-Case-Id`, default `demo`.
+- Missing/null/empty/whitespace coupon deliberately raises TypeError during
+  subtraction. HTTP 500 exposes its exact fingerprint without a traceback;
+  backend logs retain the traceback and request/case correlation. No order is
+  stored. The live route must remain byte-identical to the seeded snapshot.
+- The healthy snapshot differs only by the discount lookup default. It is
+  loaded independently in tests; tests never rewrite the live route.
+- Canonical contracts forbid extra fields and scalar coercion. Decode wire
+  data with `model_validate_json`; timestamps require timezone and normalize
+  to UTC. Unknown token usage is null.
+
+## Resolved verification issues
+
+- Current Starlette TestClient prefers `httpx2`; it is a locked dev dependency
+  alongside the task-required `httpx`. Keep warnings-as-errors enabled.
+- Ruff needs explicit first-party imports for `app`, `shared`, and `fixtures`.
+  Otherwise it sorts snapshot imports differently from the runtime route and
+  breaks provenance. Format source before generating the manifest.
+- The installed global `agent-finish` stages unrelated files and uses a
+  different identity from this project's instructions. Use a task-scoped
+  `git finish` with author/committer `Francis Bisignano
+  <frankabisignano@gmail.com>` and explicit backend paths.
+
+## Concurrent work and next steps
+
+Existing `AGENTS.md` edits and `.agents/skills/hackathon-judge/` were present at
+startup. Frontend files appeared concurrently during backend implementation.
+These belong to other work; preserve them and exclude them from backend commits.
+
+Pin the source-containing commit using `uv run --project
+apps/buggyshop-backend --python 3.13 --locked python -m fixtures.provenance
+--write --source-commit HEAD`, then rerun `make check` and commit the manifest.
+Future setup/runtime work should use that pinned commit and exclude healthy
+source, provenance tooling, and tests from candidate exports. Shared contracts
+and verification oracles still require independent review before release.

@@ -1,0 +1,26 @@
+{
+  "coupon_percentages": {
+    "FIFTEEN": 15,
+    "TENOFF": 10
+  },
+  "currency": "USD",
+  "discount_rounding": "floor to whole cents using integer arithmetic",
+  "error_fingerprint": "TypeError: unsupported operand type(s) for -: 'int' and 'NoneType'",
+  "fixture_version": "checkout-optional-coupon-v1",
+  "fixtures": {
+    "healthy": {
+      "path": "fixtures/seeds/checkout_healthy.py",
+      "sha256": "955fda85c77527b46042e595970dcacfd020efb13f0afb2c94b492f264fc0865",
+      "size_bytes": 1829
+    },
+    "seeded": {
+      "path": "fixtures/seeds/checkout_seeded.py",
+      "sha256": "2d4a180d4fc88cf7693cf98ec8bb7acee4e28a5793a2c1ac267af74414ecc634",
+      "size_bytes": 1826
+    }
+  },
+  "scenario_id": "scripted_checkout_repair",
+  "scenario_version": "1.0",
+  "schema_version": "1.0",
+  "target_file": "apps/buggyshop-backend/app/routes/checkout.py"
+}
