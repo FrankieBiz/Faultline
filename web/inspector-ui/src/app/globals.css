@@ -1,17 +1,16 @@
 @import "tailwindcss";
 
 :root {
-  --background: #030508;
+  --background: #04060a;
   --foreground: #f3f5f9;
-  --panel: #07090e;
-  --panel-card: #0b0e17;
+  --panel: #070a10;
+  --panel-card: #0a0d14;
   --border-subtle: rgba(255, 255, 255, 0.07);
-  --border-active: rgba(56, 189, 248, 0.4);
+  --border-active: rgba(56, 189, 248, 0.45);
   --accent-cyan: #38bdf8;
   --accent-emerald: #10b981;
-  --accent-amber: #f59e0b;
   --accent-rose: #f43f5e;
-  --accent-indigo: #6366f1;
+  --accent-amber: #f59e0b;
 }
 
 body {
@@ -19,128 +18,79 @@ body {
   background-color: var(--background);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", "Helvetica Neue", Arial, sans-serif;
   background-image: 
-    radial-gradient(circle at 50% 0%, rgba(56, 189, 248, 0.08) 0%, transparent 60%),
-    radial-gradient(circle at 100% 100%, rgba(16, 185, 129, 0.05) 0%, transparent 50%),
-    radial-gradient(circle at 0% 80%, rgba(99, 102, 241, 0.04) 0%, transparent 45%),
-    radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px);
-  background-size: 100% 100%, 100% 100%, 100% 100%, 28px 28px;
-  background-position: 0 0, 0 0, 0 0, -1px -1px;
-  min-height: 100vh;
+    radial-gradient(circle at 50% 0%, rgba(56, 189, 248, 0.07) 0%, transparent 50%),
+    radial-gradient(circle at 95% 95%, rgba(16, 185, 129, 0.04) 0%, transparent 40%),
+    radial-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 28px 28px;
+  background-position: 0 0, 0 0, -1px -1px;
+  min-height: 100dvh;
 }
 
-/* Custom sleek scrollbar for Baseten/Modal look */
+/* Custom sleek scrollbar */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 ::-webkit-scrollbar-track {
   background: #04060a;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.12);
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.25);
 }
 
+/* Double-Bezel Hardware Enclosure (Anti-Slop Craft) */
+.double-bezel {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.7);
+  border-radius: 1.25rem;
+}
+
+.double-bezel-inner {
+  background: rgba(9, 12, 19, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 1px 1px 0 rgba(255, 255, 255, 0.08);
+  border-radius: calc(1.25rem - 0.25rem);
+}
+
+/* Tactile Button Press (Emil Kowalski Craft) */
+.btn-tactile {
+  transition: transform 120ms cubic-bezier(0.32, 0.72, 0, 1), background-color 150ms ease-out, border-color 150ms ease-out;
+}
+.btn-tactile:active {
+  transform: scale(0.975);
+}
+
+/* Micro animations */
 @keyframes pulse-ring {
-  0% { transform: scale(0.95); opacity: 0.8; }
-  50% { transform: scale(1.15); opacity: 0.3; }
-  100% { transform: scale(0.95); opacity: 0.8; }
+  0% { transform: scale(0.96); opacity: 0.8; }
+  50% { transform: scale(1.12); opacity: 0.25; }
+  100% { transform: scale(0.96); opacity: 0.8; }
 }
 
-@keyframes laser-sweep {
+@keyframes sweep {
   0% { transform: translateX(-100%); }
   100% { transform: translateX(200%); }
 }
 
-@keyframes shimmer {
-  0% { transform: translateX(-150%); }
-  50%, 100% { transform: translateX(250%); }
-}
-
-@keyframes scanline {
-  0% { transform: translateY(-100%); }
-  100% { transform: translateY(1000%); }
-}
-
 .animate-pulse-ring {
-  animation: pulse-ring 2.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  animation: pulse-ring 2.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
-.shimmer-badge {
+.pipeline-trace {
   position: relative;
   overflow: hidden;
 }
-.shimmer-badge::after {
-  content: "";
-  position: absolute;
-  top: 0; left: 0; width: 50%; height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.16), transparent);
-  transform: skewX(-25deg);
-  animation: shimmer 3s infinite;
-  pointer-events: none;
-}
-
-/* Modal-grade glass cards */
-.modal-card {
-  background: rgba(11, 14, 23, 0.72);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.6), inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
-}
-
-.modal-card:hover {
-  border-color: rgba(255, 255, 255, 0.14);
-}
-
-.modal-glow-cyan {
-  box-shadow: 0 0 40px -10px rgba(56, 189, 248, 0.18), 0 10px 30px -10px rgba(0, 0, 0, 0.5);
-}
-
-.modal-glow-emerald {
-  box-shadow: 0 0 40px -10px rgba(16, 185, 129, 0.18), 0 10px 30px -10px rgba(0, 0, 0, 0.5);
-}
-
-.modal-glow-rose {
-  box-shadow: 0 0 40px -10px rgba(244, 63, 94, 0.18), 0 10px 30px -10px rgba(0, 0, 0, 0.5);
-}
-
-/* Pipeline trace connection line */
-.pipeline-connector {
-  position: relative;
-  height: 2px;
-  background: rgba(255, 255, 255, 0.08);
-  overflow: hidden;
-}
-.pipeline-connector.active {
-  background: rgba(56, 189, 248, 0.25);
-}
-.pipeline-connector.active::after {
+.pipeline-trace::after {
   content: "";
   position: absolute;
   top: 0; left: 0; right: 0; bottom: 0;
-  background: linear-gradient(90deg, transparent, #38bdf8, transparent);
-  animation: laser-sweep 1.6s ease-in-out infinite;
-}
-.pipeline-connector.completed {
-  background: rgba(16, 185, 129, 0.45);
-}
-
-/* Terminal scanline effect */
-.terminal-window {
-  position: relative;
-  background: #05070c;
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  box-shadow: 0 12px 48px -12px rgba(0, 0, 0, 0.8), inset 0 1px 0 0 rgba(255, 255, 255, 0.06);
-}
-.terminal-window::after {
-  content: "";
-  position: absolute;
-  top: 0; left: 0; right: 0; height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(56, 189, 248, 0.4), transparent);
-  animation: scanline 5s linear infinite;
-  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(56, 189, 248, 0.6), transparent);
+  animation: sweep 1.8s ease-in-out infinite;
 }
