@@ -162,10 +162,19 @@ def create_app(
                 value for value in (configuration.control_token, model.settings.api_key) if value
             ),
         )
+        runtime_impl = runtime
+        if runtime_impl is None:
+            if os.environ.get("FAULTLINE_DEMO_RUNTIME") == "1":
+                from app.local_runtime import LocalDemoRuntime
+
+                runtime_impl = LocalDemoRuntime()
+            else:
+                runtime_impl = UnavailableRuntime()
+
         worker = RepairWorker(
             db,
             model,
-            runtime or UnavailableRuntime(),
+            runtime_impl,
             snapshots or SnapshotManager(configuration.data_dir),
             store,
         )

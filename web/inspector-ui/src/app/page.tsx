@@ -81,7 +81,10 @@ export default function InspectorDashboard() {
       const res = await fetch("/api/faultline/jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scenario_id: "scripted_checkout_repair" }),
+        body: JSON.stringify({
+          scenario_id: "scripted_checkout_repair",
+          idempotency_key: crypto.randomUUID(),
+        }),
       });
 
       if (!res.ok) {

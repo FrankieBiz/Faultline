@@ -12,12 +12,12 @@ echo "=== Pre-flight: Running workspace reset ==="
 
 echo "=== Starting BuggyShop Backend on 127.0.0.1:8000 ==="
 (cd "$ROOT/apps/buggyshop-backend" && \
-  uv run --project . --python 3.13 --locked uvicorn app.main:app --host 127.0.0.1 --port 8000 --log-level warning) &
+  PYTHONPATH="$ROOT" uv run --project . --python 3.13 --locked uvicorn app.main:app --host 127.0.0.1 --port 8000 --log-level warning) &
 PID_BACKEND=$!
 
 echo "=== Starting Repair Orchestrator on 127.0.0.1:9000 ==="
 (cd "$ROOT/services/repair-orchestrator" && \
-  FAULTLINE_CONTROL_TOKEN="${FAULTLINE_CONTROL_TOKEN:-dev-control-token}" \
+  PYTHONPATH="$ROOT" FAULTLINE_DEMO_RUNTIME="1" FAULTLINE_CONTROL_TOKEN="${FAULTLINE_CONTROL_TOKEN:-dev-control-token}" \
   uv run --project . --python 3.13 --locked uvicorn app.main:app --host 127.0.0.1 --port 9000 --log-level warning) &
 PID_ORCHESTRATOR=$!
 
