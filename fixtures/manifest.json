@@ -22,5 +22,6 @@
   "scenario_id": "scripted_checkout_repair",
   "scenario_version": "1.0",
   "schema_version": "1.0",
+  "source_commit": "44b2a13b412588de7596ef0f3bb2d1aae47799a5",
   "target_file": "apps/buggyshop-backend/app/routes/checkout.py"
 }

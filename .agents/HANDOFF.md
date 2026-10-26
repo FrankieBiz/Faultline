@@ -61,9 +61,9 @@ Existing `AGENTS.md` edits and `.agents/skills/hackathon-judge/` were present at
 startup. Frontend files appeared concurrently during backend implementation.
 These belong to other work; preserve them and exclude them from backend commits.
 
-Pin the source-containing commit using `uv run --project
-apps/buggyshop-backend --python 3.13 --locked python -m fixtures.provenance
---write --source-commit HEAD`, then rerun `make check` and commit the manifest.
-Future setup/runtime work should use that pinned commit and exclude healthy
+The source-containing revision is `44b2a13b412588de7596ef0f3bb2d1aae47799a5`;
+`fixtures/manifest.json` pins that actual commit and both reference-file hashes.
+The revision contains the live seeded route and both reference snapshots.
+Future setup/runtime work should use this pinned commit and exclude healthy
 source, provenance tooling, and tests from candidate exports. Shared contracts
 and verification oracles still require independent review before release.
