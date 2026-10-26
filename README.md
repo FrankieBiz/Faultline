@@ -2,10 +2,12 @@
 
 A project workspace for FrankieBiz's entry in the [Meta Global AI Developer Hackathon](https://events.cerebralvalley.ai/e/meta-ai-developer-hackathon), hosted by Meta and Cerebral Valley.
 
-> **Project concept:** not selected yet. Do not invent or assume the product idea. Capture candidate ideas and decisions in `docs/PROJECT_STATUS.md` once Frankie provides them.
+> **Project concept:** FaultLine reproduces a controlled checkout failure, asks a Meta model for a bounded source patch, and verifies restored behavior against protected browser and API tests. The approved design is [SpecV1](docs/SpecV1.md); application implementation and live validation remain to be completed.
 
 ## Start here
 
+- [`docs/SpecV1.md`](docs/SpecV1.md) — approved implementation-ready specification for the controlled repair demo.
+- [`docs/SpecV1-research-notes.md`](docs/SpecV1-research-notes.md) — primary-source research, design rationale, evidence limits, and review closure.
 - [`AGENTS.md`](AGENTS.md) — instructions for every model and automation, including the immutable-source rule.
 - [`docs/HACKATHON_BRIEF.md`](docs/HACKATHON_BRIEF.md) — event, judging, schedule, and resource facts with sources.
 - [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md) — current project choices and account-specific details.
