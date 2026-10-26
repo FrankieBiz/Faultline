@@ -6,7 +6,7 @@ timestamps are decoded while scalar types and unknown fields remain strict.
 
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 
@@ -67,6 +67,7 @@ class ExecutionVerdict(StrEnum):
     PASSED = "passed"
     FAILED = "failed"
     ERROR = "error"
+    TIMED_OUT = "timed_out"
 
 
 class ExecutionReport(ContractModel):
@@ -170,3 +171,106 @@ class PatchValidationResult(ContractModel):
     syntax_valid: bool
     error_message: str | None = None
     ast_safe: bool
+
+
+class JobMode(StrEnum):
+    """Whether a submission requests repair or only failure detection."""
+
+    REPAIR = "repair"
+    DETECT = "detect"
+
+
+class JobRequest(ContractModel):
+    """Public submission capabilities; paths and commands are never accepted."""
+
+    scenario_id: str
+    idempotency_key: str
+    mode: JobMode = JobMode.REPAIR
+
+
+class OrchestratorJob(Job):
+    """Durable controller metadata extending the existing public job schema."""
+
+    schema_version: Literal["1.0"] = "1.0"
+    idempotency_key: str
+    request_fingerprint: str
+    requested_mode: JobMode
+    effective_mode: JobMode
+    repair_block_reason: str | None = None
+    cancel_requested: bool = False
+    deadline_at: Timestamp | None = None
+    seed_commit: str | None = None
+    seed_source_hash: str | None = None
+    fixture_version: str | None = None
+    scenario_version: str | None = None
+    baseline_execution_id: str | None = None
+
+
+class ExecutionRecord(ContractModel):
+    """Immutable execution envelope binding a runner report to its snapshot."""
+
+    schema_version: Literal["1.0"] = "1.0"
+    job_id: str
+    phase: Literal["baseline", "verification"]
+    attempt_id: str | None = None
+    app_generation_id: str
+    candidate_snapshot_sha256: str
+    artifact_ids: list[str]
+    started_at: Timestamp
+    finished_at: Timestamp
+    report: ExecutionReport
+
+
+class ArtifactSummary(ContractModel):
+    """Public content address; filesystem storage details stay server-side."""
+
+    schema_version: Literal["1.0"] = "1.0"
+    id: str
+    job_id: str
+    execution_id: str | None = None
+    attempt_id: str | None = None
+    role: str
+    content_type: str
+    size_bytes: Annotated[int, Field(ge=0)]
+    sha256: str
+    created_at: Timestamp
+
+
+class Artifact(ArtifactSummary):
+    """Persisted artifact registration with a private relative storage key."""
+
+    storage_key: str
+
+
+class JobEvent(ContractModel):
+    """Durable SSE event with a transactionally allocated per-job sequence."""
+
+    schema_version: Literal["1.0"] = "1.0"
+    job_id: str
+    sequence: Annotated[int, Field(ge=1)]
+    timestamp: Timestamp
+    stage: JobStage
+    message_code: str
+    message: Annotated[str, Field(max_length=512)]
+
+
+class RuntimeLease(ContractModel):
+    """The singleton durable runtime lease, including cleanup quarantine."""
+
+    schema_version: Literal["1.0"] = "1.0"
+    installation_id: str
+    job_id: str | None
+    owner_id: str | None
+    generation_id: str
+    quarantined: bool
+    updated_at: Timestamp
+
+
+class PatchProposal(ContractModel):
+    """Exact five-field proposal accepted from hosted or deterministic repair."""
+
+    decision: Literal["patch", "no_patch"]
+    target_file: str
+    base_sha256: str
+    unified_diff: str
+    explanation: str
