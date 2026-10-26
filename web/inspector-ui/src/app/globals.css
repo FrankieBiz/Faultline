@@ -8,7 +8,7 @@
   --border-bright: rgba(255, 255, 255, 0.15);
   --text-primary: #F5F6F8;
   --text-secondary: #9AA0AA;
-  --text-muted: #5D6370;
+  --text-muted: #7C8290;
   --accent: #2DD4FF;
   --accent-glow: rgba(45, 212, 255, 0.18);
   --accent-dim: rgba(45, 212, 255, 0.08);
@@ -18,6 +18,15 @@
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
   --duration-fast: 200ms;
   --duration-normal: 400ms;
+}
+
+/* Universal WCAG keyboard accessibility */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 body {

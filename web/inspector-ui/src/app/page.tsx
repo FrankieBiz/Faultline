@@ -183,6 +183,15 @@ export default function Home() {
     return () => clearTimeout(t);
   }, []);
 
+  // Keyboard accessibility for modal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setShowDossier(false);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
   // Fetch initial state
   useEffect(() => {
     fetch("/api/faultline/jobs")
@@ -448,7 +457,8 @@ export default function Home() {
         </div>
       </nav>
 
-      {/* 2. HERO SECTION */}
+      <main id="main-content">
+        {/* 2. HERO SECTION */}
       <section className="pt-20 pb-16 md:pt-28 md:pb-24 max-w-[1200px] mx-auto px-6 relative">
         <div className="text-center max-w-3xl mx-auto space-y-5">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#2DD4FF]/10 border border-[#2DD4FF]/25 text-[#2DD4FF] text-xs font-mono">
@@ -480,7 +490,7 @@ export default function Home() {
             </a>
           </div>
 
-          <div className="pt-3 flex items-center justify-center gap-4 text-xs font-mono text-[#5D6370]">
+          <div className="pt-3 flex items-center justify-center gap-4 text-xs font-mono text-[#7C8290]">
             <span>Chromium 130</span>
             <span>•</span>
             <span>Python 3.13</span>
@@ -507,13 +517,13 @@ export default function Home() {
             </div>
 
             <div className="flex items-center gap-3">
-              <span className="text-xs font-mono text-[#9AA0AA] px-2.5 py-1 rounded bg-black/40 border border-white/[0.06]">
+              <span aria-live="polite" className="text-xs font-mono text-[#9AA0AA] px-2.5 py-1 rounded bg-black/40 border border-white/[0.06]">
                 {isRunning ? `running • ${(elapsedTime / 10).toFixed(1)}s` : activeStage === "cleanup" ? "status: immune green" : "status: standby"}
               </span>
               <button
                 onClick={executePipeline}
                 disabled={isRunning}
-                className="btn-press px-3.5 py-1.5 rounded-lg bg-[#2DD4FF] text-[#0A0B0D] text-xs font-semibold hover:bg-[#2DD4FF]/90 transition-colors flex items-center gap-1.5"
+                className="btn-press px-3.5 py-1.5 rounded-lg bg-[#2DD4FF] text-[#0A0B0D] text-xs font-semibold hover:bg-[#2DD4FF]/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5"
               >
                 {isRunning ? <RefreshCw className="w-3.5 h-3.5 animate-spin" strokeWidth={1.5} /> : <Play className="w-3.5 h-3.5 fill-current" strokeWidth={1.5} />}
                 <span>{isRunning ? "Running..." : "Run Pipeline"}</span>
@@ -572,12 +582,12 @@ export default function Home() {
                           ? "border-[#2DD4FF] shadow-[0_0_25px_-5px_rgba(45,212,255,0.35)] ring-1 ring-[#2DD4FF]/50"
                           : completed
                           ? "border-[#3DFFA2]/40 bg-[#0E1015]"
-                          : "border-white/[0.07] opacity-80"
+                          : "border-white/[0.07]"
                       }`}
                     >
                       <div className="flex items-center justify-between text-[11px] font-mono text-[#9AA0AA] mb-2">
                         <span>{node.step}</span>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/[0.04] text-[#5D6370]">
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/[0.04] text-[#7C8290]">
                           {node.type}
                         </span>
                       </div>
@@ -599,7 +609,7 @@ export default function Home() {
                       </p>
 
                       <div className="mt-3 pt-2 border-t border-white/[0.04] flex items-center justify-between text-[10px] font-mono">
-                        <span className="text-[#5D6370]">{node.metric}</span>
+                        <span className="text-[#7C8290]">{node.metric}</span>
                         {completed ? (
                           <span className="text-[#3DFFA2] flex items-center gap-1">
                             <Check className="w-3 h-3" strokeWidth={1.5} /> OK
@@ -607,7 +617,7 @@ export default function Home() {
                         ) : active ? (
                           <span className="text-[#2DD4FF] animate-pulse">active</span>
                         ) : (
-                          <span className="text-[#5D6370]">idle</span>
+                          <span className="text-[#7C8290]">idle</span>
                         )}
                       </div>
 
@@ -699,14 +709,14 @@ export default function Home() {
               <button
                 onClick={handleReset}
                 disabled={isRunning}
-                className="btn-press px-3.5 py-2 rounded-lg bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.08] text-xs font-mono text-[#9AA0AA] hover:text-white transition-colors"
+                className="btn-press px-3.5 py-2 rounded-lg bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.08] text-xs font-mono text-[#9AA0AA] hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 Reset Environment
               </button>
               <button
                 onClick={executePipeline}
                 disabled={isRunning}
-                className="btn-press px-5 py-2 rounded-lg bg-[#2DD4FF] text-[#0A0B0D] text-xs font-semibold hover:bg-[#2DD4FF]/90 transition-colors flex items-center gap-2 glow-accent"
+                className="btn-press px-5 py-2 rounded-lg bg-[#2DD4FF] text-[#0A0B0D] text-xs font-semibold hover:bg-[#2DD4FF]/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2 glow-accent"
               >
                 {isRunning ? (
                   <>
@@ -798,10 +808,10 @@ export default function Home() {
                 </div>
 
                 <div className="p-4 font-mono text-xs bg-[#090B0E] space-y-1 overflow-x-auto leading-relaxed">
-                  <div className="text-[#5D6370]">@@ -40,5 +40,5 @@ def checkout(order):</div>
+                  <div className="text-[#7C8290]">@@ -40,5 +40,5 @@ def checkout(order):</div>
                   <div className="text-[#9AA0AA]">&nbsp;&nbsp;&nbsp;&nbsp;if coupon_code and coupon_code not in discounts:</div>
                   <div className="text-[#9AA0AA]">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;raise HTTPException(400, &quot;Invalid coupon&quot;)</div>
-                  <div className="text-[#5D6370]">&nbsp;</div>
+                  <div className="text-[#7C8290]">&nbsp;</div>
                   <div className="bg-[#FF4D6A]/20 text-[#FF4D6A] px-2 py-0.5 rounded">
                     -&nbsp;&nbsp;&nbsp;&nbsp;discount = cast(int, discounts.get(coupon_code))
                   </div>
@@ -812,7 +822,7 @@ export default function Home() {
                 </div>
               </div>
 
-              <div className="p-3.5 bg-black/40 border-t border-white/[0.04] text-[11px] font-mono text-[#5D6370] flex items-center justify-between">
+              <div className="p-3.5 bg-black/40 border-t border-white/[0.04] text-[11px] font-mono text-[#7C8290] flex items-center justify-between">
                 <span>AST Bound: 1 file modified</span>
                 <span>Forbidden imports: 0</span>
                 <span className="text-[#3DFFA2]">Policy: PASS</span>
@@ -836,15 +846,15 @@ export default function Home() {
                   </button>
                 </div>
 
-                <div className="p-4 font-mono text-xs bg-[#090B0E] min-h-[180px] max-h-[220px] overflow-y-auto space-y-1.5">
+                <div aria-live="polite" className="p-4 font-mono text-xs bg-[#090B0E] min-h-[180px] max-h-[220px] overflow-y-auto space-y-1.5">
                   {events.length === 0 ? (
-                    <div className="text-[#5D6370] py-8 text-center">
+                    <div className="text-[#7C8290] py-8 text-center">
                       Click &quot;Run Live Repair&quot; to stream the 7-stage engine.
                     </div>
                   ) : (
                     events.map((e) => (
                       <div key={e.id} className="flex items-start gap-2 leading-relaxed">
-                        <span className="text-[#5D6370] shrink-0">[{e.timestamp}]</span>
+                        <span className="text-[#7C8290] shrink-0">[{e.timestamp}]</span>
                         <span className="text-[#2DD4FF] shrink-0 uppercase">[{e.stage}]</span>
                         <span className="text-[#F5F6F8] break-all">{e.message}</span>
                       </div>
@@ -854,7 +864,7 @@ export default function Home() {
                 </div>
               </div>
 
-              <div className="p-3.5 bg-black/40 border-t border-white/[0.04] text-[11px] font-mono text-[#5D6370] flex items-center justify-between">
+              <div className="p-3.5 bg-black/40 border-t border-white/[0.04] text-[11px] font-mono text-[#7C8290] flex items-center justify-between">
                 <span>Bus: 127.0.0.1:9000</span>
                 <span className="text-[#3DFFA2]">Events: {events.length}</span>
               </div>
@@ -992,10 +1002,11 @@ export default function Home() {
           </div>
         </div>
       </section>
+      </main>
 
       {/* FOOTER */}
       <footer className="py-8 border-t border-white/[0.08] bg-[#0A0B0D]">
-        <div className="max-w-[1200px] mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs font-mono text-[#5D6370]">
+        <div className="max-w-[1200px] mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs font-mono text-[#7C8290]">
           <div>
             Built by Francis Bisignano for Meta Global AI Developer Hackathon 2026
           </div>
@@ -1011,10 +1022,16 @@ export default function Home() {
 
       {/* JUDGE EVALUATION DOSSIER MODAL */}
       {showDossier && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/85 backdrop-blur-md">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="architecture-modal-title"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/85 backdrop-blur-md"
+        >
           <div className="surface-card max-w-2xl w-full max-h-[85vh] overflow-y-auto p-6 sm:p-8 space-y-6 relative border border-[#2DD4FF]/30 shadow-[0_0_50px_-10px_rgba(45,212,255,0.25)]">
             <button
               onClick={() => setShowDossier(false)}
+              aria-label="Close evaluation dossier"
               className="absolute top-6 right-6 p-2 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-[#9AA0AA] hover:text-white"
             >
               <X className="w-4 h-4" strokeWidth={1.5} />
@@ -1025,7 +1042,7 @@ export default function Home() {
                 <Award className="w-4 h-4 text-amber-400" strokeWidth={1.5} />
                 <span>Meta AI Hackathon 2026 Scorecard: 98 / 100</span>
               </div>
-              <h2 className="text-xl font-semibold text-white tracking-tight">
+              <h2 id="architecture-modal-title" className="text-xl font-semibold text-white tracking-tight">
                 FaultLine Judging Evaluation Dossier
               </h2>
             </div>
@@ -1061,7 +1078,7 @@ export default function Home() {
             </div>
 
             <div className="pt-4 border-t border-white/[0.06] flex items-center justify-between">
-              <span className="text-[11px] font-mono text-[#5D6370]">Francis Bisignano</span>
+              <span className="text-[11px] font-mono text-[#7C8290]">Francis Bisignano</span>
               <button
                 onClick={() => setShowDossier(false)}
                 className="btn-press px-4 py-1.5 rounded-lg bg-white/[0.08] hover:bg-white/[0.12] text-xs font-medium text-white"
