@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 const ORCHESTRATOR_URL = process.env.FAULTLINE_ORCHESTRATOR_URL || "http://127.0.0.1:9000";
 const CONTROL_TOKEN = process.env.FAULTLINE_CONTROL_TOKEN || "dev-control-token";
 
