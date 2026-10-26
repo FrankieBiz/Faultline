@@ -4,10 +4,12 @@
 
 - Repository: `FrankieBiz/Faultline`
 - Hackathon: Meta Global AI Developer Hackathon, Oct 26–Nov 4, 2026
-- Product concept: **TBD by Frankie**
+- Product concept: **FaultLine — controlled browser QA and verified source repair**. Approved design: [SpecV1](SpecV1.md); supporting [research notes](SpecV1-research-notes.md).
 - Track: **TBD**
 - Team: Frankie is currently the only named builder; team status is unconfirmed.
-- Required demo / deliverable: not yet selected.
+- Required demo: one seeded backend checkout bug, a real Meta-generated single-file patch, protected browser/API verification, visible evidence, and confirmed cleanup.
+- Design decisions: demo-first and extensible; Meta required; Next.js, FastAPI, and TypeScript Playwright; one orchestrator and trusted CLI runner.
+- Specification status: independently reviewed; application implementation, authenticated Meta checks, containment tests, and rehearsal gates remain unperformed.
 
 ## Account access and resources
 
@@ -19,7 +21,8 @@
 
 ## Open items
 
-- [ ] Record the product idea and the firsthand problem it addresses.
+- [x] Record the approved product idea and technical specification.
+- [ ] Document the firsthand problem, target beneficiary, and impact evidence for the hackathon submission.
 - [ ] Confirm indie developer or startup track.
 - [ ] Confirm team size and any collaborators.
 - [ ] Check Meta dashboard for exact model access and credit balance/units.
