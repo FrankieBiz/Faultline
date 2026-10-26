@@ -1,0 +1,202 @@
+@import "tailwindcss";
+
+/*
+ * BuggyShop visual system: a field outfitter whose catalog tags and order
+ * summaries are printed on waterproof notebook paper. Spruce ink carries text
+ * and primary actions; notebook yellow is the one bold material; blaze blue
+ * marks links and keyboard focus; alarm red is reserved for failures.
+ */
+@theme {
+  --font-sans: "Overpass Variable", "Overpass", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", "Liberation Mono", monospace;
+
+  --color-spruce: #183326;
+  --color-spruce-soft: #2c5240;
+  --color-moss: #4a5d53;
+  --color-stone: #d9ded8;
+  --color-mist: #eef1ed;
+  --color-notebook: #f2e27d;
+  --color-notebook-edge: #d4bf4f;
+  --color-blaze: #1f5fbf;
+  --color-alarm: #b42318;
+  --color-alarm-wash: #fdedeb;
+  --color-alarm-edge: #f1b4ac;
+
+  --animate-badge-bump: badge-bump 320ms cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  @keyframes badge-bump {
+    0% {
+      transform: scale(1);
+    }
+    40% {
+      transform: scale(1.28);
+    }
+    100% {
+      transform: scale(1);
+    }
+  }
+}
+
+@layer base {
+  html {
+    color: var(--color-spruce);
+    background-color: #ffffff;
+    font-family: var(--font-sans);
+    font-optical-sizing: auto;
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    min-height: 100dvh;
+    line-height: 1.55;
+  }
+
+  :focus-visible {
+    outline: 3px solid var(--color-blaze);
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+
+  input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 1ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 1ms !important;
+    }
+  }
+}
+
+@layer components {
+  /* Waterproof notebook paper: yellow stock with a faint 16px survey grid. */
+  .notebook-paper {
+    background-color: var(--color-notebook);
+    background-image:
+      linear-gradient(rgb(24 51 38 / 0.09) 1px, transparent 1px),
+      linear-gradient(90deg, rgb(24 51 38 / 0.09) 1px, transparent 1px);
+    background-size: 16px 16px;
+    background-position: -1px -1px;
+  }
+
+  /* Hang tag silhouette: chamfered top corners around a punched hole. */
+  .hang-tag {
+    clip-path: polygon(28px 0, calc(100% - 28px) 0, 100% 28px, 100% 100%, 0 100%, 0 28px);
+  }
+
+  .tag-hole {
+    width: 18px;
+    height: 18px;
+    border-radius: 9999px;
+    background: #ffffff;
+    box-shadow:
+      inset 0 0 0 3px var(--color-notebook-edge),
+      inset 0 0 0 4px rgb(24 51 38 / 0.18);
+  }
+
+  .field-input {
+    width: 100%;
+    border: 1.5px solid var(--color-stone);
+    border-radius: 6px;
+    background: #ffffff;
+    padding: 0.625rem 0.75rem;
+    font-size: 1rem;
+    line-height: 1.4;
+    color: var(--color-spruce);
+    transition: border-color 120ms ease;
+  }
+
+  .field-input:hover {
+    border-color: var(--color-moss);
+  }
+
+  .field-input:focus-visible {
+    border-color: var(--color-blaze);
+    outline-offset: 1px;
+  }
+
+  .field-input[aria-invalid="true"] {
+    border-color: var(--color-alarm);
+  }
+
+  .field-input:disabled {
+    background: var(--color-mist);
+    cursor: not-allowed;
+  }
+
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: 2.75rem;
+    border-radius: 6px;
+    background: var(--color-spruce);
+    padding: 0.625rem 1.25rem;
+    font-weight: 700;
+    color: #ffffff;
+    transition:
+      background-color 120ms ease,
+      transform 120ms ease;
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    background: var(--color-spruce-soft);
+  }
+
+  .btn-primary:active:not(:disabled) {
+    transform: translateY(1px);
+  }
+
+  .btn-primary:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+  }
+
+  .btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.75rem;
+    border: 1.5px solid var(--color-spruce);
+    border-radius: 6px;
+    background: transparent;
+    padding: 0.5rem 1rem;
+    font-weight: 700;
+    color: var(--color-spruce);
+    transition: background-color 120ms ease;
+  }
+
+  .btn-secondary:hover:not(:disabled) {
+    background: rgb(24 51 38 / 0.06);
+  }
+
+  .btn-secondary:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+  }
+
+  .text-link {
+    color: var(--color-blaze);
+    font-weight: 600;
+    text-decoration: underline;
+    text-decoration-thickness: 1.5px;
+    text-underline-offset: 3px;
+  }
+
+  .text-link:hover {
+    text-decoration-thickness: 2.5px;
+  }
+}

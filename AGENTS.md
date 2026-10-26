@@ -28,3 +28,45 @@ When creating commits, use FrankieBiz's GitHub identity: `Francis Bisignano <fra
 ## Secrets
 
 Never commit API keys, access tokens, passwords, or private credentials. Use ignored local environment files and document required variable names without values.
+
+## Orchestration Model Rules & Multi-Model Architecture
+
+### Response Format Requirement
+The very first block of every single response to the user must explicitly list which models were called and their roles:
+```markdown
+### Models Used:
+- **OpenAI GPT-6.1** (`gpt-6.1-sol` via Codex): Backend engineering, schemas, algorithms...
+- **Anthropic Claude** (`claude-opus-5-5` via Claude Code): Frontend ergonomics, UI, presentation...
+- **DeepSeek** (`deepseek-v4.1-flash` via API): High-throughput extraction, batch auditing, fuzzing...
+- **Local / Meta Models**: Fallback verification or Meta Model API repair inference...
+- **Antigravity (Coordinator)**: Orchestration DAG, boundary partitioning, test gatekeeping, git finish...
+```
+
+### Mandated Model Tiers (Strict Prohibition on Older Tiers)
+- **STRICTLY FORBIDDEN**: Never orchestrate with older or lower-tier models (no Claude 3.5 Sonnet, no GPT-4o, no legacy tiers).
+- **Mandated Frontier Tiers**:
+  1. **OpenAI / Codex**: Use ONLY `gpt-6` or `gpt-6.1` (specifically `gpt-6.1-sol`, `gpt-6-astra`, high/xhigh effort).
+  2. **Anthropic / Claude**: Use ONLY the highest frontier tier available (`claude-opus-5-5` / Opus with high reasoning).
+  3. **DeepSeek**: Permitted and encouraged to utilize `deepseek-v4.1-flash` (or DeepSeek V3/R1 flash via `DEEPSEEK_API_KEY`) for rapid fuzzing, extraction, and auditor passes.
+  4. **Meta Inference**: Target Meta Model API (`muse-spark-1.3`, `Llama-3.3-70B-Instruct`) for core hackathon domain generation (e.g., source repair).
+  5. **Local Inference**: Local Ollama (`qwen2.5-coder:14b`, `7b`) at `http://localhost:11434/v1` for offline fallback.
+  6. **Antigravity (Coordinator)**: Orca orchestration supervisor, task graph DAG controller, disjoint worktree/file partitioner, verification gatekeeper (`make check`), and zero-AI git finish executor.
+
+### Functional Division of Labor
+- **OpenAI GPT-6.1 (`gpt-6.1-sol`)**:
+  - Assigned to **Deep Backend Engineering**: FastAPI endpoints, Pydantic v2 schemas, patch validation logic, test harnesses, and backend regression suites.
+- **Anthropic Claude (`claude-opus-5-5` / high reasoning)**:
+  - Assigned to **Frontend Ergonomics & Browser QA**: Next.js App Router UI, Playwright browser test visualization, Inspector panels, terminal aesthetics, and hackathon presentation/narrative.
+- **DeepSeek (`deepseek-v4.1-flash`)**:
+  - Assigned to **High-Throughput Extraction & Rapid Auditing**: Batch syntax/error analysis, edge-case test fuzzing, and rapid token scanning.
+- **Antigravity (Coordinator)**:
+  - Oversees the autonomous perfection loop: plans the feature DAG, partitions file boundaries to prevent merge conflicts, dispatches parallel workers, monitors progress reactively, executes verification gates (`make check`), and runs the zero-AI git finish protocol.
+
+### Autonomous Perfection Loop & Finish Protocol
+1. **Autonomous Execution**: When in loop mode, the coordinator plans what needs to be done, dispatches the frontier models to execute, reviews outputs, validates test suites, and pushes to main. Do not pause for routine confirmation—proceed autonomously while periodically grounding to ensure architectural alignment.
+2. **No Diagrams Rule**: Never generate Mermaid diagrams or ASCII/plaintext diagram boxes. All concepts, workflows, and architectures must be presented in markdown lists, tables, or clean prose.
+3. **Mandatory Git Finish Protocol**:
+   - Verify all tests pass (`make check`).
+   - Run `agent-finish "<imperative commit message>"` or `git finish "<message>"`.
+   - Never commit with AI names (Claude, ChatGPT, Gemini, Anthropic, OpenAI) or `Co-Authored-By` lines. All commits must be attributed to `Francis Bisignano <frankabisignano@gmail.com>`.
+   - Remote production must always be updated and green.
