@@ -1,4 +1,4 @@
-.PHONY: check test lint typecheck build provenance frontend runner
+.PHONY: check test lint typecheck build provenance frontend runner inspector
 
 BACKEND := apps/buggyshop-backend
 UV := uv run --project $(BACKEND) --python 3.13 --locked
@@ -6,14 +6,18 @@ ORCHESTRATOR := services/repair-orchestrator
 ORCHESTRATOR_UV := uv run --project $(ORCHESTRATOR) --python 3.13 --locked
 FRONTEND := apps/buggyshop-frontend
 RUNNER := tools/browser-runner
+INSPECTOR := web/inspector-ui
 
-check: lint typecheck test provenance frontend runner build
+check: lint typecheck test provenance frontend runner inspector build
 
 frontend:
 	cd $(FRONTEND) && npm run check
 
 runner:
 	cd $(RUNNER) && npm run check
+
+inspector:
+	cd $(INSPECTOR) && npm run check
 
 test:
 	$(UV) pytest $(BACKEND)/tests

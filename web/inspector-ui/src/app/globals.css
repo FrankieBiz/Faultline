@@ -1,0 +1,18 @@
+@import "tailwindcss";
+
+:root {
+  --background: #090d16;
+  --foreground: #e6edf3;
+  --panel: #111827;
+  --border: #1f293d;
+  --accent: #38bdf8;
+  --green: #10b981;
+  --red: #f43f5e;
+  --amber: #f59e0b;
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
