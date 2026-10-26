@@ -1,38 +1,44 @@
 @import "tailwindcss";
 
 :root {
-  --background: #04060a;
-  --foreground: #f3f5f9;
-  --panel: #070a10;
-  --panel-card: #0a0d14;
-  --border-subtle: rgba(255, 255, 255, 0.07);
-  --border-active: rgba(56, 189, 248, 0.45);
-  --accent-cyan: #38bdf8;
-  --accent-emerald: #10b981;
-  --accent-rose: #f43f5e;
-  --accent-amber: #f59e0b;
+  --bg: #0A0B0D;
+  --surface: #111318;
+  --surface-raised: #161922;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-bright: rgba(255, 255, 255, 0.15);
+  --text-primary: #F5F6F8;
+  --text-secondary: #9AA0AA;
+  --text-muted: #5D6370;
+  --accent: #2DD4FF;
+  --accent-glow: rgba(45, 212, 255, 0.18);
+  --accent-dim: rgba(45, 212, 255, 0.08);
+  --emerald: #3DFFA2;
+  --rose: #FF4D6A;
+  --radius: 14px;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --duration-fast: 200ms;
+  --duration-normal: 400ms;
 }
 
 body {
-  color: var(--foreground);
-  background-color: var(--background);
+  color: var(--text-primary);
+  background-color: var(--bg);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", "Helvetica Neue", Arial, sans-serif;
-  background-image: 
-    radial-gradient(circle at 50% 0%, rgba(56, 189, 248, 0.07) 0%, transparent 50%),
-    radial-gradient(circle at 95% 95%, rgba(16, 185, 129, 0.04) 0%, transparent 40%),
-    radial-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px);
-  background-size: 100% 100%, 100% 100%, 28px 28px;
-  background-position: 0 0, 0 0, -1px -1px;
   min-height: 100dvh;
+  overflow-x: hidden;
+  background-image: 
+    radial-gradient(circle at 50% 0%, rgba(45, 212, 255, 0.06) 0%, transparent 45%),
+    radial-gradient(circle at 85% 60%, rgba(61, 255, 162, 0.03) 0%, transparent 40%);
+  background-attachment: fixed;
 }
 
-/* Custom sleek scrollbar */
+/* Custom minimal scrollbar */
 ::-webkit-scrollbar {
   width: 5px;
   height: 5px;
 }
 ::-webkit-scrollbar-track {
-  background: #04060a;
+  background: var(--bg);
 }
 ::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.12);
@@ -42,55 +48,55 @@ body {
   background: rgba(255, 255, 255, 0.25);
 }
 
-/* Double-Bezel Hardware Enclosure (Anti-Slop Craft) */
-.double-bezel {
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.7);
-  border-radius: 1.25rem;
+/* Technical Card Surface */
+.surface-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: border-color var(--duration-fast) var(--ease), transform var(--duration-fast) var(--ease);
+}
+.surface-card:hover {
+  border-color: var(--border-bright);
 }
 
-.double-bezel-inner {
-  background: rgba(9, 12, 19, 0.85);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  box-shadow: inset 0 1px 1px 0 rgba(255, 255, 255, 0.08);
-  border-radius: calc(1.25rem - 0.25rem);
+/* Interactive Lift */
+.interactive-lift {
+  transition: transform var(--duration-fast) var(--ease), border-color var(--duration-fast) var(--ease);
+}
+.interactive-lift:hover {
+  transform: translateY(-2px);
 }
 
-/* Tactile Button Press (Emil Kowalski Craft) */
-.btn-tactile {
-  transition: transform 120ms cubic-bezier(0.32, 0.72, 0, 1), background-color 150ms ease-out, border-color 150ms ease-out;
+/* Tactile Button */
+.btn-press {
+  transition: transform 120ms var(--ease), background-color 150ms var(--ease), border-color 150ms var(--ease);
 }
-.btn-tactile:active {
+.btn-press:active {
   transform: scale(0.975);
 }
 
-/* Micro animations */
-@keyframes pulse-ring {
-  0% { transform: scale(0.96); opacity: 0.8; }
-  50% { transform: scale(1.12); opacity: 0.25; }
-  100% { transform: scale(0.96); opacity: 0.8; }
+/* SVG Line Pulse Animations */
+@keyframes linePulse {
+  0% { stroke-dashoffset: 24; }
+  100% { stroke-dashoffset: 0; }
 }
 
-@keyframes sweep {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(200%); }
+.animate-pulse-line {
+  stroke-dasharray: 4 8;
+  animation: linePulse 2s linear infinite;
 }
 
-.animate-pulse-ring {
-  animation: pulse-ring 2.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+/* Glow effects */
+.glow-accent {
+  box-shadow: 0 0 30px -5px var(--accent-glow);
 }
 
-.pipeline-trace {
-  position: relative;
-  overflow: hidden;
-}
-.pipeline-trace::after {
-  content: "";
-  position: absolute;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background: linear-gradient(90deg, transparent, rgba(56, 189, 248, 0.6), transparent);
-  animation: sweep 1.8s ease-in-out infinite;
+/* Reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
