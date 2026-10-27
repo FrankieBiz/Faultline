@@ -25,6 +25,7 @@ import {
   MonitorCheck,
   Lock,
 } from "lucide-react";
+import AgentCinema from "@/components/AgentCinema";
 
 interface JobEvent {
   id: string;
@@ -161,6 +162,7 @@ const CODE_DIFF = `--- a/apps/buggyshop-backend/app/routes/checkout.py
      total = subtotal - discount`;
 
 export default function Home() {
+  const [heroDisplayMode, setHeroDisplayMode] = useState<"cinema" | "pipeline">("cinema");
   const [initialized, setInitialized] = useState<boolean>(false);
   const [activeJob, setActiveJob] = useState<JobState | null>(null);
   const [events, setEvents] = useState<JobEvent[]>([]);
@@ -501,139 +503,175 @@ export default function Home() {
           </div>
         </div>
 
-        {/* 2.B THE SIGNATURE ANIMATED DIAGRAM */}
-        <div className="mt-14 p-6 sm:p-8 rounded-2xl bg-[#111318] border border-white/[0.08] relative overflow-hidden">
-          
-          {/* Header readout */}
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-6 border-b border-white/[0.06]">
-            <div>
-              <div className="text-xs font-mono uppercase tracking-wider text-[#9AA0AA] flex items-center gap-2">
-                <Activity className="w-3.5 h-3.5 text-[#2DD4FF]" strokeWidth={1.5} />
-                <span>Live Healing Pipeline</span>
-              </div>
-              <div className="text-sm font-medium text-[#F5F6F8] mt-0.5">
-                Zero-Downtime E-Commerce Cart Recovery
-              </div>
-            </div>
+        {/* HERO SHOWCASE MODE SELECTOR */}
+        <div className="mt-14 mb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2 p-1 rounded-xl bg-[#111318] border border-white/[0.08] w-fit">
+            <button
+              onClick={() => setHeroDisplayMode("cinema")}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-mono transition-all duration-200 flex items-center gap-2 ${
+                heroDisplayMode === "cinema"
+                  ? "bg-[#2DD4FF] text-[#0A0B0D] font-bold shadow-md"
+                  : "text-[#7C8290] hover:text-white"
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5" strokeWidth={1.5} />
+              <span>Agent Swarm Cinema (Live 60fps)</span>
+            </button>
 
-            <div className="flex items-center gap-3">
-              <span aria-live="polite" className="text-xs font-mono text-[#9AA0AA] px-2.5 py-1 rounded bg-black/40 border border-white/[0.06]">
-                {isRunning ? `running • ${(elapsedTime / 10).toFixed(1)}s` : activeStage === "cleanup" ? "status: immune green" : "status: standby"}
-              </span>
-              <button
-                onClick={executePipeline}
-                disabled={isRunning}
-                className="btn-press px-3.5 py-1.5 rounded-lg bg-[#2DD4FF] text-[#0A0B0D] text-xs font-semibold hover:bg-[#2DD4FF]/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5"
-              >
-                {isRunning ? <RefreshCw className="w-3.5 h-3.5 animate-spin" strokeWidth={1.5} /> : <Play className="w-3.5 h-3.5 fill-current" strokeWidth={1.5} />}
-                <span>{isRunning ? "Running..." : "Run Pipeline"}</span>
-              </button>
-            </div>
+            <button
+              onClick={() => setHeroDisplayMode("pipeline")}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-mono transition-all duration-200 flex items-center gap-2 ${
+                heroDisplayMode === "pipeline"
+                  ? "bg-[#2DD4FF] text-[#0A0B0D] font-bold shadow-md"
+                  : "text-[#7C8290] hover:text-white"
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" strokeWidth={1.5} />
+              <span>Architecture Pipeline DAG</span>
+            </button>
           </div>
 
-          {/* Initializing state indicator */}
-          {!initialized && (
-            <div className="h-44 flex items-center justify-center font-mono text-xs text-[#9AA0AA] animate-pulse">
-              Initializing pipeline DAG...
-            </div>
-          )}
+          <div className="hidden sm:flex items-center gap-2 text-xs font-mono text-[#7C8290]">
+            <span className="w-2 h-2 rounded-full bg-[#3DFFA2] animate-pulse" />
+            <span>Deterministic Agent Swarm Simulation</span>
+          </div>
+        </div>
 
-          {/* Interactive DAG Nodes */}
-          {initialized && (
-            <div className="relative pt-6">
-              
-              {/* Connecting SVG Flow Lines */}
-              <div className="hidden lg:block absolute top-[52px] left-[8%] right-[8%] h-0.5 z-0 pointer-events-none">
-                <svg className="w-full h-2 overflow-visible">
-                  <line
-                    x1="0%"
-                    y1="1"
-                    x2="100%"
-                    y2="1"
-                    stroke="rgba(255,255,255,0.08)"
-                    strokeWidth="2"
-                  />
-                  <line
-                    x1="0%"
-                    y1="1"
-                    x2="100%"
-                    y2="1"
-                    stroke="#2DD4FF"
-                    strokeWidth="2"
-                    className="animate-pulse-line opacity-60"
-                  />
-                </svg>
+        {heroDisplayMode === "cinema" ? (
+          <AgentCinema onTriggerRealRun={executePipeline} isRealRunActive={isRunning} />
+        ) : (
+          /* 2.B THE SIGNATURE ANIMATED DIAGRAM */
+          <div className="p-6 sm:p-8 rounded-2xl bg-[#111318] border border-white/[0.08] relative overflow-hidden">
+            {/* Header readout */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-6 border-b border-white/[0.06]">
+              <div>
+                <div className="text-xs font-mono uppercase tracking-wider text-[#9AA0AA] flex items-center gap-2">
+                  <Activity className="w-3.5 h-3.5 text-[#2DD4FF]" strokeWidth={1.5} />
+                  <span>Live Healing Pipeline</span>
+                </div>
+                <div className="text-sm font-medium text-[#F5F6F8] mt-0.5">
+                  Zero-Downtime E-Commerce Cart Recovery
+                </div>
               </div>
 
-              {/* 5 Connected System Nodes */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 relative z-10">
-                {DIAGRAM_NODES.map((node) => {
-                  const active = isNodeActive(node.stageKey);
-                  const completed = isNodeCompleted(node.stageKey);
-                  const NodeIcon = node.icon;
+              <div className="flex items-center gap-3">
+                <span aria-live="polite" className="text-xs font-mono text-[#9AA0AA] px-2.5 py-1 rounded bg-black/40 border border-white/[0.06]">
+                  {isRunning ? `running • ${(elapsedTime / 10).toFixed(1)}s` : activeStage === "cleanup" ? "status: immune green" : "status: standby"}
+                </span>
+                <button
+                  onClick={executePipeline}
+                  disabled={isRunning}
+                  className="btn-press px-3.5 py-1.5 rounded-lg bg-[#2DD4FF] text-[#0A0B0D] text-xs font-semibold hover:bg-[#2DD4FF]/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5"
+                >
+                  {isRunning ? <RefreshCw className="w-3.5 h-3.5 animate-spin" strokeWidth={1.5} /> : <Play className="w-3.5 h-3.5 fill-current" strokeWidth={1.5} />}
+                  <span>{isRunning ? "Running..." : "Run Pipeline"}</span>
+                </button>
+              </div>
+            </div>
 
-                  return (
-                    <div
-                      key={node.id}
-                      onMouseEnter={() => setHoveredNode(node.id)}
-                      onMouseLeave={() => setHoveredNode(null)}
-                      className={`interactive-lift p-4 rounded-xl border transition-all duration-200 relative bg-[#0E1015] ${
-                        active
-                          ? "border-[#2DD4FF] shadow-[0_0_25px_-5px_rgba(45,212,255,0.35)] ring-1 ring-[#2DD4FF]/50"
-                          : completed
-                          ? "border-[#3DFFA2]/40 bg-[#0E1015]"
-                          : "border-white/[0.07]"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between text-[11px] font-mono text-[#9AA0AA] mb-2">
-                        <span>{node.step}</span>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/[0.04] text-[#7C8290]">
-                          {node.type}
-                        </span>
-                      </div>
+            {/* Initializing state indicator */}
+            {!initialized && (
+              <div className="h-44 flex items-center justify-center font-mono text-xs text-[#9AA0AA] animate-pulse">
+                Initializing pipeline DAG...
+              </div>
+            )}
 
-                      <div className="flex items-center gap-2 mb-1.5">
-                        <NodeIcon
-                          className={`w-4 h-4 ${
-                            active ? "text-[#2DD4FF] animate-spin" : completed ? "text-[#3DFFA2]" : "text-[#9AA0AA]"
-                          }`}
-                          strokeWidth={1.5}
-                        />
-                        <span className={`text-xs font-semibold ${active ? "text-[#2DD4FF]" : "text-[#F5F6F8]"}`}>
-                          {node.name}
-                        </span>
-                      </div>
+            {/* Interactive DAG Nodes */}
+            {initialized && (
+              <div className="relative pt-6">
+                {/* Connecting SVG Flow Lines */}
+                <div className="hidden lg:block absolute top-[52px] left-[8%] right-[8%] h-0.5 z-0 pointer-events-none">
+                  <svg className="w-full h-2 overflow-visible">
+                    <line
+                      x1="0%"
+                      y1="1"
+                      x2="100%"
+                      y2="1"
+                      stroke="rgba(255,255,255,0.08)"
+                      strokeWidth="2"
+                    />
+                    <line
+                      x1="0%"
+                      y1="1"
+                      x2="100%"
+                      y2="1"
+                      stroke="#2DD4FF"
+                      strokeWidth="2"
+                      className="animate-pulse-line opacity-60"
+                    />
+                  </svg>
+                </div>
 
-                      <p className="text-[11px] text-[#9AA0AA] leading-tight line-clamp-2">
-                        {node.desc}
-                      </p>
+                {/* 5 Connected System Nodes */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 relative z-10">
+                  {DIAGRAM_NODES.map((node) => {
+                    const active = isNodeActive(node.stageKey);
+                    const completed = isNodeCompleted(node.stageKey);
+                    const NodeIcon = node.icon;
 
-                      <div className="mt-3 pt-2 border-t border-white/[0.04] flex items-center justify-between text-[10px] font-mono">
-                        <span className="text-[#7C8290]">{node.metric}</span>
-                        {completed ? (
-                          <span className="text-[#3DFFA2] flex items-center gap-1">
-                            <Check className="w-3 h-3" strokeWidth={1.5} /> OK
+                    return (
+                      <div
+                        key={node.id}
+                        onMouseEnter={() => setHoveredNode(node.id)}
+                        onMouseLeave={() => setHoveredNode(null)}
+                        className={`interactive-lift p-4 rounded-xl border transition-all duration-200 relative bg-[#0E1015] ${
+                          active
+                            ? "border-[#2DD4FF] shadow-[0_0_25px_-5px_rgba(45,212,255,0.35)] ring-1 ring-[#2DD4FF]/50"
+                            : completed
+                            ? "border-[#3DFFA2]/40 bg-[#0E1015]"
+                            : "border-white/[0.07]"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between text-[11px] font-mono text-[#9AA0AA] mb-2">
+                          <span>{node.step}</span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/[0.04] text-[#7C8290]">
+                            {node.type}
                           </span>
-                        ) : active ? (
-                          <span className="text-[#2DD4FF] animate-pulse">active</span>
-                        ) : (
-                          <span className="text-[#7C8290]">idle</span>
+                        </div>
+
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <NodeIcon
+                            className={`w-4 h-4 ${
+                              active ? "text-[#2DD4FF] animate-spin" : completed ? "text-[#3DFFA2]" : "text-[#9AA0AA]"
+                            }`}
+                            strokeWidth={1.5}
+                          />
+                          <span className={`text-xs font-semibold ${active ? "text-[#2DD4FF]" : "text-[#F5F6F8]"}`}>
+                            {node.name}
+                          </span>
+                        </div>
+
+                        <p className="text-[11px] text-[#9AA0AA] leading-tight line-clamp-2">
+                          {node.desc}
+                        </p>
+
+                        <div className="mt-3 pt-2 border-t border-white/[0.04] flex items-center justify-between text-[10px] font-mono">
+                          <span className="text-[#7C8290]">{node.metric}</span>
+                          {completed ? (
+                            <span className="text-[#3DFFA2] flex items-center gap-1">
+                              <Check className="w-3 h-3" strokeWidth={1.5} /> OK
+                            </span>
+                          ) : active ? (
+                            <span className="text-[#2DD4FF] animate-pulse">active</span>
+                          ) : (
+                            <span className="text-[#7C8290]">idle</span>
+                          )}
+                        </div>
+
+                        {/* Tooltip on hover */}
+                        {hoveredNode === node.id && (
+                          <div className="absolute -bottom-12 left-1/2 -translate-x-1/2 z-30 px-2.5 py-1 rounded bg-black/90 border border-white/[0.12] text-[10px] font-mono text-white whitespace-nowrap shadow-xl pointer-events-none">
+                            {node.desc}
+                          </div>
                         )}
                       </div>
-
-                      {/* Tooltip on hover */}
-                      {hoveredNode === node.id && (
-                        <div className="absolute -bottom-12 left-1/2 -translate-x-1/2 z-30 px-2.5 py-1 rounded bg-black/90 border border-white/[0.12] text-[10px] font-mono text-white whitespace-nowrap shadow-xl pointer-events-none">
-                          {node.desc}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </section>
 
       {/* 3. STAT STRIP */}
