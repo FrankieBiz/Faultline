@@ -174,11 +174,59 @@ export default function Home() {
   const [copiedDiff, setCopiedDiff] = useState<boolean>(false);
   const [copiedLogs, setCopiedLogs] = useState<boolean>(false);
   const [showDossier, setShowDossier] = useState<boolean>(false);
+  const [activeAttempt, setActiveAttempt] = useState<{
+    attempt_number: number;
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    parsed_diff?: string;
+    explanation?: string;
+    model?: string;
+    provider?: string;
+    outcome?: string;
+    syntax_valid?: boolean;
+  } | null>(null);
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const terminalEndRef = useRef<HTMLDivElement | null>(null);
+
+  const syncJobDetail = (detailData: Record<string, unknown>) => {
+    if (Array.isArray(detailData.events) && detailData.events.length > 0) {
+      setEvents(
+        detailData.events.map((e: { sequence?: number; stage?: string; message?: string; timestamp?: string }) => ({
+          id: String(e.sequence || Math.random()),
+          stage: e.stage || "info",
+          message: e.message || "stage event",
+          timestamp: e.timestamp ? new Date(e.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString(),
+        }))
+      );
+    }
+
+    const attemptsList = detailData.attempts as Array<Record<string, unknown>> | undefined;
+    if (Array.isArray(attemptsList) && attemptsList.length > 0) {
+      const latestAttempt = attemptsList[attemptsList.length - 1];
+      let explanation = "";
+      if (typeof latestAttempt.raw_patch === "string") {
+        try {
+          const parsed = JSON.parse(latestAttempt.raw_patch);
+          explanation = parsed.explanation || "";
+        } catch {}
+      }
+      const valResult = latestAttempt.validation_result as Record<string, unknown> | undefined;
+      setActiveAttempt({
+        attempt_number: Number(latestAttempt.attempt_number || 1),
+        prompt_tokens: typeof latestAttempt.prompt_tokens === "number" ? latestAttempt.prompt_tokens : undefined,
+        completion_tokens: typeof latestAttempt.completion_tokens === "number" ? latestAttempt.completion_tokens : undefined,
+        parsed_diff: typeof latestAttempt.parsed_diff === "string" ? latestAttempt.parsed_diff : undefined,
+        explanation,
+        model: typeof valResult?.model === "string" ? valResult.model : "muse-spark-1.3",
+        provider: typeof valResult?.provider === "string" ? valResult.provider : "meta",
+        outcome: typeof latestAttempt.outcome === "string" ? latestAttempt.outcome : undefined,
+        syntax_valid: typeof valResult?.syntax_valid === "boolean" ? valResult.syntax_valid : undefined,
+      });
+    }
+  };
 
   // Initialize animated diagram sequence
   useEffect(() => {
@@ -215,16 +263,7 @@ export default function Home() {
             const detailRes = await fetch(`/api/faultline/jobs/${latest.id}`);
             if (detailRes.ok) {
               const detailData = await detailRes.json();
-              if (Array.isArray(detailData.events) && detailData.events.length > 0) {
-                setEvents(
-                  detailData.events.map((e: { sequence?: number; stage?: string; message?: string; timestamp?: string }) => ({
-                    id: String(e.sequence || Math.random()),
-                    stage: e.stage || "info",
-                    message: e.message || "stage event",
-                    timestamp: e.timestamp ? new Date(e.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString(),
-                  }))
-                );
-              }
+              syncJobDetail(detailData);
             }
           } catch (err) {
             console.error("Initial detail fetch error:", err);
@@ -242,8 +281,65 @@ export default function Home() {
     };
   }, []);
 
+  const renderDiffContent = (diffText?: string) => {
+    if (!diffText) {
+      return (
+        <>
+          <div className="text-[#7C8290]">@@ -40,5 +40,5 @@ def checkout(order):</div>
+          <div className="text-[#9AA0AA]">&nbsp;&nbsp;&nbsp;&nbsp;if coupon_code and coupon_code not in discounts:</div>
+          <div className="text-[#9AA0AA]">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;raise HTTPException(400, &quot;Invalid coupon&quot;)</div>
+          <div className="text-[#7C8290]">&nbsp;</div>
+          <div className="bg-[#FF4D6A]/20 text-[#FF4D6A] px-2 py-0.5 rounded">
+            -&nbsp;&nbsp;&nbsp;&nbsp;discount = cast(int, discounts.get(coupon_code))
+          </div>
+          <div className="bg-[#3DFFA2]/20 text-[#3DFFA2] px-2 py-0.5 rounded">
+            +&nbsp;&nbsp;&nbsp;&nbsp;discount = cast(int, discounts.get(coupon_code, 0))
+          </div>
+          <div className="text-[#9AA0AA]">&nbsp;&nbsp;&nbsp;&nbsp;total = subtotal - discount</div>
+        </>
+      );
+    }
+
+    return diffText.split("\n").map((line, idx) => {
+      if (!line && idx === diffText.split("\n").length - 1) return null;
+      if (line.startsWith("+") && !line.startsWith("+++")) {
+        return (
+          <div key={idx} className="bg-[#3DFFA2]/20 text-[#3DFFA2] px-2 py-0.5 rounded font-mono">
+            {line}
+          </div>
+        );
+      }
+      if (line.startsWith("-") && !line.startsWith("---")) {
+        return (
+          <div key={idx} className="bg-[#FF4D6A]/20 text-[#FF4D6A] px-2 py-0.5 rounded font-mono">
+            {line}
+          </div>
+        );
+      }
+      if (line.startsWith("@@")) {
+        return (
+          <div key={idx} className="text-[#2DD4FF] font-semibold font-mono">
+            {line}
+          </div>
+        );
+      }
+      if (line.startsWith("---") || line.startsWith("+++")) {
+        return (
+          <div key={idx} className="text-[#7C8290] font-mono">
+            {line}
+          </div>
+        );
+      }
+      return (
+        <div key={idx} className="text-[#9AA0AA] font-mono whitespace-pre">
+          {line}
+        </div>
+      );
+    });
+  };
+
   const handleCopyDiff = () => {
-    navigator.clipboard.writeText(CODE_DIFF);
+    navigator.clipboard.writeText(activeAttempt?.parsed_diff || CODE_DIFF);
     setCopiedDiff(true);
     setTimeout(() => setCopiedDiff(false), 2000);
   };
@@ -345,16 +441,7 @@ export default function Home() {
               setActiveStage(statusData.stage === "completed" ? "cleanup" : statusData.stage);
             }
 
-            if (Array.isArray(rawData.events) && rawData.events.length > 0) {
-              setEvents(
-                rawData.events.map((e: { sequence?: number; stage?: string; message?: string; timestamp?: string }) => ({
-                  id: String(e.sequence || Math.random()),
-                  stage: e.stage || "info",
-                  message: e.message || "stage event",
-                  timestamp: e.timestamp ? new Date(e.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString(),
-                }))
-              );
-            }
+            syncJobDetail(rawData);
 
             if (statusData.state === "succeeded" || statusData.state === "failed") {
               if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
@@ -789,33 +876,41 @@ export default function Home() {
                     <FileCode className="w-3.5 h-3.5 text-[#2DD4FF]" strokeWidth={1.5} />
                     <span>checkout.py (AST Scope Verified)</span>
                   </span>
-                  <button
-                    onClick={handleCopyDiff}
-                    className="flex items-center gap-1 text-[11px] font-mono text-[#9AA0AA] hover:text-white"
-                  >
-                    {copiedDiff ? <Check className="w-3 h-3 text-[#3DFFA2]" /> : <Copy className="w-3 h-3" />}
-                    <span>{copiedDiff ? "Copied" : "Copy Diff"}</span>
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {activeAttempt?.model && (
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-[#3DFFA2] border border-emerald-500/20">
+                        {activeAttempt.provider?.toUpperCase()} • {activeAttempt.model}
+                      </span>
+                    )}
+                    <button
+                      onClick={handleCopyDiff}
+                      className="flex items-center gap-1 text-[11px] font-mono text-[#9AA0AA] hover:text-white"
+                    >
+                      {copiedDiff ? <Check className="w-3 h-3 text-[#3DFFA2]" /> : <Copy className="w-3 h-3" />}
+                      <span>{copiedDiff ? "Copied" : "Copy Diff"}</span>
+                    </button>
+                  </div>
                 </div>
 
-                <div className="p-4 font-mono text-xs bg-[#090B0E] space-y-1 overflow-x-auto leading-relaxed">
-                  <div className="text-[#7C8290]">@@ -40,5 +40,5 @@ def checkout(order):</div>
-                  <div className="text-[#9AA0AA]">&nbsp;&nbsp;&nbsp;&nbsp;if coupon_code and coupon_code not in discounts:</div>
-                  <div className="text-[#9AA0AA]">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;raise HTTPException(400, &quot;Invalid coupon&quot;)</div>
-                  <div className="text-[#7C8290]">&nbsp;</div>
-                  <div className="bg-[#FF4D6A]/20 text-[#FF4D6A] px-2 py-0.5 rounded">
-                    -&nbsp;&nbsp;&nbsp;&nbsp;discount = cast(int, discounts.get(coupon_code))
-                  </div>
-                  <div className="bg-[#3DFFA2]/20 text-[#3DFFA2] px-2 py-0.5 rounded">
-                    +&nbsp;&nbsp;&nbsp;&nbsp;discount = cast(int, discounts.get(coupon_code, 0))
-                  </div>
-                  <div className="text-[#9AA0AA]">&nbsp;&nbsp;&nbsp;&nbsp;total = subtotal - discount</div>
+                <div className="p-4 font-mono text-xs bg-[#090B0E] space-y-1 overflow-x-auto leading-relaxed max-h-[300px] overflow-y-auto">
+                  {renderDiffContent(activeAttempt?.parsed_diff)}
                 </div>
+
+                {activeAttempt?.explanation && (
+                  <div className="px-4 py-2.5 bg-white/[0.02] border-t border-white/[0.06] text-[11px] font-mono text-[#9AA0AA]">
+                    <span className="text-[#2DD4FF] font-semibold">Model Reasoning: </span>
+                    <span>{activeAttempt.explanation}</span>
+                  </div>
+                )}
               </div>
 
               <div className="p-3.5 bg-black/40 border-t border-white/[0.04] text-[11px] font-mono text-[#7C8290] flex items-center justify-between">
                 <span>AST Bound: 1 file modified</span>
-                <span>Forbidden imports: 0</span>
+                <span>
+                  {activeAttempt?.prompt_tokens
+                    ? `Tokens: ${activeAttempt.prompt_tokens} in • ${activeAttempt.completion_tokens || 0} out`
+                    : "Tokens: 905 in • 1,857 out"}
+                </span>
                 <span className="text-[#3DFFA2]">Policy: PASS</span>
               </div>
             </div>
