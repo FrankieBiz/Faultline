@@ -118,6 +118,13 @@ export default function InteractiveChaosStudio({
   const [isSimulating, setIsSimulating] = useState<boolean>(false);
   const [simStep, setSimStep] = useState<number>(0);
   const [typedCoupon, setTypedCoupon] = useState<string>("");
+  const [isCheckingOut, setIsCheckingOut] = useState<boolean>(false);
+  const [liveCheckoutResponse, setLiveCheckoutResponse] = useState<{
+    status: number;
+    latencyMs?: number;
+    data?: any;
+    error?: string;
+  } | null>(null);
 
   const scenario = SCENARIOS[selectedScenario];
 
@@ -125,7 +132,53 @@ export default function InteractiveChaosStudio({
     setTypedCoupon(scenario.couponInput);
     setIsHealed(false);
     setSimStep(0);
+    setLiveCheckoutResponse(null);
   }, [selectedScenario, scenario.couponInput]);
+
+  const handleLiveCheckout = async () => {
+    if (isCheckingOut) return;
+    setIsCheckingOut(true);
+    setLiveCheckoutResponse(null);
+    const start = performance.now();
+    try {
+      const res = await fetch("http://127.0.0.1:8000/api/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: [
+            { product_id: "trail-mug", quantity: 1 },
+            { product_id: "field-notebook", quantity: 1 },
+          ],
+          coupon_code: typedCoupon,
+        }),
+      });
+      const latencyMs = Math.round(performance.now() - start);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setLiveCheckoutResponse({
+          status: res.status,
+          latencyMs,
+          data,
+          error: data.detail || `HTTP ${res.status} Error`,
+        });
+      } else {
+        setLiveCheckoutResponse({
+          status: res.status,
+          latencyMs,
+          data,
+        });
+        setIsHealed(true);
+      }
+    } catch {
+      setLiveCheckoutResponse({
+        status: 0,
+        latencyMs: Math.round(performance.now() - start),
+        error: "Connection refused to Port 8000 (Backend Offline)",
+      });
+    } finally {
+      setIsCheckingOut(false);
+    }
+  };
 
   // Run autonomous healing simulation
   const handleTriggerHeal = () => {
@@ -366,8 +419,76 @@ export default function InteractiveChaosStudio({
                 </span>
               </div>
 
+              {/* Real Checkout Trigger Button */}
+              <div className="pt-2">
+                <button
+                  onClick={handleLiveCheckout}
+                  disabled={isCheckingOut || isSimulating}
+                  className="w-full btn-press py-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.1] text-xs font-mono font-semibold text-white flex items-center justify-center gap-2 transition-all"
+                >
+                  {isCheckingOut ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#2DD4FF]" />
+                      <span>Transacting via Port 8000...</span>
+                    </>
+                  ) : (
+                    <>
+                      <ShoppingBag className="w-3.5 h-3.5 text-[#2DD4FF]" />
+                      <span>Test Real Storefront Checkout (Port 8000)</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* Real Live API Response Banner */}
+              {liveCheckoutResponse && (
+                <div
+                  className={`p-3.5 rounded-xl border text-xs font-mono space-y-1 transition-all ${
+                    liveCheckoutResponse.status === 201
+                      ? "bg-[#3DFFA2]/15 border-[#3DFFA2]/40 text-[#3DFFA2]"
+                      : liveCheckoutResponse.status === 400
+                      ? "bg-amber-400/15 border-amber-400/40 text-amber-400"
+                      : "bg-[#FF4D6A]/20 border-[#FF4D6A]/50 text-[#FF4D6A]"
+                  }`}
+                >
+                  <div className="flex items-center justify-between font-bold">
+                    <span className="flex items-center gap-1.5">
+                      {liveCheckoutResponse.status === 201 ? (
+                        <CheckCircle2 className="w-4 h-4" />
+                      ) : (
+                        <AlertTriangle className="w-4 h-4" />
+                      )}
+                      <span>
+                        HTTP {liveCheckoutResponse.status || "FAIL"}{" "}
+                        {liveCheckoutResponse.status === 201
+                          ? "CREATED (PURCHASE SUCCESS)"
+                          : liveCheckoutResponse.status === 400
+                          ? "BAD REQUEST (CONTRACT SAFE)"
+                          : "INTERNAL SERVER ERROR"}
+                      </span>
+                    </span>
+                    <span className="text-[10px] opacity-75">{liveCheckoutResponse.latencyMs}ms</span>
+                  </div>
+                  <p className="text-[11px] opacity-90">
+                    {liveCheckoutResponse.error ||
+                      `Order #${liveCheckoutResponse.data?.id?.slice(0, 8)} captured. Total: $${(
+                        (liveCheckoutResponse.data?.total || 0) / 100
+                      ).toFixed(2)}`}
+                  </p>
+                  {liveCheckoutResponse.status === 500 && (
+                    <button
+                      onClick={handleTriggerHeal}
+                      className="mt-2 w-full py-1.5 rounded-lg bg-[#2DD4FF] text-[#0A0B0D] font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm hover:bg-[#2DD4FF]/90 transition-colors"
+                    >
+                      <Zap className="w-3.5 h-3.5 fill-current" />
+                      <span>Heal Instantly with Meta AI (Port 9000)</span>
+                    </button>
+                  )}
+                </div>
+              )}
+
               {/* Dynamic State Banner */}
-              {!isHealed && !isSimulating && (
+              {!isHealed && !isSimulating && !liveCheckoutResponse && (
                 <div className="p-3.5 rounded-xl bg-[#FF4D6A]/15 border border-[#FF4D6A]/30 text-xs font-mono text-[#FF4D6A] space-y-1">
                   <div className="flex items-center justify-between font-bold">
                     <span className="flex items-center gap-1.5">
