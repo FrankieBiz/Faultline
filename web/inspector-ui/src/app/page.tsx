@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   AlertCircle,
   CheckCircle2,
@@ -205,13 +205,20 @@ export default function Home() {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const terminalEndRef = useRef<HTMLDivElement | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
 
-  const playAudio = (type: "click" | "success" | "error") => {
+  const playAudio = useCallback((type: "click" | "success" | "error") => {
     if (!soundEnabled || typeof window === "undefined") return;
     try {
-      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
+      if (!audioContextRef.current) {
+        const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        if (!AudioCtx) return;
+        audioContextRef.current = new AudioCtx();
+      }
+      const ctx = audioContextRef.current;
+      if (ctx.state === "suspended") {
+        ctx.resume();
+      }
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.connect(gain);
@@ -244,7 +251,7 @@ export default function Home() {
         osc.stop(ctx.currentTime + 0.25);
       }
     } catch {}
-  };
+  }, [soundEnabled]);
 
   const syncJobDetail = (detailData: Record<string, unknown>) => {
     if (Array.isArray(detailData.events) && detailData.events.length > 0) {

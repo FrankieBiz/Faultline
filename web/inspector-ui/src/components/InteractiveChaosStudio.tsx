@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -17,6 +17,14 @@ import {
   Check,
   RefreshCw,
 } from "lucide-react";
+
+interface LiveOrderData {
+  id?: string;
+  total?: number;
+  subtotal?: number;
+  discount?: number;
+  detail?: string;
+}
 
 interface InteractiveChaosStudioProps {
   onExecuteLivePipeline?: () => void;
@@ -122,13 +130,25 @@ export default function InteractiveChaosStudio({
   const [liveCheckoutResponse, setLiveCheckoutResponse] = useState<{
     status: number;
     latencyMs?: number;
-    data?: any;
+    data?: LiveOrderData;
     error?: string;
   } | null>(null);
+
+  const simTimersRef = useRef<NodeJS.Timeout[]>([]);
+
+  const clearSimTimers = () => {
+    simTimersRef.current.forEach((t) => clearTimeout(t));
+    simTimersRef.current = [];
+  };
+
+  useEffect(() => {
+    return () => clearSimTimers();
+  }, []);
 
   const scenario = SCENARIOS[selectedScenario];
 
   useEffect(() => {
+    clearSimTimers();
     setTypedCoupon(scenario.couponInput);
     setIsHealed(false);
     setSimStep(0);
@@ -183,18 +203,19 @@ export default function InteractiveChaosStudio({
   // Run autonomous healing simulation
   const handleTriggerHeal = () => {
     if (isSimulating) return;
+    clearSimTimers();
     setIsSimulating(true);
     setSimStep(1); // Sentry phase
 
-    setTimeout(() => {
+    const t1 = setTimeout(() => {
       setSimStep(2); // Muse Spark synthesis phase
     }, 700);
 
-    setTimeout(() => {
+    const t2 = setTimeout(() => {
       setSimStep(3); // Invariant verification phase
     }, 1500);
 
-    setTimeout(() => {
+    const t3 = setTimeout(() => {
       setSimStep(4); // Fully healed state
       setIsHealed(true);
       setIsSimulating(false);
@@ -202,9 +223,12 @@ export default function InteractiveChaosStudio({
         onExecuteLivePipeline();
       }
     }, 2200);
+
+    simTimersRef.current = [t1, t2, t3];
   };
 
   const handleReset = () => {
+    clearSimTimers();
     setIsHealed(false);
     setIsSimulating(false);
     setSimStep(0);

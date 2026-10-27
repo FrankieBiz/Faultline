@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import {
   Search,
   Zap,
@@ -72,151 +72,164 @@ export default function CommandPalette({
     }, 100);
   };
 
-  const commands: CommandItem[] = [
-    {
-      id: "run-repair",
-      category: "Actions",
-      title: "Run Autonomous Live Repair",
-      subtitle: "Execute Meta muse-spark-1.3 synthesis and sandbox verification",
-      shortcut: "Space",
-      icon: Zap,
-      action: () => {
-        onClose();
-        if (!isRunning) onRunRepair();
+  const commands: CommandItem[] = useMemo(
+    () => [
+      {
+        id: "run-repair",
+        category: "Actions",
+        title: "Run Autonomous Live Repair",
+        subtitle: "Execute Meta muse-spark-1.3 synthesis and sandbox verification",
+        shortcut: "Space",
+        icon: Zap,
+        action: () => {
+          onClose();
+          if (!isRunning) onRunRepair();
+        },
       },
-    },
-    {
-      id: "reset-env",
-      category: "Actions",
-      title: "Reset Sandbox Environment",
-      subtitle: "Restore pristine seeded BuggyShop state and clear ephemeral worktrees",
-      shortcut: "R",
-      icon: RefreshCw,
-      action: () => {
-        onClose();
-        onReset();
+      {
+        id: "reset-env",
+        category: "Actions",
+        title: "Reset Sandbox Environment",
+        subtitle: "Restore pristine seeded BuggyShop state and clear ephemeral worktrees",
+        shortcut: "R",
+        icon: RefreshCw,
+        action: () => {
+          onClose();
+          onReset();
+        },
       },
-    },
-    {
-      id: "export-audit",
-      category: "Actions",
-      title: "Export Forensic SOC2 Audit Packet",
-      subtitle: "Download audited Markdown report with cryptographic worktree receipts",
-      shortcut: "E",
-      icon: Download,
-      action: () => {
-        onClose();
-        onExportAudit();
+      {
+        id: "export-audit",
+        category: "Actions",
+        title: "Export Forensic SOC2 Audit Packet",
+        subtitle: "Download audited Markdown report with cryptographic worktree receipts",
+        shortcut: "E",
+        icon: Download,
+        action: () => {
+          onClose();
+          onExportAudit();
+        },
       },
-    },
-    {
-      id: "toggle-sound",
-      category: "Actions",
-      title: soundEnabled ? "Mute Tactile Web Audio" : "Enable Tactile Web Audio",
-      subtitle: "Harmonic C5 synthesizer feedback on state transitions",
-      shortcut: "M",
-      icon: soundEnabled ? Volume2 : VolumeX,
-      action: () => {
-        onClose();
-        onToggleSound();
+      {
+        id: "toggle-sound",
+        category: "Actions",
+        title: soundEnabled ? "Mute Tactile Web Audio" : "Enable Tactile Web Audio",
+        subtitle: "Harmonic C5 synthesizer feedback on state transitions",
+        shortcut: "M",
+        icon: soundEnabled ? Volume2 : VolumeX,
+        action: () => {
+          onClose();
+          onToggleSound();
+        },
       },
-    },
-    {
-      id: "toggle-hero",
-      category: "Actions",
-      title: "Toggle Hero View Mode",
-      subtitle: "Switch between 60fps Agent Swarm Cinema and Architecture DAG",
-      icon: Layers,
-      action: () => {
-        onClose();
-        onToggleHeroMode();
+      {
+        id: "toggle-hero",
+        category: "Actions",
+        title: "Toggle Hero View Mode",
+        subtitle: "Switch between 60fps Agent Swarm Cinema and Architecture DAG",
+        icon: Layers,
+        action: () => {
+          onClose();
+          onToggleHeroMode();
+        },
       },
-    },
-    {
-      id: "nav-demo",
-      category: "Navigation",
-      title: "Live Incident & Chaos Studio",
-      subtitle: "Inspect seeded TypeError, real-time SSE stream, and unified diff",
-      icon: Activity,
-      action: () => scrollToSection("demo"),
-    },
-    {
-      id: "nav-roi",
-      category: "Navigation",
-      title: "Enterprise Downtime ROI Simulator",
-      subtitle: "Interactive financial model calculating annual checkout revenue saved",
-      icon: Calculator,
-      action: () => scrollToSection("roi-calculator"),
-    },
-    {
-      id: "nav-competitive",
-      category: "Navigation",
-      title: "Competitive Benchmark Matrix",
-      subtitle: "FaultLine vs Sentry Seer vs Datadog Bits AI vs GitHub Copilot",
-      icon: ShieldAlert,
-      action: () => scrollToSection("competitive-matrix"),
-    },
-    {
-      id: "nav-integrations",
-      category: "Navigation",
-      title: "Developer Integration Droplets",
-      subtitle: "1-line cURL webhook, GitHub Actions CI/CD, and Docker Compose sidecars",
-      icon: Terminal,
-      action: () => scrollToSection("integrations"),
-    },
-    {
-      id: "nav-architecture",
-      category: "Navigation",
-      title: "Sanitized Sandbox Architecture",
-      subtitle: "cgroups-v2 isolation, 36 invariant proof engine, and AST firewall",
-      icon: GitBranch,
-      action: () => scrollToSection("architecture"),
-    },
-    {
-      id: "open-scorecard",
-      category: "Evaluation",
-      title: "Open Meta Hackathon Scorecard (100/100)",
-      subtitle: "View official rubric breakdown: Impact 30, Tooling 25, Depth 20, Demo 25",
-      shortcut: "D",
-      icon: Award,
-      action: () => {
-        onClose();
-        onOpenDossier();
+      {
+        id: "nav-demo",
+        category: "Navigation",
+        title: "Live Incident & Chaos Studio",
+        subtitle: "Inspect seeded TypeError, real-time SSE stream, and unified diff",
+        icon: Activity,
+        action: () => scrollToSection("demo"),
       },
-    },
-    {
-      id: "open-storefront",
-      category: "Evaluation",
-      title: "Open Customer Storefront (Port 3000)",
-      subtitle: "BuggyShop live frontend running on localhost:3000",
-      icon: ExternalLink,
-      action: () => {
-        window.open("http://127.0.0.1:3000", "_blank");
-        onClose();
+      {
+        id: "nav-roi",
+        category: "Navigation",
+        title: "Enterprise Downtime ROI Simulator",
+        subtitle: "Interactive financial model calculating annual checkout revenue saved",
+        icon: Calculator,
+        action: () => scrollToSection("roi-calculator"),
       },
-    },
-    {
-      id: "open-github",
-      category: "Evaluation",
-      title: "View FaultLine on GitHub",
-      subtitle: "Open FrankieBiz/Faultline repository in a new tab",
-      icon: ExternalLink,
-      action: () => {
-        window.open("https://github.com/FrankieBiz/Faultline", "_blank");
-        onClose();
+      {
+        id: "nav-competitive",
+        category: "Navigation",
+        title: "Competitive Benchmark Matrix",
+        subtitle: "FaultLine vs Sentry Seer vs Datadog Bits AI vs GitHub Copilot",
+        icon: ShieldAlert,
+        action: () => scrollToSection("competitive-matrix"),
       },
-    },
-  ];
+      {
+        id: "nav-integrations",
+        category: "Navigation",
+        title: "Developer Integration Droplets",
+        subtitle: "1-line cURL webhook, GitHub Actions CI/CD, and Docker Compose sidecars",
+        icon: Terminal,
+        action: () => scrollToSection("integrations"),
+      },
+      {
+        id: "nav-architecture",
+        category: "Navigation",
+        title: "Sanitized Sandbox Architecture",
+        subtitle: "cgroups-v2 isolation, 36 invariant proof engine, and AST firewall",
+        icon: GitBranch,
+        action: () => scrollToSection("architecture"),
+      },
+      {
+        id: "open-scorecard",
+        category: "Evaluation",
+        title: "Open Meta Hackathon Scorecard (100/100)",
+        subtitle: "View official rubric breakdown: Impact 30, Tooling 25, Depth 20, Demo 25",
+        shortcut: "D",
+        icon: Award,
+        action: () => {
+          onClose();
+          onOpenDossier();
+        },
+      },
+      {
+        id: "open-storefront",
+        category: "Evaluation",
+        title: "Open Customer Storefront (Port 3000)",
+        subtitle: "BuggyShop live frontend running on localhost:3000",
+        icon: ExternalLink,
+        action: () => {
+          window.open("http://127.0.0.1:3000", "_blank");
+          onClose();
+        },
+      },
+      {
+        id: "open-github",
+        category: "Evaluation",
+        title: "View FaultLine on GitHub",
+        subtitle: "Open FrankieBiz/Faultline repository in a new tab",
+        icon: ExternalLink,
+        action: () => {
+          window.open("https://github.com/FrankieBiz/Faultline", "_blank");
+          onClose();
+        },
+      },
+    ],
+    [
+      isRunning,
+      soundEnabled,
+      onRunRepair,
+      onReset,
+      onExportAudit,
+      onToggleSound,
+      onToggleHeroMode,
+      onOpenDossier,
+    ]
+  );
 
-  const filteredCommands = commands.filter((c) => {
+  const filteredCommands = useMemo(() => {
     const q = query.toLowerCase().trim();
-    if (!q) return true;
-    return (
-      c.title.toLowerCase().includes(q) ||
-      c.subtitle.toLowerCase().includes(q) ||
-      c.category.toLowerCase().includes(q)
+    if (!q) return commands;
+    return commands.filter(
+      (c) =>
+        c.title.toLowerCase().includes(q) ||
+        c.subtitle.toLowerCase().includes(q) ||
+        c.category.toLowerCase().includes(q)
     );
-  });
+  }, [commands, query]);
 
   useEffect(() => {
     if (isOpen) {
