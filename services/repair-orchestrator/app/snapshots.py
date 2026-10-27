@@ -114,6 +114,8 @@ class SnapshotManager:
         if seeded_hash != manifest["fixtures"]["seeded"]["sha256"]:
             raise PatchPolicyError("Seed source hash differs from the manifest")
         if diff is not None:
+            if not diff.endswith("\n"):
+                diff = diff + "\n"
             result = PatchPolicy().validate(diff, source, base_sha256=base_sha256)
             if not result.is_valid:
                 raise PatchPolicyError(result.error_message or "Patch failed policy")

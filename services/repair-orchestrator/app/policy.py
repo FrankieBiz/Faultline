@@ -97,6 +97,8 @@ def parse_unified_diff(diff: str, source: str) -> ParsedPatch:
     """Parse and apply exact hunks in memory, rejecting fuzzy or multiple files."""
     if not diff or _utf8_size(diff) > MAX_DIFF_BYTES:
         raise PatchPolicyError("Diff is empty or exceeds 16 KiB")
+    if not diff.endswith("\n"):
+        diff = diff + "\n"
     if _utf8_size(source) > MAX_SOURCE_BYTES:
         raise PatchPolicyError("Source exceeds 32 KiB")
     if "\x00" in diff or "\r" in diff or "\x00" in source:
