@@ -48,6 +48,8 @@ An overlapping startup build invalidated one browser run and three runtime-readi
 
 ## Harsh provisional judging assessment
 
+The [standalone score assessment](HACKATHON_SCORE_ASSESSMENT.md) explains each awarded score, the missing evidence, and what would justify reassessment.
+
 These are my evidence-limited estimates, not official results. The rubric weights are preserved from the provided webinar material; the official pages were rechecked October 27, 2026 ([Meta](https://dev.meta.ai/events/global-hackathon), [Cerebral Valley](https://events.cerebralvalley.ai/e/meta-ai-developer-hackathon)).
 
 | Criterion | Estimate | Why points are still missing |
