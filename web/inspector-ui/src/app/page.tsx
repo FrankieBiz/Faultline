@@ -26,6 +26,7 @@ import {
   Lock,
 } from "lucide-react";
 import AgentCinema from "@/components/AgentCinema";
+import InteractiveChaosStudio from "@/components/InteractiveChaosStudio";
 
 interface JobEvent {
   id: string;
@@ -771,59 +772,11 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Split Screen Before / After Comparison */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            
-            {/* Baseline Defect Viewport */}
-            <div className="surface-card overflow-hidden">
-              <div className="px-4 py-2.5 bg-black/60 border-b border-white/[0.06] flex items-center justify-between text-xs font-mono">
-                <span className="text-[#FF4D6A] flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-[#FF4D6A]" />
-                  Baseline: Seeded Defect
-                </span>
-                <span className="text-[10px] px-2 py-0.5 rounded bg-[#FF4D6A]/10 text-[#FF4D6A] border border-[#FF4D6A]/20">
-                  HTTP 500 INTERNAL ERROR
-                </span>
-              </div>
-
-              <div className="p-5 space-y-3 font-mono text-xs">
-                <div className="text-[#9AA0AA]">POST /api/checkout (coupon: &quot;&quot;)</div>
-                <div className="p-3.5 rounded-lg bg-[#FF4D6A]/10 border border-[#FF4D6A]/20 text-[#FF4D6A] overflow-x-auto leading-relaxed">
-                  TypeError: unsupported operand type(s) for -: &apos;int&apos; and &apos;NoneType&apos;<br />
-                  File checkout.py, line 44, in checkout<br />
-                  total = subtotal - discount
-                </div>
-                <p className="text-[11px] text-[#9AA0AA] leading-normal font-sans pt-1">
-                  Customer clicked Place Order with Trail Mug ($19.99). Cart stranded, zero order generated.
-                </p>
-              </div>
-            </div>
-
-            {/* Candidate Healed Viewport */}
-            <div className="surface-card overflow-hidden">
-              <div className="px-4 py-2.5 bg-black/60 border-b border-white/[0.06] flex items-center justify-between text-xs font-mono">
-                <span className="text-[#3DFFA2] flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-[#3DFFA2]" />
-                  Candidate: Sandboxed Repair
-                </span>
-                <span className="text-[10px] px-2 py-0.5 rounded bg-[#3DFFA2]/10 text-[#3DFFA2] border border-[#3DFFA2]/20">
-                  HTTP 201 CREATED (36/36 OK)
-                </span>
-              </div>
-
-              <div className="p-5 space-y-3 font-mono text-xs">
-                <div className="text-[#9AA0AA]">POST /candidate/checkout (order #4e3098c3-bbfa)</div>
-                <div className="p-3.5 rounded-lg bg-[#3DFFA2]/10 border border-[#3DFFA2]/20 text-[#3DFFA2] leading-relaxed">
-                  Subtotal: $19.99<br />
-                  Discount: $0.00 (Safe Default Applied)<br />
-                  <span className="font-semibold text-white">Total Charged: $19.99</span>
-                </div>
-                <p className="text-[11px] text-[#9AA0AA] leading-normal font-sans pt-1">
-                  Headless Playwright confirmed receipt render, database integrity, and zero side effects.
-                </p>
-              </div>
-            </div>
-          </div>
+          {/* INTERACTIVE CHAOS STUDIO & LIVE HEALER */}
+          <InteractiveChaosStudio
+            onExecuteLivePipeline={executePipeline}
+            isLiveRunning={isRunning}
+          />
 
           {/* Unified Diff & Live Event Terminal Tabs */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
