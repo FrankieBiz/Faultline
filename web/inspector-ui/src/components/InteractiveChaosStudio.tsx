@@ -124,6 +124,7 @@ export default function InteractiveChaosStudio({
   const [selectedScenario, setSelectedScenario] = useState<ScenarioType>("none-type");
   const [isHealed, setIsHealed] = useState<boolean>(false);
   const [isSimulating, setIsSimulating] = useState<boolean>(false);
+  const [isShaking, setIsShaking] = useState<boolean>(false);
   const [simStep, setSimStep] = useState<number>(0);
   const [typedCoupon, setTypedCoupon] = useState<string>("");
   const [isCheckingOut, setIsCheckingOut] = useState<boolean>(false);
@@ -133,6 +134,11 @@ export default function InteractiveChaosStudio({
     data?: LiveOrderData;
     error?: string;
   } | null>(null);
+
+  const triggerTremor = () => {
+    setIsShaking(true);
+    setTimeout(() => setIsShaking(false), 420);
+  };
 
   const simTimersRef = useRef<NodeJS.Timeout[]>([]);
 
@@ -175,6 +181,7 @@ export default function InteractiveChaosStudio({
       const latencyMs = Math.round(performance.now() - start);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        triggerTremor();
         setLiveCheckoutResponse({
           status: res.status,
           latencyMs,
@@ -190,6 +197,7 @@ export default function InteractiveChaosStudio({
         setIsHealed(true);
       }
     } catch {
+      triggerTremor();
       setLiveCheckoutResponse({
         status: 0,
         latencyMs: Math.round(performance.now() - start),
@@ -203,6 +211,7 @@ export default function InteractiveChaosStudio({
   // Run autonomous healing simulation
   const handleTriggerHeal = () => {
     if (isSimulating) return;
+    triggerTremor();
     clearSimTimers();
     setIsSimulating(true);
     setSimStep(1); // Sentry phase
@@ -235,7 +244,7 @@ export default function InteractiveChaosStudio({
   };
 
   return (
-    <div className="surface-card rounded-2xl border border-white/[0.08] overflow-hidden shadow-2xl relative bg-[#090A0D]">
+    <div className={`surface-card rounded-2xl border border-white/[0.08] overflow-hidden shadow-2xl relative bg-[#090A0D] transition-transform duration-100 ${isShaking ? "animate-seismic-shake" : ""}`}>
       
       {/* Dynamic ambient background glow */}
       <div

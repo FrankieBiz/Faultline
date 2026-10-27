@@ -17,7 +17,9 @@ MAX_SOURCE_BYTES = 32 * 1024
 MAX_CHANGED_LINES = 100
 _HUNK = re.compile(r"@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(?: [^\r\n]*)?\n?\Z")
 _INDEX = re.compile(r"index [0-9a-f]{7,64}\.\.[0-9a-f]{7,64}(?: 100644)?\n?\Z")
-_IMPORTS = frozenset({"typing", "uuid", "fastapi", "app.catalog", "app.orders", "app.schemas"})
+_IMPORTS = frozenset(
+    {"typing", "uuid", "fastapi", "app.catalog", "app.orders", "app.schemas", "math", "decimal"}
+)
 _DANGEROUS_NAMES = frozenset(
     {
         "eval",
