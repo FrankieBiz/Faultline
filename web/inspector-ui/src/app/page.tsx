@@ -29,9 +29,16 @@ import {
   VolumeX,
   FileText,
   Command,
+  Search,
+  Calculator,
+  ShieldAlert,
 } from "lucide-react";
 import AgentCinema from "@/components/AgentCinema";
 import InteractiveChaosStudio from "@/components/InteractiveChaosStudio";
+import CommandPalette from "@/components/CommandPalette";
+import RoiCalculator from "@/components/RoiCalculator";
+import CompetitiveMatrix from "@/components/CompetitiveMatrix";
+import IntegrationDroplet from "@/components/IntegrationDroplet";
 
 interface JobEvent {
   id: string;
@@ -181,6 +188,7 @@ export default function Home() {
   const [showDossier, setShowDossier] = useState<boolean>(false);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
   const [copiedAudit, setCopiedAudit] = useState<boolean>(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState<boolean>(false);
   const [activeAttempt, setActiveAttempt] = useState<{
     attempt_number: number;
     prompt_tokens?: number;
@@ -291,7 +299,18 @@ export default function Home() {
         return;
       }
 
+      if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
+        e.preventDefault();
+        playAudio("click");
+        setCommandPaletteOpen((prev) => !prev);
+        return;
+      }
+
       if (e.key === "Escape") {
+        if (commandPaletteOpen) {
+          setCommandPaletteOpen(false);
+          return;
+        }
         setShowDossier(false);
       } else if (e.code === "Space") {
         e.preventDefault();
@@ -315,7 +334,7 @@ export default function Home() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isRunning, activeJob, activeAttempt, soundEnabled]);
+  }, [isRunning, activeJob, activeAttempt, soundEnabled, commandPaletteOpen]);
 
   // Fetch initial state
   useEffect(() => {
@@ -634,15 +653,30 @@ ${activeAttempt?.parsed_diff || CODE_DIFF}
               <span>FaultLine</span>
             </a>
 
-            <div className="hidden md:flex items-center gap-5 text-sm text-[#9AA0AA]">
+            <div className="hidden lg:flex items-center gap-5 text-sm text-[#9AA0AA]">
               <a href="#how-it-works" className="hover:text-white transition-colors">How it Works</a>
               <a href="#demo" className="hover:text-white transition-colors">Live Demo</a>
+              <a href="#roi-calculator" className="hover:text-white transition-colors">ROI Calculator</a>
+              <a href="#competitive-matrix" className="hover:text-white transition-colors">Benchmarks</a>
+              <a href="#integrations" className="hover:text-white transition-colors">Integrations</a>
               <a href="#architecture" className="hover:text-white transition-colors">Architecture</a>
-              <a href="#use-cases" className="hover:text-white transition-colors">Use Cases</a>
             </div>
           </div>
 
           <div className="flex items-center gap-2.5">
+            <button
+              onClick={() => {
+                playAudio("click");
+                setCommandPaletteOpen(true);
+              }}
+              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-white/[0.1] hover:border-white/[0.2] bg-white/[0.03] text-xs font-mono text-[#9AA0AA] hover:text-white transition-colors"
+              title="Open Command Engine (⌘K)"
+            >
+              <Search className="w-3.5 h-3.5 text-[#2DD4FF]" />
+              <span className="hidden xl:inline">Commands</span>
+              <kbd className="px-1 py-0.5 rounded bg-white/[0.08] text-[9px] text-[#F5F6F8]">⌘K</kbd>
+            </button>
+
             <button
               onClick={() => {
                 setSoundEnabled((s) => !s);
@@ -698,6 +732,42 @@ ${activeAttempt?.parsed_diff || CODE_DIFF}
           </div>
         </div>
       </nav>
+
+      {/* LIVE INCIDENT SLA TICKER */}
+      <div className="border-b border-white/[0.06] bg-[#0E1015]/80 text-[11px] font-mono px-6 py-2 overflow-x-auto whitespace-nowrap">
+        <div className="max-w-[1200px] mx-auto flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2.5">
+            <span
+              className={`w-2 h-2 rounded-full ${
+                activeStage === "cleanup" || activeJob?.state === "succeeded"
+                  ? "bg-[#3DFFA2] shadow-[0_0_8px_#3DFFA2]"
+                  : isRunning
+                  ? "bg-[#2DD4FF] animate-pulse shadow-[0_0_8px_#2DD4FF]"
+                  : "bg-amber-400 shadow-[0_0_8px_#F59E0B]"
+              }`}
+            />
+            <span className="text-white font-medium">
+              {activeStage === "cleanup" || activeJob?.state === "succeeded"
+                ? "INCIDENT CLOSED: Port 8000 Checkout Restored"
+                : isRunning
+                ? `ACTIVE SEV-1: Autonomous Healing In Progress (${(elapsedTime / 10).toFixed(1)}s)`
+                : "INCIDENT RADAR: Monitoring Port 8000 for Unhandled Exceptions"}
+            </span>
+            <span className="text-[#7C8290]">|</span>
+            <span className="text-[#9AA0AA]">
+              Scope: <code className="text-[#2DD4FF]">apps/buggyshop-backend/app/routes/checkout.py</code>
+            </span>
+          </div>
+
+          <div className="hidden sm:flex items-center gap-4 text-[#7C8290]">
+            <span>SLA: &lt; 20.4s</span>
+            <span>•</span>
+            <span>Engine: Meta muse-spark-1.3</span>
+            <span>•</span>
+            <span className="text-[#3DFFA2]">Invariants: 36/36 Green</span>
+          </div>
+        </div>
+      </div>
 
       <main id="main-content">
         {/* 2. HERO SECTION */}
@@ -1122,7 +1192,16 @@ ${activeAttempt?.parsed_diff || CODE_DIFF}
         </div>
       </section>
 
-      {/* 6. USE CASES */}
+      {/* 6. ENTERPRISE ROI & DOWNTIME CALCULATOR */}
+      <RoiCalculator onPlayAudio={playAudio} />
+
+      {/* 7. COMPETITIVE BENCHMARK MATRIX */}
+      <CompetitiveMatrix onPlayAudio={playAudio} />
+
+      {/* 8. DEVELOPER DROP-IN INTEGRATIONS */}
+      <IntegrationDroplet onPlayAudio={playAudio} />
+
+      {/* 9. USE CASES */}
       <section id="use-cases" className="py-24 max-w-[1200px] mx-auto px-6 space-y-12">
         <div className="space-y-3">
           <div className="text-xs font-mono uppercase tracking-wider text-[#2DD4FF]">
@@ -1352,6 +1431,17 @@ ${activeAttempt?.parsed_diff || CODE_DIFF}
         <button
           onClick={() => {
             playAudio("click");
+            setCommandPaletteOpen(true);
+          }}
+          className="hover:text-white transition-colors flex items-center gap-1.5"
+          title="Open Command Engine (⌘K)"
+        >
+          <kbd className="px-1.5 py-0.5 rounded bg-white/[0.08] text-white text-[10px]">⌘K</kbd>
+          <span className="hidden md:inline">Commands</span>
+        </button>
+        <button
+          onClick={() => {
+            playAudio("click");
             executePipeline();
           }}
           disabled={isRunning}
@@ -1403,6 +1493,24 @@ ${activeAttempt?.parsed_diff || CODE_DIFF}
           )}
         </button>
       </aside>
+
+      {/* COMMAND PALETTE POWER-USER MODAL */}
+      <CommandPalette
+        isOpen={commandPaletteOpen}
+        onClose={() => setCommandPaletteOpen(false)}
+        onRunRepair={executePipeline}
+        onReset={handleReset}
+        onExportAudit={handleExportForensicReport}
+        onToggleSound={() => {
+          setSoundEnabled((s) => !s);
+          playAudio("click");
+        }}
+        soundEnabled={soundEnabled}
+        isRunning={isRunning}
+        onOpenDossier={() => setShowDossier(true)}
+        onToggleHeroMode={() => setHeroDisplayMode((m) => (m === "cinema" ? "pipeline" : "cinema"))}
+        onPlayAudio={playAudio}
+      />
     </div>
   );
 }
