@@ -58,19 +58,31 @@ in one transaction. Failed admission leaves no orphan queued job.
 
 ## Runtime integration boundary
 
-`app.runtime.Runtime` is the typed integration seam for the isolated backend and
-trusted browser runner. Its default `UnavailableRuntime` reports blocked readiness
-and rejects job admission with 503 `isolated_runtime_unavailable`. There is no
-production switch that executes candidate code on the host and no HTTP switch
-that installs a test runtime. `create_app(runtime=...)` is a trusted Python
-composition hook for the future container adapter.
+The default `UnavailableRuntime` blocks execution with HTTP 503. Set
+`FAULTLINE_RUNTIME=isolated` to select `IsolatedRuntime`; the demo launcher does this
+explicitly. The old host-execution demo adapter has been removed. Python tests can
+still inject labeled simulations via `create_app(runtime=...)`.
 
-The browser runner currently being developed elsewhere in this checkout uses
-different scenario/contracts and lacks the fixed `--request` interface. Connecting
-it requires aligning its generated contracts and named verification assertions,
-implementing the isolated container profile, and passing containment checks.
-This service does **not** claim live browser, container, or hosted Meta repair
-validation. A healthy HTTP process alone does not imply repair readiness.
+The isolated implementation requires Linux, Bubblewrap, working unprivileged
+user namespaces, the built storefront/runner, and installed Playwright Chromium.
+Startup launches the actual isolation profile and trusted browser to establish
+readiness. Candidate code receives readonly source/interpreter/library mounts,
+private process/network namespaces, bounded private tmpfs, process resource limits,
+and a prebound backend listener FD. The trusted frontend, HTTP assertions, and
+browser runner execute outside the candidate boundary. No host-writable directory
+or model/controller credential is mounted into it.
+
+Evidence consists of actual screenshots, trace ZIPs, bounded request logs, correlated
+backend logs, and measured assertions. HTTP response bytes are bounded while
+streaming. Liveness pipes supervise owned subprocess groups through cancellation
+and controller exit; scratch resources stay under the job-owned snapshot runtime.
+The output is a verified candidate, not a deployed production checkout.
+
+Bubblewrap is a Linux namespace boundary, not a VM. Resource limits are per process,
+not an aggregate cgroup memory quota. This profile still merits independent review
+before expanding to arbitrary applications or exposing job submission publicly.
+
+The typed runtime contract remains:
 
 A runtime implementation must:
 
@@ -90,7 +102,7 @@ A runtime implementation must:
 Snapshots are real detached worktrees from the fixture's pinned seed commit.
 Git performs `apply --check --index` and `apply --index`; exports come from the
 staged index. Only backend application Python files enter candidate snapshots.
-The host parses candidate ASTs but never imports or executes candidate code.
+The controller parses candidate ASTs; candidate imports run only in the restricted namespace.
 AST checks are bounded policy, not process isolation.
 
 ## Verification
@@ -107,7 +119,7 @@ explicit runtime simulations. The hero test additionally executes the exported
 seed/candidate in **test-only host subprocesses**, measuring the real fixture API
 against independent pricing/validation assertions. Screenshot/trace bytes in these
 simulations are labeled test data; they are not browser evidence or containment
-proof. Production cannot select these simulations.
+proof. Production cannot select these simulations. Executions record `runtime_kind`; historical records without isolated browser provenance remain unverified in the Inspector.
 
 Deadlines use a monotonic clock: preparation/baseline 20 seconds, each attempt
 75 seconds, generation 45 seconds, verification 20 seconds, work cutoff 170 seconds,
@@ -116,3 +128,13 @@ attempts are permitted, and a second requires a complete remaining attempt budge
 Controller-enforced runner timeouts persist `timed_out` reports without inventing
 missing evidence. Only verified behavior plus durable evidence and confirmed
 cleanup can finalize `state=succeeded, outcome=verified`.
+
+Run the required isolated browser checks after building dependencies:
+
+```bash
+make integration
+```
+
+This target fails if containment or Chromium is unavailable. The general test suite
+may skip environment-dependent browser cases on unprepared machines; those skips
+do not establish isolated runtime correctness.

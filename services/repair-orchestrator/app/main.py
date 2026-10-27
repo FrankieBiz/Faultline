@@ -21,7 +21,7 @@ from pydantic import ValidationError
 from sse_starlette import ServerSentEvent
 from sse_starlette.sse import EventSourceResponse
 
-from app.database import TERMINAL_STATES, Database, DatabaseError
+from app.database import MAX_EVENT_SEQUENCE, TERMINAL_STATES, Database, DatabaseError
 from app.evidence import ArtifactError, EvidenceStore
 from app.model_adapter import MetaRepairAdapter, ModelSettings
 from app.runtime import Runtime, UnavailableRuntime
@@ -162,14 +162,11 @@ def create_app(
                 value for value in (configuration.control_token, model.settings.api_key) if value
             ),
         )
-        runtime_impl = runtime
-        if runtime_impl is None:
-            if os.environ.get("FAULTLINE_DEMO_RUNTIME") == "1":
-                from app.local_runtime import LocalDemoRuntime
+        runtime_impl = runtime if runtime is not None else UnavailableRuntime()
+        if runtime is None and os.environ.get("FAULTLINE_RUNTIME") == "isolated":
+            from app.isolated_runtime import IsolatedRuntime
 
-                runtime_impl = LocalDemoRuntime()
-            else:
-                runtime_impl = UnavailableRuntime()
+            runtime_impl = IsolatedRuntime()
 
         worker = RepairWorker(
             db,
@@ -328,8 +325,8 @@ def create_app(
         job_id: str,
         request: Request,
         control: Control,
-        last_event_id: Annotated[int | None, Header(ge=0)] = None,
-        after: Annotated[int, Query(ge=0)] = 0,
+        last_event_id: Annotated[int | None, Header(ge=0, le=MAX_EVENT_SEQUENCE)] = None,
+        after: Annotated[int, Query(ge=0, le=MAX_EVENT_SEQUENCE)] = 0,
     ) -> EventSourceResponse:
         """Stream authenticated stage events, with monotonic replay cursors."""
         control.database.get_job(job_id)

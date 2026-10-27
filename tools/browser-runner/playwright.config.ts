@@ -28,10 +28,19 @@ export default defineConfig({
     screenshot: "off",
     video: "off",
   },
+  webServer: process.env.FAULTLINE_INSPECTOR_TEST === "1" ? {
+    command: "node ../../web/inspector-ui/node_modules/next/dist/bin/next start ../../web/inspector-ui -p 4100 -H 127.0.0.1",
+    url: "http://127.0.0.1:4100", reuseExistingServer: false, timeout: 30_000,
+  } : undefined,
   projects: [
     {
       name: "unit",
       testDir: "./tests/unit",
+    },
+    {
+      name: "inspector",
+      testDir: "./tests/inspector",
+      use: { ...devices["Desktop Chrome"], baseURL: "http://127.0.0.1:4100" },
     },
     {
       name: "chromium-e2e",

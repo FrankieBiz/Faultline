@@ -1,4 +1,4 @@
-.PHONY: check test lint typecheck build provenance frontend runner inspector
+.PHONY: setup check test lint typecheck build provenance frontend runner inspector browser integration
 
 BACKEND := apps/buggyshop-backend
 UV := uv run --project $(BACKEND) --python 3.13 --locked
@@ -10,6 +10,15 @@ INSPECTOR := web/inspector-ui
 
 check: lint typecheck test provenance frontend runner inspector build
 
+setup:
+	./scripts/setup.sh
+
+integration: frontend runner
+	FAULTLINE_REQUIRE_ISOLATED_TESTS=1 $(ORCHESTRATOR_UV) pytest $(ORCHESTRATOR)/tests/test_isolated_runtime.py
+
+browser:
+	cd $(RUNNER) && npm run test:inspector
+
 frontend:
 	cd $(FRONTEND) && npm run check
 
@@ -20,12 +29,12 @@ inspector:
 	cd $(INSPECTOR) && npm run check
 
 test:
-	$(UV) pytest $(BACKEND)/tests
+	$(UV) pytest $(BACKEND)/tests tests
 	$(ORCHESTRATOR_UV) pytest $(ORCHESTRATOR)/tests
 
 lint:
-	$(UV) ruff check --config $(BACKEND)/pyproject.toml $(BACKEND) shared fixtures
-	$(UV) ruff format --check --config $(BACKEND)/pyproject.toml $(BACKEND) shared fixtures
+	$(UV) ruff check --config $(BACKEND)/pyproject.toml $(BACKEND) shared fixtures tests
+	$(UV) ruff format --check --config $(BACKEND)/pyproject.toml $(BACKEND) shared fixtures tests
 	$(ORCHESTRATOR_UV) ruff check --config $(ORCHESTRATOR)/pyproject.toml $(ORCHESTRATOR)
 	$(ORCHESTRATOR_UV) ruff format --check --config $(ORCHESTRATOR)/pyproject.toml $(ORCHESTRATOR)
 

@@ -609,6 +609,8 @@ export async function executeCheckoutScenario(options: CheckoutScenarioOptions):
       });
       await store.register(passing ? "final_screenshot" : "failure_screenshot", screenshotPath, "image/png");
     } catch (error) {
+      infrastructureFailure = true;
+      flowFailure = { step: "capture_screenshot", error, kind: "runner_error" };
       log(`screenshot failed: ${errorDetails(error).message}`);
     }
 

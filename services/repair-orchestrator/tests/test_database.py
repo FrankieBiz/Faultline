@@ -164,3 +164,43 @@ async def test_reports_attempts_and_artifacts_remain_durable(harness: Harness) -
     assert harness.database.get_artifact(artifact.id) == artifact
     with pytest.raises(sqlite3.IntegrityError):
         harness.database.save_artifact(artifact)
+
+
+def test_quarantined_reset_reservations_are_exclusive_across_connections(tmp_path: Path) -> None:
+    connections = [Database(tmp_path / "faultline.db") for _ in range(4)]
+    try:
+        job = connections[0].create_job(submission())
+        connections[0].finish_job(job.id, TerminalOutcome.INFRASTRUCTURE_ERROR, clean=False)
+
+        def reserve(db: Database) -> str:
+            try:
+                lease = db.begin_reset()
+                assert lease.owner_id is not None
+                return lease.owner_id
+            except DatabaseError as exc:
+                return exc.code
+
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            results = list(executor.map(reserve, connections))
+        assert results.count("busy") == 3
+        owner = next(result for result in results if result != "busy")
+        connections[0].finish_reset(owner, clean=False)
+        assert connections[0].get_lease().quarantined
+        assert connections[0].get_lease().owner_id is None
+        with pytest.raises(DatabaseError, match="cleanup_required"):
+            connections[0].create_job(submission())
+        retry = connections[0].begin_reset()
+        assert retry.owner_id is not None
+        connections[0].finish_reset(retry.owner_id, clean=True)
+        assert not connections[0].get_lease().quarantined
+    finally:
+        for db in connections:
+            db.close()
+
+
+@pytest.mark.parametrize("after", [-1, 2**63, 10**100])
+def test_event_cursor_rejects_values_outside_sqlite_range(harness: Harness, after: int) -> None:
+    job = harness.database.create_job(submission())
+    with pytest.raises(ValueError, match="Invalid event cursor"):
+        harness.database.list_events(job.id, after=after)
+    assert harness.database.list_events(job.id, after=2**63 - 1) == []

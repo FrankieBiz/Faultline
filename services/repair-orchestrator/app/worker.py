@@ -254,6 +254,7 @@ class RepairWorker:
                         attempt_id=attempt_id,
                         app_generation_id=snapshot.generation_id,
                         candidate_snapshot_sha256=snapshot.sha256,
+                        runtime_kind=getattr(self.runtime, "kind", "unverified"),
                         artifact_ids=[],
                         started_at=started,
                         finished_at=utcnow(),
@@ -320,6 +321,7 @@ class RepairWorker:
                     attempt_id=attempt_id,
                     app_generation_id=snapshot.generation_id,
                     candidate_snapshot_sha256=snapshot.sha256,
+                    runtime_kind=getattr(self.runtime, "kind", "unverified"),
                     artifact_ids=[item.id for item in artifacts],
                     started_at=started,
                     finished_at=utcnow(),
@@ -669,6 +671,12 @@ class RepairWorker:
             )
         async with asyncio.timeout(self.budgets.cleanup):
             await self.runtime.reconcile(installation)
+        lease = self.database.get_lease()
+        if lease.owner_id is not None and lease.owner_id.startswith("reset:"):
+            # This controller is the sole startup owner. An interrupted reset
+            # cannot remain an active maintenance reservation after restart.
+            # Keep quarantine until an explicit reset confirms all cleanup.
+            self.database.finish_reset(lease.owner_id, clean=False)
 
     async def reset(self) -> None:
         """Reserve idle maintenance and clear quarantine only after confirmed cleanup."""

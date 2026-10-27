@@ -86,6 +86,7 @@ def test_job_endpoints_and_private_artifact_paths(client: TestClient) -> None:
     done = wait_completed(client, job_id)
     assert done["job"]["outcome"] == "verified"
     assert done["baseline"]["report"]["verdict"] == "failed"
+    assert done["baseline"]["runtime_kind"] == "unverified"
     assert len(done["attempts"]) == 1
     assert len(client.get("/api/faultline/jobs", headers=HEADERS).json()["jobs"]) == 1
     assert "storage_key" not in json.dumps(done)
@@ -150,7 +151,11 @@ def test_readiness_explicitly_labels_deterministic_mode(client: TestClient) -> N
     assert client.get("/api/faultline/scenarios", headers=HEADERS).status_code == 200
 
 
-def test_unconfigured_runtime_blocks_jobs_without_host_fallback(tmp_path: Path) -> None:
+def test_unconfigured_runtime_blocks_jobs_without_host_fallback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FAULTLINE_DEMO_RUNTIME", "1")
+    monkeypatch.delenv("FAULTLINE_RUNTIME", raising=False)
     adapter = MetaRepairAdapter(ModelSettings())
     app = create_app(Settings(data_dir=tmp_path, control_token=TOKEN), adapter=adapter)
     with TestClient(app) as client:
@@ -233,3 +238,19 @@ async def test_live_event_generator_observes_transitions(harness: Harness) -> No
 def test_oversized_json_is_rejected(client: TestClient) -> None:
     response = client.post("/api/faultline/jobs", content=b"x" * 4097, headers=HEADERS)
     assert response.status_code == 413
+
+
+@pytest.mark.parametrize("after", [-1, 2**63, 10**100])
+@pytest.mark.parametrize("location", ["query", "header"])
+def test_sse_cursor_rejects_values_outside_sqlite_range(
+    client: TestClient, after: int, location: str
+) -> None:
+    created = client.post(
+        "/api/faultline/jobs", json=submission().model_dump(mode="json"), headers=HEADERS
+    )
+    job_id = created.json()["job_id"]
+    headers = {**HEADERS, "Last-Event-ID": str(after)} if location == "header" else HEADERS
+    params = {"after": after} if location == "query" else {}
+    response = client.get(f"/api/faultline/jobs/{job_id}/events", headers=headers, params=params)
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "invalid_request"

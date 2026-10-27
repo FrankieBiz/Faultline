@@ -17,9 +17,14 @@ MAX_SOURCE_BYTES = 32 * 1024
 MAX_CHANGED_LINES = 100
 _HUNK = re.compile(r"@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(?: [^\r\n]*)?\n?\Z")
 _INDEX = re.compile(r"index [0-9a-f]{7,64}\.\.[0-9a-f]{7,64}(?: 100644)?\n?\Z")
-_IMPORTS = frozenset(
-    {"typing", "uuid", "fastapi", "app.catalog", "app.orders", "app.schemas", "math", "decimal"}
-)
+_IMPORTS = {
+    "typing": frozenset({"cast"}),
+    "uuid": frozenset({"uuid4"}),
+    "fastapi": frozenset({"HTTPException"}),
+    "app.catalog": frozenset({"get_product"}),
+    "app.orders": frozenset({"LineItem", "Order", "create_order"}),
+    "app.schemas": frozenset({"CheckoutRequest"}),
+}
 _DANGEROUS_NAMES = frozenset(
     {
         "eval",
@@ -195,19 +200,24 @@ def validate_ast(source: str) -> tuple[bool, bool, str | None]:
         return False, False, "Candidate contains invalid Python syntax"
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
-            if any(alias.name not in _IMPORTS for alias in node.names):
-                return True, False, "Import outside the trusted application dependencies"
+            # Modules expose transitive capabilities, such as typing.sys.modules.
+            return True, False, "Module imports are forbidden; import an approved symbol"
         elif isinstance(node, ast.ImportFrom):
             if node.level or node.module not in _IMPORTS:
                 return True, False, "Import outside the trusted application dependencies"
-            if any(alias.name.startswith("__") or alias.name == "*" for alias in node.names):
-                return True, False, "Dynamic or private imports are forbidden"
+            if any(alias.name not in _IMPORTS[node.module] for alias in node.names):
+                return True, False, "Import outside the approved application symbols"
         elif isinstance(node, ast.Name):
             if node.id in _DANGEROUS_NAMES or node.id.startswith("__"):
                 return True, False, "Forbidden dynamic execution or operating-system capability"
         elif isinstance(node, ast.Attribute):
             if node.attr in _DANGEROUS_ATTRIBUTES or node.attr.startswith("__"):
                 return True, False, "Forbidden dynamic or operating-system attribute"
+        elif isinstance(node, ast.MatchClass):
+            if any(
+                name.startswith("__") or name in _DANGEROUS_ATTRIBUTES for name in node.kwd_attrs
+            ):
+                return True, False, "Forbidden private attributes in class patterns"
     return True, True, None
 
 

@@ -32,6 +32,8 @@ from shared.contracts.models import (
     TerminalOutcome,
 )
 
+MAX_EVENT_SEQUENCE = 2**63 - 1
+
 TERMINAL_STATES = frozenset(
     {JobState.SUCCEEDED, JobState.FAILED, JobState.CANCELLED, JobState.INTERRUPTED}
 )
@@ -251,7 +253,12 @@ class Database:
             active = self._connection.execute(
                 "SELECT id FROM jobs WHERE state IN ('queued', 'running') LIMIT 1"
             ).fetchone()
-            if active is not None or (lease.owner_id is not None and not lease.quarantined):
+            reset_active = lease.owner_id is not None and lease.owner_id.startswith("reset:")
+            if (
+                active is not None
+                or reset_active
+                or (lease.owner_id is not None and not lease.quarantined)
+            ):
                 raise DatabaseError("busy", 409, active[0] if active else lease.job_id)
             lease = lease.model_copy(
                 update={"owner_id": f"reset:{uuid4()}", "updated_at": utcnow()}
@@ -268,7 +275,9 @@ class Database:
             self._save_lease(
                 lease.model_copy(
                     update={
-                        "owner_id": None if clean else owner_id,
+                        # A finished reset releases maintenance ownership even if
+                        # cleanup failed; quarantine still prevents job admission.
+                        "owner_id": None,
                         "job_id": None if clean else lease.job_id,
                         "quarantined": not clean,
                         "updated_at": utcnow(),
@@ -410,7 +419,7 @@ class Database:
 
     def list_events(self, job_id: str, after: int = 0, limit: int = 100) -> list[JobEvent]:
         """Replay an ordered, bounded SSE batch after a committed sequence."""
-        if after < 0 or not 1 <= limit <= 1000:
+        if not 0 <= after <= MAX_EVENT_SEQUENCE or not 1 <= limit <= 1000:
             raise ValueError("Invalid event cursor or limit")
         with self._lock:
             self._job(job_id)

@@ -157,65 +157,66 @@ function CheckoutForm({ lines, catalog, onRetryCatalog, onPlaced }: CheckoutForm
     <div className="mt-10 grid items-start gap-12 lg:grid-cols-[minmax(0,1fr)_23rem]">
       <form id={FORM_ID} onSubmit={handleSubmit} aria-label="Checkout" className="space-y-12">
         {failure ? <CheckoutFailure failure={failure} /> : null}
+        <fieldset disabled={submitting} className="space-y-12">
+          <section aria-labelledby="cart-heading">
+            <h2 id="cart-heading" className="text-2xl font-extrabold tracking-tight">
+              Your cart
+            </h2>
+            <ul className="mt-4 divide-y divide-stone border-y border-stone">
+              {preview.lines.map((line) => (
+                <CartRow key={line.kind === "priced" ? line.product.id : line.productId} line={line} />
+              ))}
+            </ul>
+          </section>
 
-        <section aria-labelledby="cart-heading">
-          <h2 id="cart-heading" className="text-2xl font-extrabold tracking-tight">
-            Your cart
-          </h2>
-          <ul className="mt-4 divide-y divide-stone border-y border-stone">
-            {preview.lines.map((line) => (
-              <CartRow key={line.kind === "priced" ? line.product.id : line.productId} line={line} />
-            ))}
-          </ul>
-        </section>
+          <fieldset className="space-y-5">
+            <legend className="text-2xl font-extrabold tracking-tight">Shipping details</legend>
+            <Field id="name" label="Name" autoComplete="name" />
+            <Field id="email" label="Email" type="email" autoComplete="email" />
+            <div>
+              <label htmlFor="address" className="block font-bold">
+                Address
+              </label>
+              <textarea
+                id="address"
+                name="address"
+                required
+                rows={3}
+                autoComplete="street-address"
+                className="field-input mt-2 resize-y"
+              />
+            </div>
+          </fieldset>
 
-        <fieldset className="space-y-5">
-          <legend className="text-2xl font-extrabold tracking-tight">Shipping details</legend>
-          <Field id="name" label="Name" autoComplete="name" />
-          <Field id="email" label="Email" type="email" autoComplete="email" />
-          <div>
-            <label htmlFor="address" className="block font-bold">
-              Address
+          <section aria-labelledby="coupon-heading">
+            <h2 id="coupon-heading" className="text-2xl font-extrabold tracking-tight">
+              Coupon
+            </h2>
+            <label htmlFor={couponInputId} className="mt-4 block font-bold">
+              Coupon code
             </label>
-            <textarea
-              id="address"
-              name="address"
-              required
-              rows={3}
-              autoComplete="street-address"
-              className="field-input mt-2 resize-y"
-            />
-          </div>
+            <div className="mt-2 flex max-w-md gap-3">
+              <input
+                id={couponInputId}
+                name="coupon"
+                type="text"
+                autoComplete="off"
+                spellCheck={false}
+                value={couponText}
+                aria-describedby={couponHintId}
+                onChange={(event) => setCouponText(event.target.value)}
+                onKeyDown={handleCouponKeyDown}
+                className="field-input uppercase"
+              />
+              <button type="button" className="btn-secondary shrink-0" onClick={applyCoupon}>
+                Apply<span className="sr-only"> coupon</span>
+              </button>
+            </div>
+            <div id={couponHintId} role="status" className="mt-2 min-h-6 text-sm">
+              <CouponStatus applied={appliedCoupon} onRemove={removeCoupon} />
+            </div>
+          </section>
         </fieldset>
-
-        <section aria-labelledby="coupon-heading">
-          <h2 id="coupon-heading" className="text-2xl font-extrabold tracking-tight">
-            Coupon
-          </h2>
-          <label htmlFor={couponInputId} className="mt-4 block font-bold">
-            Coupon code
-          </label>
-          <div className="mt-2 flex max-w-md gap-3">
-            <input
-              id={couponInputId}
-              name="coupon"
-              type="text"
-              autoComplete="off"
-              spellCheck={false}
-              value={couponText}
-              aria-describedby={couponHintId}
-              onChange={(event) => setCouponText(event.target.value)}
-              onKeyDown={handleCouponKeyDown}
-              className="field-input uppercase"
-            />
-            <button type="button" className="btn-secondary shrink-0" onClick={applyCoupon}>
-              Apply<span className="sr-only"> coupon</span>
-            </button>
-          </div>
-          <div id={couponHintId} role="status" className="mt-2 min-h-6 text-sm">
-            <CouponStatus applied={appliedCoupon} onRemove={removeCoupon} />
-          </div>
-        </section>
       </form>
 
       <OrderSummary

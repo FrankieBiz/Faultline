@@ -27,10 +27,10 @@ Prices are always taken from the backend. The checkout summary previews publishe
 
 ```bash
 npm ci
-BUGGYSHOP_BACKEND_URL=http://127.0.0.1:8000 npm run build   # default backend URL shown
-npm run start                                               # http://127.0.0.1:3000
+npm run build
+BUGGYSHOP_BACKEND_URL=http://127.0.0.1:8000 npm run start  # http://127.0.0.1:3000
 ```
 
-`next.config.ts` proxies browser `/api/*` requests to `BUGGYSHOP_BACKEND_URL`. Next.js writes rewrites into the build output, so the URL is fixed when `npm run build` runs; changing it at `npm run start` has no effect. Build the job image with the backend's internal service name.
+`src/app/api/[...path]/route.ts` proxies browser `/api/*` requests to the runtime `BUGGYSHOP_BACKEND_URL`. Each candidate storefront can select its own isolated backend without rebuilding. Requests retain the case namespace and server request ID.
 
 `npm run check` runs ESLint, `tsc --noEmit`, and the production build.

@@ -151,3 +151,39 @@ def test_bad_hunk_coordinates(seeded_source: str, replacement: str) -> None:
 
     diff = re.sub(r"@@[^\n]*@@", replacement, deterministic_diff(seeded_source), count=1)
     assert not PatchPolicy().validate(diff, seeded_source).is_valid
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "from typing import sys as safe\nsafe.modules['io'].FileIO('file', 'w')\n",
+        "from typing import sys\n",
+        "import typing as safe\nsafe.sys.modules['io'].FileIO('file', 'w')\n",
+        "import fastapi as safe\nsafe.responses.FileResponse('file')\n",
+        "from fastapi import responses as safe\nsafe.FileResponse('file')\n",
+        "from app.orders import RLock as safe\n",
+    ],
+)
+def test_transitive_module_capabilities_are_rejected(source: str, seeded_source: str) -> None:
+    result = PatchPolicy().validate(patch(seeded_source, seeded_source + source), seeded_source)
+    assert result.syntax_valid and not result.ast_safe and not result.is_valid
+
+
+def test_only_seed_import_symbols_and_aliases_are_accepted() -> None:
+    syntax_valid, safe, error = validate_ast(
+        "from typing import cast as typed\n"
+        "from uuid import uuid4\n"
+        "from fastapi import HTTPException\n"
+        "from app.catalog import get_product\n"
+        "from app.orders import LineItem, Order, create_order\n"
+        "from app.schemas import CheckoutRequest\n"
+    )
+    assert syntax_valid and safe and error is None
+
+
+def test_private_class_pattern_attributes_are_rejected() -> None:
+    syntax_valid, safe, error = validate_ast(
+        "match value:\n    case object(__dict__=hidden):\n        pass\n"
+    )
+    assert syntax_valid and not safe
+    assert error is not None

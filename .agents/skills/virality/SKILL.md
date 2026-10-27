@@ -9,6 +9,10 @@ This skill provides an end-to-end operational framework for transforming technic
 
 ---
 
+## FaultLine evidence requirements
+
+Read `docs/QUALITY_REVIEW.md`, `docs/PROJECT_STATUS.md`, and `docs/LAUNCH.md` before applying this playbook. The examples below are narrative templates, not verified FaultLine capabilities or measurements. Do not reuse their latency, savings, rejection-rate, production hot-patching, integration, or uptime claims without matching evidence. Green UI and exported reports must depend on actual job results and cleanup. Authored previews must remain labeled. Missing-key deterministic runs are not Meta trials. Do not invent sensory telemetry, receipt IDs, or progress timers to make a demonstration look faster. No social publishing is authorized merely by using this skill.
+
 ## 1. The Core Psychology of Developer Virality
 
 Developers and tech investors are the most skeptical audience on the internet. They have seen hundreds of scripted, fake, or fragile AI wrappers. Generic feature tours, slides, and theoretical pitches achieve near-zero organic reach.

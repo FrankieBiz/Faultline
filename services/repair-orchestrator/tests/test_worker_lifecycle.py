@@ -356,3 +356,27 @@ async def test_duplicate_worker_does_not_reexecute_terminal_job(harness: Harness
     calls = list(harness.runtime.calls)
     assert await harness.worker.run_job(job.id) == job
     assert harness.runtime.calls == calls
+
+
+@pytest.mark.parametrize("quarantined", [False, True])
+async def test_restart_recovers_interrupted_reset_reservation(
+    harness: Harness, quarantined: bool
+) -> None:
+    if quarantined:
+        job = harness.database.create_job(submission())
+        harness.database.finish_job(job.id, TerminalOutcome.INFRASTRUCTURE_ERROR, clean=False)
+    interrupted = harness.database.begin_reset()
+    assert interrupted.owner_id is not None
+    assert not harness.database.unfinished_jobs()
+
+    await harness.worker.reconcile()
+
+    recovered = harness.database.get_lease()
+    assert recovered.owner_id is None
+    assert recovered.quarantined
+    assert recovered.job_id == interrupted.job_id
+    with pytest.raises(DatabaseError, match="cleanup_required"):
+        harness.database.create_job(submission())
+    await harness.worker.reset()
+    assert not harness.database.get_lease().quarantined
+    assert harness.database.create_job(submission()).state == JobState.QUEUED

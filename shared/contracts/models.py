@@ -215,6 +215,7 @@ class ExecutionRecord(ContractModel):
     attempt_id: str | None = None
     app_generation_id: str
     candidate_snapshot_sha256: str
+    runtime_kind: Literal["unverified", "isolated-browser"] = "unverified"
     artifact_ids: list[str]
     started_at: Timestamp
     finished_at: Timestamp
