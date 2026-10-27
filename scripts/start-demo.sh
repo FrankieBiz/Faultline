@@ -34,12 +34,14 @@ echo "=== Starting BuggyShop Frontend on 127.0.0.1:3000 ==="
 PID_FRONTEND=$!
 
 PID_INSPECTOR=""
-if [ -d "$ROOT/web/inspector-ui/.next" ]; then
-  echo "=== Starting Inspector UI on 127.0.0.1:4000 ==="
-  (cd "$ROOT/web/inspector-ui" && \
-    PORT=4000 FAULTLINE_CONTROL_TOKEN="${FAULTLINE_CONTROL_TOKEN:-dev-control-token}" npx next start -p 4000 -H 127.0.0.1) &
-  PID_INSPECTOR=$!
+if [ ! -d "$ROOT/web/inspector-ui/.next" ]; then
+  echo "=== Building Inspector UI ==="
+  (cd "$ROOT/web/inspector-ui" && npm run build)
 fi
+echo "=== Starting Inspector UI on 127.0.0.1:4000 ==="
+(cd "$ROOT/web/inspector-ui" && \
+  PORT=4000 FAULTLINE_CONTROL_TOKEN="${FAULTLINE_CONTROL_TOKEN:-dev-control-token}" npx next start -p 4000 -H 127.0.0.1) &
+PID_INSPECTOR=$!
 
 cleanup() {
   echo ""

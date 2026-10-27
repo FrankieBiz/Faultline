@@ -82,7 +82,10 @@ Start all 4 services concurrently:
 
 ## Documentation & Evaluation Materials
 
-* [`docs/SUBMISSION.md`](docs/SUBMISSION.md) — Comprehensive hackathon submission packet, economic loss analysis, quantitative proof, and 180s pitch runbook.
+* [`docs/DEVPOST_SUBMISSION.md`](docs/DEVPOST_SUBMISSION.md) — Copy-paste ready submission packet for Meta Devpost hackathon portal.
+* [`docs/VIDEO_STORYBOARD.md`](docs/VIDEO_STORYBOARD.md) — Second-by-second 180s pitch recording guide with cue-by-cue script.
+* [`docs/SUBMISSION.md`](docs/SUBMISSION.md) — Comprehensive hackathon dossier, economic loss analysis, quantitative proof, and architecture.
+* [`scripts/rehearse-demo.sh`](scripts/rehearse-demo.sh) — Automated command-line pitch & live repair rehearsal script.
 * [`docs/SpecV1.md`](docs/SpecV1.md) — Implementation specification for the controlled repair demo.
 * [`docs/SpecV1-research-notes.md`](docs/SpecV1-research-notes.md) — Primary research notes and architectural rationale.
 * [`docs/HACKATHON_BRIEF.md`](docs/HACKATHON_BRIEF.md) — Hackathon rules, schedule, and judging criteria.

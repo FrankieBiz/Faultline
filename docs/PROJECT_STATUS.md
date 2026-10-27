@@ -30,7 +30,10 @@
 - [x] Check Meta dashboard for exact model access and credit balance/units (`muse-spark-1.3` verified live).
 - [x] Build and test live end-to-end autonomous self-healing loop with Meta reasoning model.
 - [x] Polish frontend Mission Control with Baseten precision and Twelve Labs cinematic ergonomics.
-- [ ] Record final 180-second live demo video walkthrough.
+- [x] Prepare copy-paste ready Devpost Submission Packet (`docs/DEVPOST_SUBMISSION.md`).
+- [x] Prepare 180s Pitch Video Storyboard & Script (`docs/VIDEO_STORYBOARD.md`).
+- [x] Build automated pitch rehearsal test harness (`scripts/rehearse-demo.sh`).
+- [ ] Record final 180-second live demo video walkthrough using storyboard.
 - [ ] Submit to Meta Devpost hackathon portal before deadline.
 
 Update this file as decisions are made. Keep raw Meta-provided material under `meta-provided/` unchanged.
