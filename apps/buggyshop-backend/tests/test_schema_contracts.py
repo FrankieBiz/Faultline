@@ -88,6 +88,15 @@ def test_checkout_request_item_count_boundaries() -> None:
     )
     assert len(valid_two.items) == 2
 
+    with pytest.raises(ValidationError, match="at most 2 items"):
+        CheckoutRequest(
+            items=[
+                CheckoutItem(product_id="trail-mug", quantity=1),
+                CheckoutItem(product_id="field-notebook", quantity=1),
+                CheckoutItem(product_id="trail-mug", quantity=1),
+            ]
+        )
+
 
 def test_checkout_request_coupon_optionality() -> None:
     """Coupon codes default to None and accept explicit None or string."""
