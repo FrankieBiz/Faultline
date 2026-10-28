@@ -33,8 +33,8 @@ First comment should explain the seeded scope, exact edit boundary, Linux proces
 - A readable video showing a live Meta attempt and matching retained evidence.
 - A confirmed firsthand problem statement from the builder and feedback from intended users.
 - Repeated trials with successes, rejections, and failures reported together.
-- A second actual defect or holdout case, rather than more simulated scenarios.
-- A deployed public experience with an explicit read-only/replay mode or separately reviewed access and resource controls.
+- A second actual defect or holdout case, rather than more simulated scenarios. *(Holdout corpus and harness exist; a Meta run is pending.)*
+- A deployed public experience with an explicit read-only/replay mode or separately reviewed access and resource controls. *(A static replay export exists; review and publication are pending.)*
 - Verified submission and social links, a source link, and accessible captions.
 
 No distribution, engagement count, or viral outcome is promised. These materials are prepared for owner review; no posts or submissions are sent automatically.

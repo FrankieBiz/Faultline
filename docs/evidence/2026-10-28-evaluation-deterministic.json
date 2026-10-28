@@ -1,0 +1,455 @@
+{
+  "schema_version": "1.0",
+  "tool": "faultline-evaluation",
+  "started_at": "2026-10-28T10:27:00.774868+00:00",
+  "corpus": {
+    "version": "checkout-eval-v1",
+    "sha256": "3e404f36c8458cdba1e1216f72cabdd70cd4070d4dee4b50f11c9a1a533384ce"
+  },
+  "seed_commit": "44b2a13b412588de7596ef0f3bb2d1aae47799a5",
+  "runtime": "isolated-backend",
+  "provider": {
+    "provider": "deterministic",
+    "model": "deterministic-checkout-v1",
+    "available": true
+  },
+  "classification": "deterministic_fallback_no_model_call",
+  "oracle": "app.http_regression (27 independent HTTP business checks)",
+  "complete": true,
+  "holdout": {
+    "cases": [
+      {
+        "trial": 1,
+        "id": "seeded_missing_coupon",
+        "defect_class": "null handling",
+        "baseline_failures": [
+          "regression.missing_coupon",
+          "regression.null_coupon",
+          "regression.empty_coupon",
+          "regression.whitespace_coupon",
+          "regression.mixed_cart",
+          "regression.quantity_ten"
+        ],
+        "baseline_matches_corpus": true,
+        "attempts": [
+          {
+            "attempt_number": 1,
+            "prior_feedback": null,
+            "provider": "deterministic",
+            "model": "deterministic-checkout-v1",
+            "prompt_tokens": null,
+            "completion_tokens": null,
+            "generation_ms": 0,
+            "decision": "patch",
+            "explanation": "Deterministic fallback: default the optional coupon discount to zero.",
+            "diff": "--- a/apps/buggyshop-backend/app/routes/checkout.py\n+++ b/apps/buggyshop-backend/app/routes/checkout.py\n@@ -40,7 +40,7 @@\n     if coupon_code and coupon_code not in discounts:\n         raise HTTPException(status_code=400, detail=\"Invalid coupon code\")\n \n-    discount = cast(int, discounts.get(coupon_code))\n+    discount = cast(int, discounts.get(coupon_code, 0))\n     total = subtotal - discount\n     order: Order = {\n         \"id\": str(uuid4()),\n",
+            "diff_sha256": "f9193387309f43e0ea1d584bd43af316f4c23f4c83b6c0a8bcd36abb8b3a8d70",
+            "diff_recounted": false,
+            "model_diff": null,
+            "policy": {
+              "is_valid": true,
+              "error": null
+            },
+            "failing_after": [],
+            "outcome": "verified"
+          }
+        ],
+        "outcome": "verified"
+      },
+      {
+        "trial": 1,
+        "id": "fifteen_float_rounding",
+        "defect_class": "rounding",
+        "baseline_failures": [
+          "regression.fifteen"
+        ],
+        "baseline_matches_corpus": true,
+        "attempts": [
+          {
+            "attempt_number": 1,
+            "prior_feedback": null,
+            "outcome": "unsupported_fallback_source",
+            "generation_ms": 0
+          }
+        ],
+        "outcome": "model_error"
+      },
+      {
+        "trial": 1,
+        "id": "coupon_case_sensitive",
+        "defect_class": "input normalization",
+        "baseline_failures": [
+          "regression.normalized_coupon"
+        ],
+        "baseline_matches_corpus": true,
+        "attempts": [
+          {
+            "attempt_number": 1,
+            "prior_feedback": null,
+            "outcome": "unsupported_fallback_source",
+            "generation_ms": 0
+          }
+        ],
+        "outcome": "model_error"
+      },
+      {
+        "trial": 1,
+        "id": "coupon_whitespace_untrimmed",
+        "defect_class": "input normalization",
+        "baseline_failures": [
+          "regression.whitespace_coupon",
+          "regression.normalized_coupon"
+        ],
+        "baseline_matches_corpus": true,
+        "attempts": [
+          {
+            "attempt_number": 1,
+            "prior_feedback": null,
+            "outcome": "unsupported_fallback_source",
+            "generation_ms": 0
+          }
+        ],
+        "outcome": "model_error"
+      },
+      {
+        "trial": 1,
+        "id": "line_total_ignores_quantity",
+        "defect_class": "pricing",
+        "baseline_failures": [
+          "regression.mixed_cart",
+          "regression.mixed_cart_coupon",
+          "regression.quantity_ten"
+        ],
+        "baseline_matches_corpus": true,
+        "attempts": [
+          {
+            "attempt_number": 1,
+            "prior_feedback": null,
+            "outcome": "unsupported_fallback_source",
+            "generation_ms": 0
+          }
+        ],
+        "outcome": "model_error"
+      },
+      {
+        "trial": 1,
+        "id": "discount_sign_inverted",
+        "defect_class": "pricing",
+        "baseline_failures": [
+          "regression.tenoff",
+          "regression.fifteen",
+          "regression.normalized_coupon",
+          "regression.mixed_cart_coupon"
+        ],
+        "baseline_matches_corpus": true,
+        "attempts": [
+          {
+            "attempt_number": 1,
+            "prior_feedback": null,
+            "outcome": "unsupported_fallback_source",
+            "generation_ms": 0
+          }
+        ],
+        "outcome": "model_error"
+      },
+      {
+        "trial": 1,
+        "id": "discount_first_line_only",
+        "defect_class": "pricing",
+        "baseline_failures": [
+          "regression.mixed_cart_coupon"
+        ],
+        "baseline_matches_corpus": true,
+        "attempts": [
+          {
+            "attempt_number": 1,
+            "prior_feedback": null,
+            "outcome": "unsupported_fallback_source",
+            "generation_ms": 0
+          }
+        ],
+        "outcome": "model_error"
+      },
+      {
+        "trial": 1,
+        "id": "unknown_coupon_accepted",
+        "defect_class": "validation",
+        "baseline_failures": [
+          "regression.unknown_coupon"
+        ],
+        "baseline_matches_corpus": true,
+        "attempts": [
+          {
+            "attempt_number": 1,
+            "prior_feedback": null,
+            "outcome": "unsupported_fallback_source",
+            "generation_ms": 0
+          }
+        ],
+        "outcome": "model_error"
+      },
+      {
+        "trial": 1,
+        "id": "missing_coupon_key_error",
+        "defect_class": "null handling",
+        "baseline_failures": [
+          "regression.missing_coupon",
+          "regression.null_coupon",
+          "regression.empty_coupon",
+          "regression.whitespace_coupon",
+          "regression.mixed_cart",
+          "regression.quantity_ten"
+        ],
+        "baseline_matches_corpus": true,
+        "attempts": [
+          {
+            "attempt_number": 1,
+            "prior_feedback": null,
+            "outcome": "unsupported_fallback_source",
+            "generation_ms": 0
+          }
+        ],
+        "outcome": "model_error"
+      },
+      {
+        "trial": 1,
+        "id": "order_wrong_namespace",
+        "defect_class": "persistence",
+        "baseline_failures": [
+          "regression.missing_coupon",
+          "regression.null_coupon",
+          "regression.empty_coupon",
+          "regression.whitespace_coupon",
+          "regression.tenoff",
+          "regression.fifteen",
+          "regression.normalized_coupon",
+          "regression.mixed_cart",
+          "regression.mixed_cart_coupon",
+          "regression.quantity_ten"
+        ],
+        "baseline_matches_corpus": true,
+        "attempts": [
+          {
+            "attempt_number": 1,
+            "prior_feedback": null,
+            "outcome": "unsupported_fallback_source",
+            "generation_ms": 0
+          }
+        ],
+        "outcome": "model_error"
+      }
+    ],
+    "summary": {
+      "runs": 10,
+      "verified": 1,
+      "verified_first_attempt": 1,
+      "verified_after_gate_feedback": 0,
+      "verified_after_other_retry": 0,
+      "outcomes": {
+        "model_error": 9,
+        "verified": 1
+      },
+      "baseline_matches_corpus": 10,
+      "model_attempts": 10,
+      "total_tokens": null,
+      "median_generation_ms": 0.0
+    }
+  },
+  "runtime_limits": {
+    "sessions": 19,
+    "verified_sessions": 19,
+    "limits": {
+      "mode": "cgroup-v2-scope",
+      "memory_max_bytes": 536870912,
+      "memory_swap_max_bytes": 0,
+      "tasks_max": 64,
+      "cpu_quota_percent": 100,
+      "verified": true
+    }
+  },
+  "patches": {
+    "cases": [
+      {
+        "id": "reference_default_zero",
+        "kind": "correct",
+        "policy": {
+          "is_valid": true,
+          "error": null
+        },
+        "symptom_status": 201,
+        "symptom_check_accepts": true,
+        "faultline_accepts": true,
+        "failing": [],
+        "matches_corpus": true
+      },
+      {
+        "id": "alternative_or_zero",
+        "kind": "correct",
+        "policy": {
+          "is_valid": true,
+          "error": null
+        },
+        "symptom_status": 201,
+        "symptom_check_accepts": true,
+        "faultline_accepts": true,
+        "failing": [],
+        "matches_corpus": true
+      },
+      {
+        "id": "zero_all_discounts",
+        "kind": "wrong",
+        "policy": {
+          "is_valid": true,
+          "error": null
+        },
+        "symptom_status": 201,
+        "symptom_check_accepts": true,
+        "faultline_accepts": false,
+        "failing": [
+          "regression.tenoff",
+          "regression.fifteen",
+          "regression.normalized_coupon",
+          "regression.mixed_cart_coupon"
+        ],
+        "matches_corpus": true
+      },
+      {
+        "id": "null_coupon_only",
+        "kind": "wrong",
+        "policy": {
+          "is_valid": true,
+          "error": null
+        },
+        "symptom_status": 201,
+        "symptom_check_accepts": true,
+        "faultline_accepts": false,
+        "failing": [
+          "regression.empty_coupon",
+          "regression.whitespace_coupon"
+        ],
+        "matches_corpus": true
+      },
+      {
+        "id": "silence_type_error",
+        "kind": "wrong",
+        "policy": {
+          "is_valid": true,
+          "error": null
+        },
+        "symptom_status": 500,
+        "symptom_check_accepts": false,
+        "faultline_accepts": false,
+        "failing": [
+          "regression.missing_coupon",
+          "regression.null_coupon",
+          "regression.empty_coupon",
+          "regression.whitespace_coupon",
+          "regression.mixed_cart",
+          "regression.quantity_ten"
+        ],
+        "matches_corpus": true
+      },
+      {
+        "id": "drop_coupon_validation",
+        "kind": "wrong",
+        "policy": {
+          "is_valid": true,
+          "error": null
+        },
+        "symptom_status": 201,
+        "symptom_check_accepts": true,
+        "faultline_accepts": false,
+        "failing": [
+          "regression.unknown_coupon"
+        ],
+        "matches_corpus": true
+      },
+      {
+        "id": "round_percentages",
+        "kind": "wrong",
+        "policy": {
+          "is_valid": true,
+          "error": null
+        },
+        "symptom_status": 201,
+        "symptom_check_accepts": true,
+        "faultline_accepts": false,
+        "failing": [
+          "regression.tenoff",
+          "regression.fifteen",
+          "regression.normalized_coupon",
+          "regression.mixed_cart_coupon"
+        ],
+        "matches_corpus": true
+      },
+      {
+        "id": "early_return_unsaved",
+        "kind": "wrong",
+        "policy": {
+          "is_valid": true,
+          "error": null
+        },
+        "symptom_status": 201,
+        "symptom_check_accepts": true,
+        "faultline_accepts": false,
+        "failing": [
+          "regression.missing_coupon",
+          "regression.null_coupon",
+          "regression.empty_coupon",
+          "regression.whitespace_coupon",
+          "regression.mixed_cart",
+          "regression.quantity_ten"
+        ],
+        "matches_corpus": true
+      },
+      {
+        "id": "debug_logging_import",
+        "kind": "out_of_policy",
+        "policy": {
+          "is_valid": false,
+          "error": "Module imports are forbidden; import an approved symbol"
+        },
+        "symptom_check_accepts": null,
+        "faultline_accepts": false,
+        "failing": [],
+        "matches_corpus": true
+      },
+      {
+        "id": "out_of_scope_schema",
+        "kind": "out_of_policy",
+        "policy": {
+          "is_valid": false,
+          "error": "Require one existing allowlisted file with canonical paths"
+        },
+        "symptom_check_accepts": null,
+        "faultline_accepts": false,
+        "failing": [],
+        "matches_corpus": true
+      },
+      {
+        "id": "stale_context",
+        "kind": "out_of_policy",
+        "policy": {
+          "is_valid": false,
+          "error": "Patch does not match the exact seeded source"
+        },
+        "symptom_check_accepts": null,
+        "faultline_accepts": false,
+        "failing": [],
+        "matches_corpus": true
+      }
+    ],
+    "summary": {
+      "correct": 2,
+      "correct_accepted_by_faultline": 2,
+      "correct_accepted_by_symptom_check": 2,
+      "wrong": 6,
+      "wrong_accepted_by_faultline": 0,
+      "wrong_accepted_by_symptom_check": 5,
+      "out_of_policy": 3,
+      "out_of_policy_rejected_by_policy": 3,
+      "all_match_corpus": true
+    }
+  },
+  "finished_at": "2026-10-28T10:27:09.242662+00:00"
+}

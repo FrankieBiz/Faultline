@@ -1,45 +1,43 @@
 # Agent handoff state
 
-Updated October 27, 2026. Branch: `FrankieBiz/hackathon-full-codebase-review`.
+Updated October 28, 2026. Branch: `FrankieBiz/fix-hackathon-assessment-issues` (worktree `brittlestar`), merged to `main`.
 
 ## Objective and completed changes
 
-Full adversarial project review requested by Frankie, including correctness, UI, hackathon credibility, and virality. See `docs/QUALITY_REVIEW.md` for findings, evidence, and remaining work.
+Acted on every engineering gap in `docs/HACKATHON_SCORE_ASSESSMENT.md`. The 55/100 record is unchanged; its new "Remediation since this assessment" section maps each withheld reason to the action and evidence. No new score was self-assigned.
 
-Removed unsafe host-executing LocalDemoRuntime and fabricated browser artifacts/UI audit reports. Added explicit `FAULTLINE_RUNTIME=isolated` Bubblewrap runtime, real Chromium/HTTP verification, correlated logs, bounded responses/tmpfs, supervised owned processes, and cleanup retry. Candidate execution records identify `runtime_kind=isolated-browser`; legacy records remain unverified. Fixed import/pattern policy gaps, reset concurrency/restart recovery, SSE cursor bounds, binary/SSE proxy handling, runtime storefront routing, and terminal UI states.
-
-Replaced timer-driven marketing UI with measured evidence Inspector and clearly authored scenario references. Removed unused simulated healer, hardcoded metrics, nonexistent integration snippets, fabricated competition scores, and misleading compliance/deployment claims. Rewrote readme/submission/video/launch documents. Setup/start/reset/rehearsal scripts now preserve evidence and source and avoid killing unrelated processes. Added regression tests and a pinned GitHub verification workflow.
+- **Verifier-guided repair.** The prompt states the checkout contract, not the defect. Rejected attempts send bounded gate findings (failing checks, policy error, rejected diff) to attempt 2. Hunk headers are recounted like `git apply --recount`, and the model's original output is retained. Proposal-contract errors have specific codes. Provider identity comes from the endpoint host. `provider`/`model` are recorded only from responses; the dispatched endpoint is stored separately.
+- **Oracle robustness.** Candidate crashes, hangs, and oversized bodies are failed checks, not infrastructure errors.
+- **Aggregate limits.** A systemd user scope with cgroup v2 limits (512 MiB, no swap, 64 tasks, one CPU, OOM group kill). Limits are verified from kernel files per launch, an enforcement probe must pass before readiness, and limits are recorded on `ExecutionRecord.resource_limits`. Also: explicit `--unshare-user`, `env -i` (closing a `/proc/1/environ` leak), JSON-only backend logs, and full-length scope prefixes.
+- **Evaluation.** A hash-pinned corpus (`fixtures/evaluation/`), harness (`app/evaluation.py`, `scripts/evaluate.sh`), trial ledger (`scripts/trial_ledger.py`), and static replay export (`scripts/export_replay.py`).
+- **Documentation.** `docs/EVALUATION.md` and `docs/IMPACT_EVIDENCE.md` are new. README, status, quality review, submission, storyboard, and launch docs are updated. Evidence is in `docs/evidence/`, and a reviewed deterministic replay is in `docs/replay/`.
 
 ## Settled decisions
 
-- Backend scenario/contracts from the earlier handoff remain authoritative: `scripted_checkout_repair`, two Trail Mugs, integer cents, TENOFF/FIFTEEN, strict quantities/inputs. Live checkout stays byte-identical to the seed.
-- A verified candidate is not a production deployment. Worktrees and AST policy are not process containment.
-- Missing credentials select the explicitly identified deterministic provider. Never describe these runs as Meta inference; configured provider errors never silently fall back.
-- Runtime is Linux/Bubblewrap, with per-process resource limits, not a VM or aggregate cgroup quota. External review remains appropriate before broader exposure.
-- Protected `meta-provided/` was untouched and all five hashes were checked.
+- Earlier decisions still stand: `scripted_checkout_repair`, integer cents, TENOFF/FIFTEEN, a deterministic fallback that is explicitly labeled, no host execution, and no fabricated evidence.
+- Only Meta-operated hosts (`meta.ai`, `meta.com`, `llama.com`) may be labeled `meta`. DeepSeek results are harness validation only; never present them as Meta results.
+- Aggregate limits are `required` by default. `disabled` must be explicit, and the evaluation also requires `--allow-disabled-limits`.
+- Evaluation sessions use the `faultline-evaluation-` scope prefix. Only controller reconciliation releases leftovers, and it is scoped to its own installation.
+- Replays committed to the repo omit Playwright traces, because the traces contain local file paths.
 
-## Verification and current environment
+## Verification
 
-`make check` passed: 159 backend/script tests, 198 orchestrator tests, 32 runner unit tests; lint/type/build/provenance passed. Eight Inspector browser tests passed. Seven required isolated-runtime tests passed (already included in 198). Controller rehearsals verified actual failed baseline, 44 candidate assertions, and cleanup using the deterministic provider. Live Meta validation is pending private credential configuration.
-
-Other existing demo services on 3000/4000/8000/9000 belonged to an earlier session and were preserved. This review uses 13000/14000/18000/19000 for its own demo. Do not kill unrelated port owners. Startup supports `BUGGYSHOP_PORT`, `INSPECTOR_PORT`, `BUGGYSHOP_API_PORT`, and `FAULTLINE_PORT`. Use `FAULTLINE_INSPECTOR_URL` for rehearsal/reset with alternate ports.
+- `make check` passed: 220 backend/script tests, 301 orchestrator tests, and 32 runner unit tests, plus lint, strict types, builds, and fixture/corpus provenance.
+- `make browser`: 9 passed. `make integration`: 13 passed (real Bubblewrap, Chromium, and cgroup tests, including memory and task hogs and log forgery).
+- Five deterministic controller jobs verified 44 assertions each.
+- Evaluation results are in `docs/EVALUATION.md`.
 
 ## Avoid repeated dead ends
 
-- Never re-enable host candidate execution or fabricate PNG/ZIP/HTTP evidence to satisfy worker gates.
-- Runtime scratch belongs beneath the snapshot-owned runtime tree. Filesystem Unix sockets exceeded Linux's pathname limit there; inherited prebound abstract sockets solve it without writable host mounts.
-- Do not build `.next` while another worker exercises that exact production build; a concurrent build caused a transient frontend readiness failure. Build first, then run browser/runtime checks.
-- NodeNext runner type checks cannot import Next source across package module boundaries directly. Cross-package proxy tests use Playwright JS; UI browser tests use the DOM lib.
-- The separate frontend model wrote its proposal to `/tmp` and was stopped after the proposal was integrated/tested. Runtime proposal was independently reviewed and integrated; no worker commits were made.
+- Several worktrees (petrel, gulper, brittlestar) run demo stacks at once. Never `pgrep`/`kill` by script name; verify `/proc/<pid>/environ` ports and cwd. This review accidentally stopped petrel's storefront/API on ports 3000/8000; petrel's Inspector (4000) and controller (9000) kept running.
+- Background Python output redirected to a file is block-buffered. An empty log does not mean the process died.
+- `deepseek-flash` sometimes adds a stray `"type"` key in `json_object` mode, which the strict contract correctly rejects. Use `deepseek-v4-pro`. Local Ollama on this CPU-only host takes over 80 seconds per proposal.
+- Do not rebuild `.next` while a demo stack or isolated run is using it.
 
-## Next evidence needed
+## Next evidence needed (owner)
 
-Private Meta credentials, repeated live trials, holdout/generalization cases, confirmed firsthand problem evidence/user feedback, final demo recording, and reviewed public replay. No social message, deployment, video publication, or hackathon submission was sent.
+Configure `META_API_KEY`, then run `scripts/trial_ledger.py --trials 5 --require-provider meta` against the running demo and `./scripts/evaluate.sh --suite holdout --repeat 2`. Also needed: the firsthand account and 3–5 user conversations in `docs/IMPACT_EVIDENCE.md`, the final video, and a decision on publishing `docs/replay/` (e.g. GitHub Pages). No deployment, social post, video, or hackathon submission has been made.
 
-## Long-term research notebook — October 27, 2026
+## Parallel work preserved from main
 
-Completed an expanded `docs/LONG_TERM_RESEARCH_AND_IDEAS.md` at the owner's request for extensive research and brainstorming. It replaces the earlier short blueprint with repository-grounded strategy, detailed technical proposals, 120 catalog ideas, 12 experiments, phased evidence gates, economics assumptions, and a dated register of 46 primary web sources. Proposed experiments are not implemented or claimed as executed. No extra research models were called.
-
-The current official Cerebral Valley page lists a $100 Fireworks offer, while `docs/HACKATHON_BRIEF.md` says $25. The notebook records the discrepancy without changing protected sources or claiming personal account credits. Existing architecture and scope decisions above remain applicable.
-
-Delivery verification for the research task: document structure/local links/contents anchors and `git diff --check` passed. Fresh `make check` passed with 159 backend/script tests, 198 orchestrator tests, and 32 runner unit tests, plus lint/type/build/provenance and Python distributions. The first check stopped at missing frontend dependencies; locked `npm ci` installs, Chromium availability, and prerequisite frontend/runner builds resolved the environment gap before the successful rerun. No application source was changed for this task.
+Another session added `docs/LONG_TERM_RESEARCH_AND_IDEAS.md` (repository-grounded strategy, 120 catalog ideas, 12 proposed but unexecuted experiments, dated sources). It notes that the official Cerebral Valley page lists a $100 Fireworks offer while `docs/HACKATHON_BRIEF.md` says $25. That session also made backend stderr unbuffered and added a 50 ms drain before baseline log correlation; both are carried forward in the new runtime launch path.

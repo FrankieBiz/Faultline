@@ -10,10 +10,11 @@ Record at 1080p with readable browser text. Open the actual Inspector and preser
 | 1:05–1:35 | Actual proposal, provider identity, diff, patch validation | “The model proposes the change. Exact paths, source hashes, hunk checks, and AST policy decide whether it can enter verification.” |
 | 1:35–2:10 | Candidate browser screenshot and independent assertion results | “The candidate runs separately. The same browser checkout must succeed; independent checks protect coupons, quantities, totals, and stored orders.” |
 | 2:10–2:35 | Download trace/report, show cleanup status | “These are the recorded artifacts. Green requires passing checks and confirmed cleanup. This verifies a candidate; it does not deploy to production.” |
-| 2:35–3:00 | Visible source link and final job result | “The useful output is a repair you can inspect and reproduce. The next test is whether this holds up on unfamiliar defects.” |
+| 2:35–2:50 | `docs/EVALUATION.md` gate-value table | “We also tried six plausible fixes that make the error disappear. A ‘does it return 201’ check accepted five. FaultLine accepted none.” |
+| 2:50–3:00 | Visible source link and final job result | “The useful output is a repair you can inspect and reproduce, including on defects the model was never told about.” |
 
 If generation takes longer, leave enough screen time to read the result. Disclose any cut or speed-up and retain the original job duration. Do not substitute authored previews for measured evidence. If Meta is unavailable, identify the deterministic rehearsal and record the live Meta portion separately once it is available.
 
-Before recording: `make check`, the contained runtime integration check, and `./scripts/rehearse-demo.sh`. Show an actual policy rejection in a separate technical clip if useful; do not claim a rejected patch was generated live unless its attempt record proves it.
+Before recording: `make check`, the contained runtime integration check, and `./scripts/rehearse-demo.sh`. Show an actual policy rejection or the “Gate feedback from attempt 1” note in a separate technical clip if a live job produced one; do not claim a rejected patch was generated live unless its attempt record proves it. Quote evaluation numbers only from the committed results and name the provider that produced them.
 
 The first clip should show the failure immediately. For a short social post, use the failed browser view, the actual diff, the passed candidate, and the source link. Do not promise a recovery time, uptime guarantee, avoided loss, certification, or hackathon score without supporting evidence.

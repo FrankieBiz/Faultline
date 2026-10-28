@@ -83,6 +83,79 @@ async def test_classified_terminal_paths(
         assert seeds[1] == seeds[2]
 
 
+async def test_second_attempt_receives_failed_verification_checks(harness: Harness) -> None:
+    harness.runtime.verification_failed = True
+    original = harness.adapter.propose_patch
+    contexts: list[RepairContext] = []
+
+    async def observe(context: RepairContext, *, fallback: bool = False) -> ModelResponse:
+        contexts.append(context)
+        return await original(context)
+
+    harness.adapter.propose_patch = observe  # type: ignore[method-assign]
+    job = await harness.run()
+    assert job.outcome == TerminalOutcome.UNRESOLVED
+    assert [context.feedback is None for context in contexts] == [True, False]
+    feedback = contexts[1].feedback
+    assert feedback is not None and feedback.gate == "verification_failed"
+    assert feedback.failed_count == len(feedback.failed_checks) > 0
+    assert feedback.rejected_diff and "get(coupon_code, 0)" in feedback.rejected_diff
+    assert "regression.missing_coupon" in {check.id for check in feedback.failed_checks}
+    first, second = harness.database.list_attempts(job.id)
+    assert first.validation_result and "prior_feedback" not in first.validation_result
+    assert second.validation_result is not None
+    prior = second.validation_result["prior_feedback"]
+    assert prior["gate"] == "verification_failed" and prior["included_rejected_diff"] is True
+    assert prior["failed_check_count"] == feedback.failed_count
+    for attempt in (first, second):
+        result = attempt.validation_result or {}
+        assert result["provider"] == "deterministic"
+        assert isinstance(result["generation_ms"], int) and result["generation_ms"] >= 0
+
+
+async def test_policy_rejection_feeds_the_policy_error_forward(harness: Harness) -> None:
+    original = harness.adapter.propose_patch
+    contexts: list[RepairContext] = []
+
+    async def malformed_then_valid(
+        context: RepairContext, *, fallback: bool = False
+    ) -> ModelResponse:
+        contexts.append(context)
+        result = await original(context)
+        if len(contexts) == 1:
+            broken = result.proposal.unified_diff.replace("@@ -40,7", "@@ -40,9")
+            return replace(
+                result, proposal=result.proposal.model_copy(update={"unified_diff": broken})
+            )
+        return result
+
+    harness.adapter.propose_patch = malformed_then_valid  # type: ignore[method-assign]
+    job = await harness.run()
+    assert job.outcome == TerminalOutcome.VERIFIED, job.error_details
+    feedback = contexts[1].feedback
+    assert feedback is not None and feedback.gate == "patch_policy_rejected"
+    assert feedback.policy_error and "line counts" in feedback.policy_error
+    attempts = harness.database.list_attempts(job.id)
+    assert [item.outcome for item in attempts] == ["patch_policy_rejected", "verified"]
+
+
+async def test_transport_failure_retries_without_fabricated_feedback(harness: Harness) -> None:
+    original = harness.adapter.propose_patch
+    contexts: list[RepairContext] = []
+
+    async def flaky(context: RepairContext, *, fallback: bool = False) -> ModelResponse:
+        contexts.append(context)
+        if len(contexts) == 1:
+            raise ModelError("provider_transport", retryable=True)
+        return await original(context)
+
+    harness.adapter.propose_patch = flaky  # type: ignore[method-assign]
+    job = await harness.run()
+    assert job.outcome == TerminalOutcome.VERIFIED, job.error_details
+    assert contexts[1].previous_gate == "provider_transport"
+    assert contexts[1].feedback is None
+
+
 async def test_explicit_detection_and_unavailable_repair(harness: Harness) -> None:
     job = await harness.run(mode=JobMode.DETECT)
     assert job.outcome == TerminalOutcome.DETECTED
@@ -154,7 +227,10 @@ async def test_valid_no_patch_stops_without_another_request(harness: Harness) ->
     harness.adapter.propose_patch = no_patch  # type: ignore[method-assign]
     job = await harness.run()
     assert job.outcome == TerminalOutcome.UNRESOLVED
-    assert len(harness.database.list_attempts(job.id)) == 1
+    attempts = harness.database.list_attempts(job.id)
+    assert len(attempts) == 1
+    # Provider identity is recorded even when no patch reaches the policy gate.
+    assert attempts[0].validation_result and attempts[0].validation_result["provider"]
 
 
 async def test_cleanup_failure_blocks_green_and_reset_preserves_history(harness: Harness) -> None:

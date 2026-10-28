@@ -20,6 +20,7 @@ from .models import (
     PatchProposal,
     PatchValidationResult,
     RepairAttempt,
+    ResourceLimits,
     RuntimeLease,
     TerminalOutcome,
 )
@@ -44,6 +45,7 @@ __all__ = [
     "PatchProposal",
     "PatchValidationResult",
     "RepairAttempt",
+    "ResourceLimits",
     "RuntimeLease",
     "TerminalOutcome",
 ]

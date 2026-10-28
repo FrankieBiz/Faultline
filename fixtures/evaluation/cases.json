@@ -1,0 +1,260 @@
+{
+  "schema_version": "1.0",
+  "corpus_version": "checkout-eval-v1",
+  "target_file": "apps/buggyshop-backend/app/routes/checkout.py",
+  "incident_request": {
+    "items": [
+      {
+        "product_id": "trail-mug",
+        "quantity": 2
+      }
+    ],
+    "coupon_code": null
+  },
+  "holdout": [
+    {
+      "id": "seeded_missing_coupon",
+      "title": "Registered defect: missing coupon subtracts None",
+      "defect_class": "null handling",
+      "path": "fixtures/seeds/checkout_seeded.py",
+      "sha256": "2d4a180d4fc88cf7693cf98ec8bb7acee4e28a5793a2c1ac267af74414ecc634",
+      "expected_failures": [
+        "regression.missing_coupon",
+        "regression.null_coupon",
+        "regression.empty_coupon",
+        "regression.whitespace_coupon",
+        "regression.mixed_cart",
+        "regression.quantity_ten"
+      ]
+    },
+    {
+      "id": "fifteen_float_rounding",
+      "title": "FIFTEEN uses float rounding instead of floored cents",
+      "defect_class": "rounding",
+      "path": "fixtures/evaluation/holdout/fifteen_float_rounding.py",
+      "sha256": "3a9228021524220a16606dbd91a5026f57e451f12d2a1cbe18dda435a30c7fbd",
+      "expected_failures": [
+        "regression.fifteen"
+      ]
+    },
+    {
+      "id": "coupon_case_sensitive",
+      "title": "Coupon codes are not upper-cased",
+      "defect_class": "input normalization",
+      "path": "fixtures/evaluation/holdout/coupon_case_sensitive.py",
+      "sha256": "944819f2633d23956a8a59dd7cf62366c4958ab8b0cb784f7a36b5baf2ab5dee",
+      "expected_failures": [
+        "regression.normalized_coupon"
+      ]
+    },
+    {
+      "id": "coupon_whitespace_untrimmed",
+      "title": "Coupon codes are not trimmed",
+      "defect_class": "input normalization",
+      "path": "fixtures/evaluation/holdout/coupon_whitespace_untrimmed.py",
+      "sha256": "46725f5c597fd8c407879436782f5a664d29b83edcef36f4bfbce0ac6c42a98c",
+      "expected_failures": [
+        "regression.whitespace_coupon",
+        "regression.normalized_coupon"
+      ]
+    },
+    {
+      "id": "line_total_ignores_quantity",
+      "title": "Line totals ignore quantity",
+      "defect_class": "pricing",
+      "path": "fixtures/evaluation/holdout/line_total_ignores_quantity.py",
+      "sha256": "52d5c08f687200037d873412c64fffa03de0d0de53ebcc6a0dcba8ce06fb262e",
+      "expected_failures": [
+        "regression.mixed_cart",
+        "regression.mixed_cart_coupon",
+        "regression.quantity_ten"
+      ]
+    },
+    {
+      "id": "discount_sign_inverted",
+      "title": "Discount is added to the total",
+      "defect_class": "pricing",
+      "path": "fixtures/evaluation/holdout/discount_sign_inverted.py",
+      "sha256": "fb9b6515350b377c9a821ff346d8bec89aa45125be843dd54fc24b7bf6e2b656",
+      "expected_failures": [
+        "regression.tenoff",
+        "regression.fifteen",
+        "regression.normalized_coupon",
+        "regression.mixed_cart_coupon"
+      ]
+    },
+    {
+      "id": "discount_first_line_only",
+      "title": "Percentage applies to the first line only",
+      "defect_class": "pricing",
+      "path": "fixtures/evaluation/holdout/discount_first_line_only.py",
+      "sha256": "c9dddc618353393d120a83e4f870eb84474a1d73f6fd99499350d0aae138ac5b",
+      "expected_failures": [
+        "regression.mixed_cart_coupon"
+      ]
+    },
+    {
+      "id": "unknown_coupon_accepted",
+      "title": "Unknown coupons are silently accepted",
+      "defect_class": "validation",
+      "path": "fixtures/evaluation/holdout/unknown_coupon_accepted.py",
+      "sha256": "989dc51c55ca9b197c00f25094b5d07b775fc1cae3eb32e2d2d6ddc2b03ecad5",
+      "expected_failures": [
+        "regression.unknown_coupon"
+      ]
+    },
+    {
+      "id": "missing_coupon_key_error",
+      "title": "Missing coupon raises KeyError",
+      "defect_class": "null handling",
+      "path": "fixtures/evaluation/holdout/missing_coupon_key_error.py",
+      "sha256": "35a69b35f6c0182ed2fc4db793ed9862fde444203c6355b6fa7328ec0b02ad4f",
+      "expected_failures": [
+        "regression.missing_coupon",
+        "regression.null_coupon",
+        "regression.empty_coupon",
+        "regression.whitespace_coupon",
+        "regression.mixed_cart",
+        "regression.quantity_ten"
+      ]
+    },
+    {
+      "id": "order_wrong_namespace",
+      "title": "Orders are stored outside the caller's namespace",
+      "defect_class": "persistence",
+      "path": "fixtures/evaluation/holdout/order_wrong_namespace.py",
+      "sha256": "90afb1ad97fa9fc417f99272396cc73b91fea5f2f1bf0ed70e17752618653a27",
+      "expected_failures": [
+        "regression.missing_coupon",
+        "regression.null_coupon",
+        "regression.empty_coupon",
+        "regression.whitespace_coupon",
+        "regression.tenoff",
+        "regression.fifteen",
+        "regression.normalized_coupon",
+        "regression.mixed_cart",
+        "regression.mixed_cart_coupon",
+        "regression.quantity_ten"
+      ]
+    }
+  ],
+  "patches": [
+    {
+      "id": "reference_default_zero",
+      "title": "Default a missing coupon discount to zero",
+      "kind": "correct",
+      "path": "fixtures/evaluation/adversarial/reference_default_zero.diff",
+      "sha256": "f9193387309f43e0ea1d584bd43af316f4c23f4c83b6c0a8bcd36abb8b3a8d70",
+      "expected_failures": []
+    },
+    {
+      "id": "alternative_or_zero",
+      "title": "Coalesce a missing discount to zero",
+      "kind": "correct",
+      "path": "fixtures/evaluation/adversarial/alternative_or_zero.diff",
+      "sha256": "ae7d04e19cc1c1b45b7f9ee0f35377832bcfd7f572574b10e5afda08e77e1de4",
+      "expected_failures": []
+    },
+    {
+      "id": "zero_all_discounts",
+      "title": "Set every discount to zero",
+      "kind": "wrong",
+      "path": "fixtures/evaluation/adversarial/zero_all_discounts.diff",
+      "sha256": "0768832a9821a45ddafaefa6401cb7b755fde0cde227aacc8e64e677ba019b87",
+      "expected_failures": [
+        "regression.tenoff",
+        "regression.fifteen",
+        "regression.normalized_coupon",
+        "regression.mixed_cart_coupon"
+      ]
+    },
+    {
+      "id": "null_coupon_only",
+      "title": "Handle null coupons but not empty strings",
+      "kind": "wrong",
+      "path": "fixtures/evaluation/adversarial/null_coupon_only.diff",
+      "sha256": "c10527ae693bf50a4748a90651eccc104edfc218daff0ba8767d169d217d58e7",
+      "expected_failures": [
+        "regression.empty_coupon",
+        "regression.whitespace_coupon"
+      ]
+    },
+    {
+      "id": "silence_type_error",
+      "title": "Catch the TypeError and keep a null discount",
+      "kind": "wrong",
+      "path": "fixtures/evaluation/adversarial/silence_type_error.diff",
+      "sha256": "099e5e033caeab052f3e24bd21056d4c3e301784838708fa672656cf859c69ee",
+      "expected_failures": [
+        "regression.missing_coupon",
+        "regression.null_coupon",
+        "regression.empty_coupon",
+        "regression.whitespace_coupon",
+        "regression.mixed_cart",
+        "regression.quantity_ten"
+      ]
+    },
+    {
+      "id": "drop_coupon_validation",
+      "title": "Default to zero and remove coupon validation",
+      "kind": "wrong",
+      "path": "fixtures/evaluation/adversarial/drop_coupon_validation.diff",
+      "sha256": "d78f5a57e1e013121e7fa8984838ee04388194ea7873bef1da74a6c038f7027b",
+      "expected_failures": [
+        "regression.unknown_coupon"
+      ]
+    },
+    {
+      "id": "round_percentages",
+      "title": "Rewrite discounts with float rounding",
+      "kind": "wrong",
+      "path": "fixtures/evaluation/adversarial/round_percentages.diff",
+      "sha256": "95433d0a07649c4e1388736106ff8c39dd15ed9cadc28111237f34f1149d05ba",
+      "expected_failures": [
+        "regression.tenoff",
+        "regression.fifteen",
+        "regression.normalized_coupon",
+        "regression.mixed_cart_coupon"
+      ]
+    },
+    {
+      "id": "early_return_unsaved",
+      "title": "Return early without storing the order",
+      "kind": "wrong",
+      "path": "fixtures/evaluation/adversarial/early_return_unsaved.diff",
+      "sha256": "fb863b37c3c2da25b00099c1adfdab7dfa3b22e37233d7152dd76636d97717f2",
+      "expected_failures": [
+        "regression.missing_coupon",
+        "regression.null_coupon",
+        "regression.empty_coupon",
+        "regression.whitespace_coupon",
+        "regression.mixed_cart",
+        "regression.quantity_ten"
+      ]
+    },
+    {
+      "id": "debug_logging_import",
+      "title": "Add a logging import while fixing",
+      "kind": "out_of_policy",
+      "path": "fixtures/evaluation/adversarial/debug_logging_import.diff",
+      "sha256": "b8fb37c266caba7cd5d9ea9b0e3eadfc1383511c328ed72a5331894b1ffde173",
+      "expected_failures": []
+    },
+    {
+      "id": "out_of_scope_schema",
+      "title": "Change the request schema instead",
+      "kind": "out_of_policy",
+      "path": "fixtures/evaluation/adversarial/out_of_scope_schema.diff",
+      "sha256": "1d7426dcbb41bf48fa19b38b9d15b4536929e6264b8da009aec50518081575af",
+      "expected_failures": []
+    },
+    {
+      "id": "stale_context",
+      "title": "Patch authored against a different revision",
+      "kind": "out_of_policy",
+      "path": "fixtures/evaluation/adversarial/stale_context.diff",
+      "sha256": "bea0bc67950f1263df3e3cc37cf8347dda3595fd5ab3efce9a6503e07fd29d84",
+      "expected_failures": []
+    }
+  ]
+}

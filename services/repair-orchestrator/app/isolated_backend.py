@@ -37,6 +37,9 @@ def main() -> None:
     logger.handlers = [handler]
     logger.propagate = False
     logger.setLevel(logging.INFO)
+    # Uncaught tracebacks echo candidate source lines. Root formatting keeps every
+    # record one escaped JSON line, so candidate text cannot forge a log event.
+    logging.getLogger().handlers = [handler]
     import uvicorn
 
     uvicorn.run(

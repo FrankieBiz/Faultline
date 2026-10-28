@@ -1,0 +1,14 @@
+--- a/apps/buggyshop-backend/app/routes/checkout.py
++++ b/apps/buggyshop-backend/app/routes/checkout.py
+@@ -41,7 +41,10 @@
+         raise HTTPException(status_code=400, detail="Invalid coupon code")
+ 
+     discount = cast(int, discounts.get(coupon_code))
+-    total = subtotal - discount
++    try:
++        total = subtotal - discount
++    except TypeError:
++        total = subtotal
+     order: Order = {
+         "id": str(uuid4()),
+         "line_items": line_items,

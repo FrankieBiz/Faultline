@@ -22,12 +22,29 @@ export const STAGES = Object.keys(STAGE_LABEL) as JobStage[];
 
 /** `ProbeResult` from app/model_adapter.py, serialized with dataclasses.asdict. */
 export interface Probe { available: boolean; provider: string; model: string; reason: string | null }
+/** `ResourceLimits` from shared/contracts/models.py: kernel read-back or explicit opt-out. */
+export interface ResourceLimits {
+  mode: "cgroup-v2-scope" | "disabled";
+  memory_max_bytes: number | null;
+  memory_swap_max_bytes: number | null;
+  tasks_max: number | null;
+  cpu_quota_percent: number | null;
+  verified: boolean;
+}
+export interface LimitsStatus {
+  requested: "required" | "disabled" | "invalid";
+  mode: ResourceLimits["mode"] | null;
+  configured: { memory_max_bytes: number; tasks_max: number; cpu_quota_percent: number } | null;
+  enforcement_preflight: string | null;
+  reason: string | null;
+}
 export interface Readiness {
   status: "ready" | "detect_only" | "blocked";
   runtime_ready: boolean;
   quarantined: boolean;
   model: Probe | null;
   reason: string | null;
+  resource_limits?: LimitsStatus | null;
 }
 
 export interface Job {
@@ -50,6 +67,7 @@ export interface JobEvent { sequence: number; timestamp: string; stage: JobStage
 
 export interface Execution {
   runtime_kind?: "unverified" | "isolated-browser";
+  resource_limits?: ResourceLimits | null;
   phase: "baseline" | "verification";
   attempt_id: string | null;
   candidate_snapshot_sha256: string;
@@ -88,6 +106,11 @@ export interface JobDetail {
 export const REASON: Record<string, string> = {
   isolated_runtime_unavailable:
     "No isolated runtime is configured, so the orchestrator refuses to execute checkout code. Runs stay disabled until containment exists.",
+  aggregate_limits_unavailable:
+    "Aggregate cgroup limits are required but unavailable, so candidate code will not run. Start the controller inside a systemd user session.",
+  aggregate_limits_not_enforced:
+    "The aggregate-limit probe did not observe enforcement, so candidate code will not run.",
+  aggregate_limits_mode_invalid: "FAULTLINE_AGGREGATE_LIMITS must be required or disabled.",
   cleanup_required: "A previous job left resources quarantined. Reset the environment to reconcile them.",
   busy: "Another job holds the runtime lease. Wait for it to finish or cancel it.",
   unauthorized: "The orchestrator rejected the inspector's control token.",
@@ -118,15 +141,39 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   throw new ApiError(response.status, code);
 }
 
+/** Identity is derived server-side from the endpoint host; only Meta hosts read as Meta. */
 export function providerName(provider: string, model: string): string {
   if (provider === "deterministic") return `Deterministic fallback · ${model} · no model call`;
-  return `${provider === "meta" ? "Meta Model API" : provider} · ${model}`;
+  if (provider === "meta") return `Meta Model API · ${model}`;
+  if (provider === "local") return `Local model endpoint · ${model} · not a Meta-hosted call`;
+  if (provider === "openai-compatible") return `OpenAI-compatible endpoint · ${model} · not a Meta-hosted call`;
+  return `${provider} · ${model}`;
 }
 
 export function providerLabel(probe: Probe | null): string {
   if (!probe) return "Not probed";
   const name = providerName(probe.provider, probe.model);
   return probe.available ? name : `${name} · unavailable (${probe.reason ?? "no reason given"})`;
+}
+
+const mib = (bytes: number) => `${Math.round(bytes / 1048576)} MiB`;
+
+/** One line for an execution's recorded aggregate limits; absent records say so. */
+export function limitsName(limits: ResourceLimits | null | undefined): string {
+  if (!limits) return "aggregate limits not recorded";
+  if (limits.mode === "disabled") return "aggregate limits disabled";
+  return `cgroup ${mib(limits.memory_max_bytes ?? 0)} · ${limits.tasks_max} tasks · ${limits.cpu_quota_percent}% CPU${limits.verified ? " · verified" : " · unverified"}`;
+}
+
+/** Readiness summary: enforced limits, an explicit opt-out, or the blocking reason. */
+export function limitsStatusLabel(status: LimitsStatus | null | undefined): string {
+  if (!status) return "not reported";
+  if (status.requested === "disabled") return "aggregate limits disabled";
+  if (status.enforcement_preflight === "passed" && status.configured) {
+    const c = status.configured;
+    return `cgroup v2 · ${mib(c.memory_max_bytes)} · ${c.tasks_max} tasks · ${c.cpu_quota_percent}% CPU · enforced`;
+  }
+  return `blocked (${status.reason ?? "enforcement not confirmed"})`;
 }
 
 export const OUTCOME: Record<Outcome, { tone: Tone; title: string; detail: string }> = {

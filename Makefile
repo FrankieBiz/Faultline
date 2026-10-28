@@ -1,4 +1,4 @@
-.PHONY: setup check test lint typecheck build provenance frontend runner inspector browser integration
+.PHONY: setup check test lint typecheck build provenance frontend runner inspector browser integration evaluate
 
 BACKEND := apps/buggyshop-backend
 UV := uv run --project $(BACKEND) --python 3.13 --locked
@@ -14,7 +14,7 @@ setup:
 	./scripts/setup.sh
 
 integration: frontend runner
-	FAULTLINE_REQUIRE_ISOLATED_TESTS=1 $(ORCHESTRATOR_UV) pytest $(ORCHESTRATOR)/tests/test_isolated_runtime.py
+	FAULTLINE_REQUIRE_ISOLATED_TESTS=1 $(ORCHESTRATOR_UV) pytest $(ORCHESTRATOR)/tests/test_isolated_runtime.py $(ORCHESTRATOR)/tests/test_resource_limits_cgroup.py
 
 browser:
 	cd $(RUNNER) && npm run test:inspector
@@ -44,6 +44,10 @@ typecheck:
 
 provenance:
 	$(UV) python -m fixtures.provenance
+	$(UV) python -m fixtures.evaluation.corpus
+
+evaluate:
+	./scripts/evaluate.sh
 
 build:
 	uv build --project $(BACKEND) --python 3.13 --no-sources

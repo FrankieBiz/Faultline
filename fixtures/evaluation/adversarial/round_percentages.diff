@@ -1,0 +1,19 @@
+--- a/apps/buggyshop-backend/app/routes/checkout.py
++++ b/apps/buggyshop-backend/app/routes/checkout.py
+@@ -34,13 +34,13 @@
+     subtotal = sum(item["line_total_cents"] for item in line_items)
+     coupon_code = (payload.coupon_code or "").strip().upper()
+     discounts: dict[str, int | None] = {
+-        "TENOFF": subtotal // 10,
+-        "FIFTEEN": subtotal * 15 // 100,
++        "TENOFF": round(subtotal * 0.10),
++        "FIFTEEN": round(subtotal * 0.15),
+     }
+     if coupon_code and coupon_code not in discounts:
+         raise HTTPException(status_code=400, detail="Invalid coupon code")
+ 
+-    discount = cast(int, discounts.get(coupon_code))
++    discount = cast(int, discounts.get(coupon_code, 0))
+     total = subtotal - discount
+     order: Order = {
+         "id": str(uuid4()),

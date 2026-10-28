@@ -138,3 +138,28 @@ Fabricated timers, receipts, performance claims, or success states would undermi
 | 5 | Aggregate resource controls and further independent containment review | Supports broader technical claims and future exposure. |
 
 These actions would justify reassessment after their results are inspected. They do not guarantee additional points, a particular final score, a prize, or a viral outcome.
+
+## Remediation since this assessment
+
+Updated October 28, 2026. The score above remains the October 27 record of commit `925507a`. This section lists what changed afterwards and what evidence now exists. **It is not a reassessment.** The person who implemented these changes should not grade them. A fresh skeptical review, ideally after the owner-dependent evidence below exists, should decide whether any points move.
+
+| Category | Reason points were withheld | Action taken | Evidence now available | Still required |
+| --- | --- | --- | --- | --- |
+| Impact | Benefit not measured | Authored a hash-pinned corpus of correct, wrong, and out-of-policy repairs and measured them against a naive symptom check | [EVALUATION.md](EVALUATION.md): the symptom check accepted 5 of 6 wrong repairs; FaultLine accepted 0 and both correct repairs | Labeled as an authored corpus, not a real-world defect rate |
+| Impact | Demonstration was narrow | Added nine unfamiliar single-defect variants of the checkout route and an evaluation harness | Holdout results per provider in [EVALUATION.md](EVALUATION.md) | Still one route in one fixture application |
+| Impact | Firsthand relevance; demand not validated | Prepared [IMPACT_EVIDENCE.md](IMPACT_EVIDENCE.md) with an interview guide, log, and timing protocol; nothing was written on the owner's behalf | None yet | Owner's firsthand account and 3–5 intended-user conversations |
+| Meta tooling | Successful runs were deterministic; repeatability not established | Built `scripts/trial_ledger.py`, which records repeated controller jobs and refuses to label non-Meta responses as Meta | Deterministic ledger (5 of 5 verified, labeled as rehearsals) | Configure `META_API_KEY` and run the ledger and evaluation with `--require-provider meta` |
+| Meta tooling | Generality and use of verification feedback not shown | The prompt now states the business contract, not the defect. Rejected attempts send bounded gate findings to a second attempt. Miscounted hunk headers are recounted. Provider identity is derived from the endpoint host | A non-Meta model (DeepSeek, labeled as such) verified 18 of 20 unfamiliar-defect runs. One repair succeeded only after a specific proposal error was fed back, and the oracle rejected two wrong patches | The same measurement with Meta's model |
+| Technical depth | No aggregate resource quota | Every candidate backend runs in a systemd user scope with cgroup v2 memory, swap, task, and CPU limits. The limits are read back from kernel files, and an OOM and task-limit probe must pass before readiness | Real tests with memory and task hogs; every evaluation session recorded verified limits | CPU throttling is configured but not probed |
+| Technical depth | Independent assurance incomplete | Internal AI-assisted adversarial containment review and correctness review, with real probes; all accepted findings fixed and regression-tested | [QUALITY_REVIEW.md](QUALITY_REVIEW.md#follow-up-review-and-remediation--october-28-2026) | External human review; seccomp filter |
+| Technical depth | Evaluation breadth limited | Oracle hardened so candidate crashes, hangs, and oversized responses are measured failures rather than infrastructure errors | Regression tests; corpus baselines match recorded failures in every run | Defects outside the checkout route |
+| Demo | Not shareable | Static, checksummed, script-free replay export | [docs/replay/](replay/83d1c403-9f6a-4d69-9a46-e39c83ac2471/index.html) from a deterministic rehearsal, labeled as such | Owner review, then publishing (e.g. GitHub Pages); a live Meta replay |
+| Demo | Final video missing; live Meta reliability unproven | Inspector now shows provider identity honestly, gate feedback between attempts, and enforced containment | Browser tests for these views | Record the video; rehearse with Meta |
+
+The largest remaining gap is the same as before: no live Meta repair has been recorded. Everything needed to record one is in place. Configure the credential privately, start the demo, and run:
+
+```bash
+uv run --project apps/buggyshop-backend --python 3.13 --locked \
+  python scripts/trial_ledger.py --trials 5 --require-provider meta --out data/trials/meta.json
+./scripts/evaluate.sh --suite holdout --repeat 2
+```

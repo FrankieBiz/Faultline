@@ -123,6 +123,8 @@ details[open] > summary { margin-bottom: 16px; }
 .inline { display: flex; flex-wrap: wrap; gap: 6px 20px; margin: 0 0 16px; padding: 0; list-style: none; font: 12.5px var(--mono); color: var(--ink-2); }
 .explain { margin: 0 0 16px; max-width: 80ch; color: var(--ink-2); }
 .explain .eyebrow { display: block; margin-bottom: 4px; }
+.feedback { padding-left: 14px; border-left: 2px solid var(--amber); }
+.feedback .checks { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 6px; font-size: 12.5px; }
 
 .code { margin: 0; padding: 14px 0; max-height: 380px; overflow: auto; background: var(--well); border: 1px solid var(--line); border-radius: 8px; font: 12.5px/1.65 var(--mono); }
 .code span { display: block; padding: 0 16px; white-space: pre; color: var(--ink-2); }

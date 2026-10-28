@@ -104,3 +104,30 @@ test("mobile preview fits and keyboard controls have a visible focus", async ({ 
   const missingNames = await page.getByRole("button").evaluateAll((buttons) => buttons.filter((button) => !(button.textContent?.trim() || button.getAttribute("aria-label"))).length);
   expect(missingNames).toBe(0);
 });
+
+test("retries show verifier feedback and non-Meta endpoints are never labeled Meta", async ({ page }) => {
+  const attempt = (number: number, extra: object) => ({
+    id: `00000000-0000-4000-8000-00000000001${number}`, attempt_number: number,
+    prompt_tokens: 900, completion_tokens: 120, raw_patch: null, parsed_diff: null, outcome: "verification_failed",
+    validation_result: { provider: "local", model: "qwen2.5-coder:14b", generation_ms: 4200, is_valid: true, syntax_valid: true, ast_safe: true, ...extra },
+  });
+  const prior = { gate: "verification_failed", policy_error: null, failed_check_count: 2, failed_checks: ["regression.empty_coupon", "regression.whitespace_coupon"], included_rejected_diff: true };
+  await mock(page, {
+    readiness: {
+      ...ready, model: { ...ready.model, provider: "local", model: "qwen2.5-coder:14b" },
+      resource_limits: { requested: "required", mode: "cgroup-v2-scope", enforcement_preflight: "passed", reason: null, configured: { memory_max_bytes: 536870912, tasks_max: 64, cpu_quota_percent: 100 } },
+    },
+    detail: { ...detail("failed", "unresolved"), attempts: [attempt(1, {}), attempt(2, { prior_feedback: prior })] },
+  });
+  await page.goto("/");
+  await expect(page.getByText(/Local model endpoint · qwen2\.5-coder:14b · not a Meta-hosted call/).first()).toBeVisible();
+  await expect(page.getByText("Meta Model API")).toHaveCount(0);
+  const feedback = page.locator(".feedback");
+  await expect(feedback).toContainText("Gate feedback from attempt 1");
+  await expect(feedback).toContainText("2 failing checks sent back as evidence");
+  await expect(feedback.getByText("regression.whitespace_coupon")).toBeVisible();
+  await expect(page.getByText("generated in 4.2 s").first()).toBeVisible();
+  await expect(page.getByText("cgroup v2 · 512 MiB · 64 tasks · 100% CPU · enforced")).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});

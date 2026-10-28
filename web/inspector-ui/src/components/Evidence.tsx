@@ -1,5 +1,5 @@
 import {
-  STAGES, STAGE_LABEL, TERMINAL, providerName,
+  STAGES, STAGE_LABEL, TERMINAL, limitsName, providerName,
   type Artifact, type Attempt, type Execution, type Job, type JobEvent, type Tone,
 } from "@/lib/faultline-api";
 
@@ -53,6 +53,7 @@ function Side(props: { label: string; run: Execution | null; tone: Tone; empty: 
           </p>
           <p className="meta">
             {run.runtime_kind === "isolated-browser" ? "Isolated browser" : "Unverified runtime"} ·{" "}
+            {limitsName(run.resource_limits)} ·{" "}
             {Math.round(run.report.duration_ms)} ms · snapshot {run.candidate_snapshot_sha256.slice(0, 12)}
           </p>
           {shot && (
@@ -111,6 +112,26 @@ export function Diff({ text, label }: { text: string; label: string }) {
   );
 }
 
+/** What the independent gate told this attempt about the previous, rejected one. */
+function PriorFeedback({ value, number }: { value: unknown; number: number }) {
+  if (!value || typeof value !== "object") return null;
+  const prior = value as { gate?: unknown; policy_error?: unknown; failed_check_count?: unknown; failed_checks?: unknown };
+  const checks = Array.isArray(prior.failed_checks) ? prior.failed_checks.filter((c): c is string => typeof c === "string") : [];
+  const count = typeof prior.failed_check_count === "number" ? prior.failed_check_count : checks.length;
+  const gate = typeof prior.gate === "string" ? prior.gate.replaceAll("_", " ") : "an independent gate";
+  return (
+    <p className="explain feedback">
+      <span className="eyebrow">Gate feedback from attempt {number - 1}</span>
+      Rejected by {gate}
+      {typeof prior.policy_error === "string" && <>: {prior.policy_error}</>}
+      {count > 0 && <>. {count} failing {count === 1 ? "check" : "checks"} sent back as evidence{checks.length ? ":" : "."}</>}
+      {checks.length > 0 && (
+        <span className="checks">{checks.map((c) => <code key={c}>{c}</code>)}{count > checks.length && <span className="muted">+{count - checks.length} more</span>}</span>
+      )}
+    </p>
+  );
+}
+
 function Policy({ result }: { result: Record<string, unknown> | null }) {
   if (!result || typeof result.is_valid !== "boolean") {
     return <p className="muted">Patch policy has not evaluated this attempt.</p>;
@@ -124,6 +145,7 @@ function Policy({ result }: { result: Record<string, unknown> | null }) {
       {flag("Syntax", result.syntax_valid)}
       {flag("AST safety", result.ast_safe)}
       {typeof result.target_file === "string" && <li><code>{result.target_file}</code></li>}
+      {result.diff_recounted === true && <li>hunk headers recounted from the model's diff</li>}
       {typeof result.error_message === "string" && <li data-tone="bad">{result.error_message}</li>}
     </ul>
   );
@@ -148,10 +170,14 @@ export function Attempts({ attempts, terminal }: { attempts: Attempt[]; terminal
               <span className="muted">
                 {a.prompt_tokens == null ? "usage not reported" : `${a.prompt_tokens} in · ${a.completion_tokens ?? "?"} out tokens`}
               </span>
+              {typeof v?.generation_ms === "number" && (
+                <span className="muted">generated in {(v.generation_ms / 1000).toFixed(1)} s</span>
+              )}
               <span data-tone={a.outcome === "verified" ? "ok" : a.outcome ? "bad" : "idle"}>
                 {a.outcome?.replaceAll("_", " ") ?? (terminal ? "no outcome recorded" : "in progress")}
               </span>
             </summary>
+            <PriorFeedback value={v?.prior_feedback} number={a.attempt_number} />
             <Policy result={v} />
             {explanation && <p className="explain"><span className="eyebrow">Provider explanation</span>{explanation}</p>}
             {a.parsed_diff

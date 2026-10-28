@@ -17,7 +17,15 @@ from uuid import uuid4
 
 from app.database import Database, utcnow
 from app.evidence import ArtifactError, EvidenceStore
-from app.model_adapter import MetaRepairAdapter, ModelError, ProbeResult, RepairContext
+from app.model_adapter import (
+    CORRECTABLE_PROPOSAL_ERRORS,
+    AttemptFeedback,
+    FailedCheck,
+    MetaRepairAdapter,
+    ModelError,
+    ProbeResult,
+    RepairContext,
+)
 from app.policy import PatchPolicy, PatchPolicyError
 from app.runtime import (
     REGRESSION_ASSERTIONS,
@@ -39,6 +47,7 @@ from shared.contracts.models import (
     Observation,
     ObservationKind,
     OrchestratorJob,
+    PatchProposal,
     RepairAttempt,
     TerminalOutcome,
 )
@@ -322,6 +331,7 @@ class RepairWorker:
                     app_generation_id=snapshot.generation_id,
                     candidate_snapshot_sha256=snapshot.sha256,
                     runtime_kind=getattr(self.runtime, "kind", "unverified"),
+                    resource_limits=result.resource_limits,
                     artifact_ids=[item.id for item in artifacts],
                     started_at=started,
                     finished_at=utcnow(),
@@ -395,20 +405,43 @@ class RepairWorker:
         if job.effective_mode == JobMode.DETECT or (self.probe and not self.probe.available):
             return TerminalOutcome.REPAIR_UNAVAILABLE
         previous_gate: str | None = None
+        # Independent gate findings from a rejected attempt guide the next proposal.
+        feedback: AttemptFeedback | None = None
         final = TerminalOutcome.INVALID_PATCH
         for number in (1, 2):
             if number == 2 and deadline - time.monotonic() < self.budgets.attempt:
                 break
             attempt_deadline = min(deadline, time.monotonic() + self.budgets.attempt)
-            attempt = RepairAttempt(id=str(uuid4()), job_id=job_id, attempt_number=number)
+            # Where the request was sent stays separate from who answered: only a
+            # returned response sets provider/model, so errors never read as inference.
+            attempt = RepairAttempt(
+                id=str(uuid4()),
+                job_id=job_id,
+                attempt_number=number,
+                validation_result={
+                    **(
+                        {
+                            "dispatched_provider": self.probe.provider,
+                            "dispatched_model": self.probe.model,
+                        }
+                        if self.probe
+                        else {}
+                    ),
+                    **({"prior_feedback": feedback.summary()} if feedback else {}),
+                }
+                or None,
+            )
             self.database.save_attempt(attempt)
+            proposal: PatchProposal | None = None
             try:
                 self._transition(job_id, JobStage.DIAGNOSING)
                 context = RepairContext(
                     source=baseline.source,
                     failure_traceback=report.raw_logs,
                     previous_gate=previous_gate,
+                    feedback=feedback,
                 )
+                requested = time.monotonic()
                 model = await self._bounded(
                     job_id,
                     partial(self.adapter.propose_patch, context),
@@ -418,10 +451,18 @@ class RepairWorker:
                 proposal = model.proposal
                 attempt = attempt.model_copy(
                     update={
-                        "raw_patch": self.evidence.redact(proposal.model_dump_json()),
+                        # The provider's own output; parsed_diff is what the gates checked.
+                        "raw_patch": self.evidence.redact(model.model_output.model_dump_json()),
                         "parsed_diff": self.evidence.redact(proposal.unified_diff),
                         "prompt_tokens": model.prompt_tokens,
                         "completion_tokens": model.completion_tokens,
+                        "validation_result": {
+                            **(attempt.validation_result or {}),
+                            "provider": model.provider,
+                            "model": model.model,
+                            "generation_ms": round((time.monotonic() - requested) * 1000),
+                            "diff_recounted": model.original_diff is not None,
+                        },
                     }
                 )
                 self.database.save_attempt(attempt)
@@ -430,7 +471,7 @@ class RepairWorker:
                     RuntimeArtifact(
                         "proposal",
                         "application/json",
-                        proposal.model_dump_json().encode(),
+                        model.model_output.model_dump_json().encode(),
                     ),
                     attempt_id=attempt.id,
                 )
@@ -447,9 +488,8 @@ class RepairWorker:
                 attempt = attempt.model_copy(
                     update={
                         "validation_result": {
+                            **(attempt.validation_result or {}),
                             **validation.model_dump(),
-                            "provider": model.provider,
-                            "model": model.model,
                             "base_sha256": baseline.source_sha256,
                         }
                     }
@@ -465,6 +505,11 @@ class RepairWorker:
                     attempt_id=attempt.id,
                 )
                 if not validation.is_valid:
+                    feedback = AttemptFeedback(
+                        "patch_policy_rejected",
+                        rejected_diff=proposal.unified_diff,
+                        policy_error=validation.error_message,
+                    )
                     raise JobAbort(TerminalOutcome.INVALID_PATCH, "patch_policy_rejected")
                 self._transition(job_id, JobStage.ACTIVATING)
                 candidate = await self._bounded(
@@ -525,8 +570,20 @@ class RepairWorker:
                 if verification.verdict == ExecutionVerdict.ERROR:
                     raise JobAbort(TerminalOutcome.INFRASTRUCTURE_ERROR, "runner_error")
                 if verification.verdict == ExecutionVerdict.TIMED_OUT:
+                    feedback = AttemptFeedback(
+                        "verification_timeout", rejected_diff=proposal.unified_diff
+                    )
                     raise JobAbort(TerminalOutcome.UNRESOLVED, "verification_timeout")
                 if verification.verdict != ExecutionVerdict.PASSED:
+                    failed = [item for item in verification.assertions if not item.passed]
+                    feedback = AttemptFeedback(
+                        "verification_failed",
+                        rejected_diff=proposal.unified_diff,
+                        failed_checks=tuple(
+                            FailedCheck(item.id, item.expected, item.observed) for item in failed
+                        ),
+                        failed_count=len(failed),
+                    )
                     raise JobAbort(TerminalOutcome.UNRESOLVED, "verification_failed")
                 attempt = attempt.model_copy(update={"outcome": "verified"})
                 self.database.save_attempt(attempt)
@@ -534,9 +591,14 @@ class RepairWorker:
                 return TerminalOutcome.VERIFIED
             except ModelError as exc:
                 previous_gate = exc.code
+                # Provider transport failures returned no proposal to correct.
+                feedback = (
+                    AttemptFeedback(exc.code) if exc.code in CORRECTABLE_PROPOSAL_ERRORS else None
+                )
                 final = TerminalOutcome.MODEL_ERROR
                 if exc.disables_repair:
-                    self.probe = ProbeResult(False, "meta", self.adapter.settings.model, exc.code)
+                    settings = self.adapter.settings
+                    self.probe = ProbeResult(False, settings.provider, settings.model, exc.code)
                     self.adapter.readiness = self.probe
                 attempt = attempt.model_copy(update={"outcome": exc.code})
                 self.database.save_attempt(attempt)
@@ -549,6 +611,11 @@ class RepairWorker:
                     else TerminalOutcome.UNRESOLVED
                 )
                 previous_gate = "candidate_rejected"
+                feedback = AttemptFeedback(
+                    previous_gate,
+                    rejected_diff=proposal.unified_diff if proposal else None,
+                    policy_error=str(exc),
+                )
                 self.database.save_attempt(attempt.model_copy(update={"outcome": previous_gate}))
             except TimeoutError:
                 stage = self.database.get_job(job_id).stage
@@ -563,6 +630,11 @@ class RepairWorker:
                     else "verification_timeout"
                     if stage == JobStage.VERIFICATION
                     else "attempt_timeout"
+                )
+                feedback = (
+                    AttemptFeedback(previous_gate, rejected_diff=proposal.unified_diff)
+                    if proposal is not None
+                    else None
                 )
                 self.database.save_attempt(attempt.model_copy(update={"outcome": previous_gate}))
             except JobAbort as exc:

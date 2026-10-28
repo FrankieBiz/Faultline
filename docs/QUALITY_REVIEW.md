@@ -46,6 +46,29 @@ Initial verification exposed missing Node dependencies in the fresh worktree; lo
 
 An overlapping startup build invalidated one browser run and three runtime-readiness checks. Building completed before rerunning them; the final eight browser and seven required runtime checks passed. The captured [Inspector image](assets/inspector.png) comes from the completed real local workflow.
 
+## Follow-up review and remediation — October 28, 2026
+
+This pass acted on every gap in the [score assessment](HACKATHON_SCORE_ASSESSMENT.md) that engineering could address. Two independent internal reviews (a correctness review of the full diff and an AI-assisted adversarial containment review with real probes) checked the new work. Their findings were fixed before the final gates below. External review is still outstanding.
+
+| Severity | Observed problem | Remediation and evidence |
+| --- | --- | --- |
+| High | The trusted HTTP oracle called `response.json()` unconditionally. A wrong candidate that raised a non-`TypeError` exception, hung, or returned an oversized body crashed the oracle, so the job was misreported as an infrastructure error and skipped the second attempt. | Candidate faults now become failed checks with the observed fault. Regression tests cover plain-text 500s, timeouts, and the response cap. |
+| High | The second repair attempt received only a gate code such as `verification_failed`, never what failed. | Bounded gate findings (failing assertions with expected/observed values, policy error, rejected diff) are sent as untrusted evidence. Each attempt records `prior_feedback`; the Inspector and replay show it. |
+| High | Any configured endpoint was labeled `meta` in evidence. A non-Meta key and URL would have produced records claiming Meta inference. | Provider identity is derived from the endpoint host only. Attempts record `provider`/`model` only from a returned response; the dispatched endpoint is stored separately, so provider errors never count as model output. |
+| High | The evaluation harness aborted and lost all results when a candidate failed at import. | Such candidates are rejected with feedback; results are checkpointed after every case and marked incomplete if the run stops. |
+| Medium | Candidates could read Bubblewrap's initial environment through `/proc/1/environ`. | `env -i` empties it before Bubblewrap starts; the enforcement probe asserts it. |
+| Medium | Uncaught candidate tracebacks reached the backend log as raw multi-line text, so a source line shaped like a correlated JSON event could appear in trusted logs. | Every record, including uncaught tracebacks, is one escaped JSON line. A real isolated test proves a forged event line is not parsed as an event, and fails without the fix. |
+| Medium | The system prompt described the seeded defect ("optional-coupon arithmetic failure"), so it did not test unfamiliar defects. | The prompt now states the checkout business contract, never the defect or its fix. |
+| Medium | `reasoning_effort` was always sent, and strict `json_schema` output was mandatory. Compatible models without these features could not be evaluated. | `META_REASONING_EFFORT` and `META_RESPONSE_FORMAT` are configurable. The defaults remain the documented Meta settings, and local strict validation is unchanged. |
+| Medium | Models miscount unified-diff hunk headers. In a real development run, a semantically correct patch was rejected for a header that declared seven lines for a six-line body. | Like `git apply --recount`, hunk counts are recomputed from the body and a hunk is relocated only to its single exact match. Content is never edited. The strict policy validates the result, and the model's original output is retained. |
+| Low | `--unshare-all` silently skips the user namespace where Bubblewrap is setuid. | `--unshare-user` is explicit, and the preflight asserts that the sandbox's user and network namespaces differ from the controller's. |
+| Low | Truncated 16-character scope prefixes could collide across installations. A scope that failed to start was blamed on the candidate. | Prefixes use the full installation ID. The scope must be observed active with configured limits before the candidate serves, and infrastructure failures are never recorded as candidate verdicts. |
+| Low | Proposal-contract errors all reported `proposal_scope_mismatch`, so a retry could not tell what to correct. | Specific codes now distinguish target, base hash, missing diff, and oversized diff. |
+
+New capabilities: aggregate cgroup v2 limits for every candidate backend, verified from kernel files and proven by an enforcement probe before readiness; a hash-pinned evaluation corpus and harness; a trial ledger for repeated controller jobs; and a static, checksummed read-only replay export. See [EVALUATION.md](EVALUATION.md) and [IMPACT_EVIDENCE.md](IMPACT_EVIDENCE.md).
+
+Residual risks accepted for now: no seccomp filter; the candidate's abstract listener is reachable from other local processes that know its random name; trusted parsers outside the sandbox read candidate-influenced bytes; the CPU quota is configured and read back but not probed.
+
 ## Harsh provisional judging assessment
 
 The [standalone score assessment](HACKATHON_SCORE_ASSESSMENT.md) explains each awarded score, the missing evidence, and what would justify reassessment.

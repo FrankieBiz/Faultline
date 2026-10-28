@@ -1,0 +1,19 @@
+--- a/apps/buggyshop-backend/app/routes/checkout.py
++++ b/apps/buggyshop-backend/app/routes/checkout.py
+@@ -1,5 +1,6 @@
+ """Create synthetic orders from catalog prices and normalized coupon codes."""
+ 
++import logging
+ from typing import cast
+ from uuid import uuid4
+ 
+@@ -40,7 +41,8 @@
+     if coupon_code and coupon_code not in discounts:
+         raise HTTPException(status_code=400, detail="Invalid coupon code")
+ 
+-    discount = cast(int, discounts.get(coupon_code))
++    logging.getLogger(__name__).info("coupon %r", coupon_code)
++    discount = cast(int, discounts.get(coupon_code, 0))
+     total = subtotal - discount
+     order: Order = {
+         "id": str(uuid4()),

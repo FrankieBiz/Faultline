@@ -1,0 +1,991 @@
+{
+  "schema_version": "1.0",
+  "tool": "faultline-evaluation",
+  "started_at": "2026-10-28T10:26:54.930916+00:00",
+  "corpus": {
+    "version": "checkout-eval-v1",
+    "sha256": "3e404f36c8458cdba1e1216f72cabdd70cd4070d4dee4b50f11c9a1a533384ce"
+  },
+  "seed_commit": "44b2a13b412588de7596ef0f3bb2d1aae47799a5",
+  "runtime": "isolated-backend",
+  "provider": {
+    "provider": "openai-compatible",
+    "model": "deepseek-v4-pro",
+    "available": true
+  },
+  "classification": "openai_compatible_model_not_meta_hosted",
+  "oracle": "app.http_regression (27 independent HTTP business checks)",
+  "complete": true,
+  "holdout": {
+    "cases": [
+      {
+        "trial": 1,
+        "id": "seeded_missing_coupon",
+        "defect_class": "null handling",
+        "baseline_failures": [
+          "regression.missing_coupon",
+          "regression.null_coupon",
+          "regression.empty_coupon",
+          "regression.whitespace_coupon",
+          "regression.mixed_cart",
+          "regression.quantity_ten"
+        ],
+        "baseline_matches_corpus": true,
+        "attempts": [
+          {
+            "attempt_number": 1,
+            "prior_feedback": null,
+            "provider": "openai-compatible",
+            "model": "deepseek-v4-pro",
+            "prompt_tokens": 4340,
+            "completion_tokens": 5887,
+            "generation_ms": 65648,
+            "decision": "patch",
+            "explanation": "The current code uses discounts.get(coupon_code) without a default. When the coupon is absent, null, empty, or whitespace, coupon_code becomes an empty string, so the lookup returns None. Subtracting None from an integer raises TypeError. Providing a default of 0 makes absent/empty coupons yield zero discount, preserving the contract while valid coupons still resolve to their integer discount values.",
+            "diff": "--- a/apps/buggyshop-backend/app/routes/checkout.py\n+++ b/apps/buggyshop-backend/app/routes/checkout.py\n@@ -40,7 +40,7 @@\n     if coupon_code and coupon_code not in discounts:\n         raise HTTPException(status_code=400, detail=\"Invalid coupon code\")\n \n-    discount = cast(int, discounts.get(coupon_code))\n+    discount = cast(int, discounts.get(coupon_code, 0))\n     total = subtotal - discount\n     order: Order = {\n         \"id\": str(uuid4()),\n",
+            "diff_sha256": "f9193387309f43e0ea1d584bd43af316f4c23f4c83b6c0a8bcd36abb8b3a8d70",
+            "diff_recounted": false,
+            "model_diff": null,
+            "policy": {
+              "is_valid": true,
+              "error": null
+            },
+            "failing_after": [],
+            "outcome": "verified"
+          }
+        ],
+        "outcome": "verified"
+      },
+      {
+        "trial": 1,
+        "id": "fifteen_float_rounding",
+        "defect_class": "rounding",
+        "baseline_failures": [
+          "regression.fifteen"
+        ],
+        "baseline_matches_corpus": true,
+        "attempts": [
+          {
+            "attempt_number": 1,
+            "prior_feedback": null,
+            "provider": "openai-compatible",
+            "model": "deepseek-v4-pro",
+            "prompt_tokens": 1267,
+            "completion_tokens": 1497,
+            "generation_ms": 14769,
+            "decision": "patch",
+            "explanation": "FIFTEEN must be 15% of the subtotal truncated to whole cents using integer arithmetic. The previous implementation used round(subtotal * 0.15), which can round up (for 1999 cents it rounds 299.85 to 300 instead of truncating to 299). Replacing it with subtotal * 15 // 100 restores the required integer-arithmetic truncation while preserving all other validation and storage behavior.",
+            "diff": "--- a/apps/buggyshop-backend/app/routes/checkout.py\n+++ b/apps/buggyshop-backend/app/routes/checkout.py\n@@ -34,7 +34,7 @@\n     subtotal = sum(item[\"line_total_cents\"] for item in line_items)\n     coupon_code = (payload.coupon_code or \"\").strip().upper()\n     discounts: dict[str, int | None] = {\n         \"TENOFF\": subtotal // 10,\n-        \"FIFTEEN\": round(subtotal * 0.15),\n+        \"FIFTEEN\": subtotal * 15 // 100,\n     }\n     if coupon_code and coupon_code not in discounts:\n",
+            "diff_sha256": "e3d4b100e4a1fb0f31a8b754379bdf0ac185d3c88446086ed619c5b2852ab6f5",
+            "diff_recounted": true,
+            "model_diff": "--- a/apps/buggyshop-backend/app/routes/checkout.py\n+++ b/apps/buggyshop-backend/app/routes/checkout.py\n@@ -35,7 +35,7 @@\n     subtotal = sum(item[\"line_total_cents\"] for item in line_items)\n     coupon_code = (payload.coupon_code or \"\").strip().upper()\n     discounts: dict[str, int | None] = {\n         \"TENOFF\": subtotal // 10,\n-        \"FIFTEEN\": round(subtotal * 0.15),\n+        \"FIFTEEN\": subtotal * 15 // 100,\n     }\n     if coupon_code and coupon_code not in discounts:\n",
+            "policy": {
+              "is_valid": true,
+              "error": null
+            },
+            "failing_after": [],
+            "outcome": "verified"
+          }
+        ],
+        "outcome": "verified"
+      },
+      {
+        "trial": 1,
+        "id": "coupon_case_sensitive",
+        "defect_class": "input normalization",
+        "baseline_failures": [
+          "regression.normalized_coupon"
+        ],
+        "baseline_matches_corpus": true,
+        "attempts": [
+          {
+            "attempt_number": 1,
+            "prior_feedback": null,
+            "provider": "openai-compatible",
+            "model": "deepseek-v4-pro",
+            "prompt_tokens": 1181,
+            "completion_tokens": 4118,
+            "generation_ms": 40574,
+            "decision": "patch",
+            "explanation": "Normalize coupon codes to upper case after trimming so that mixed-case values like \"tenoff\" match the defined discount table, while empty/whitespace-only coupons still resolve to zero discount.",
+            "diff": "--- a/apps/buggyshop-backend/app/routes/checkout.py\n+++ b/apps/buggyshop-backend/app/routes/checkout.py\n@@ -34,6 +34,6 @@\n     subtotal = sum(item[\"line_total_cents\"] for item in line_items)\n-    coupon_code = (payload.coupon_code or \"\").strip()\n+    coupon_code = (payload.coupon_code or \"\").strip().upper()\n     discounts: dict[str, int | None] = {\n         \"TENOFF\": subtotal // 10,\n         \"FIFTEEN\": subtotal * 15 // 100,\n     }\n",
+            "diff_sha256": "7a00f0f5a3aa5d748df179598c2d7500bc42191904010164fedc571e7dbb3a65",
+            "diff_recounted": false,
+            "model_diff": null,
+            "policy": {
+              "is_valid": true,
+              "error": null
+            },
+            "failing_after": [],
+            "outcome": "verified"
+          }
+        ],
+        "outcome": "verified"
+      },
+      {
+        "trial": 1,
+        "id": "coupon_whitespace_untrimmed",
+        "defect_class": "input normalization",
+        "baseline_failures": [
+          "regression.whitespace_coupon",
+          "regression.normalized_coupon"
+        ],
+        "baseline_matches_corpus": true,
+        "attempts": [
+          {
+            "attempt_number": 1,
+            "prior_feedback": null,
+            "provider": "openai-compatible",
+            "model": "deepseek-v4-pro",
+            "prompt_tokens": 1271,
+            "completion_tokens": 2157,
+            "generation_ms": 22424,
+            "decision": "patch",
+            "explanation": "Trim whitespace from the coupon code before upper-casing it. Whitespace-only coupons become empty and are treated as no discount, while surrounding spaces no longer cause valid codes like ' tenoff ' to be rejected.",
+            "diff": "--- a/apps/buggyshop-backend/app/routes/checkout.py\n+++ b/apps/buggyshop-backend/app/routes/checkout.py\n@@ -32,7 +32,7 @@\n         )\n \n     subtotal = sum(item[\"line_total_cents\"] for item in line_items)\n-    coupon_code = (payload.coupon_code or \"\").upper()\n+    coupon_code = (payload.coupon_code or \"\").strip().upper()\n     discounts: dict[str, int | None] = {\n         \"TENOFF\": subtotal // 10,\n         \"FIFTEEN\": subtotal * 15 // 100,\n",
+            "diff_sha256": "682115d2125429271da8d739dee356baccadcc00ad4a7fe4504f40220ca8ff28",
+            "diff_recounted": false,
+            "model_diff": null,
+            "policy": {
+              "is_valid": true,
+              "error": null
+            },
+            "failing_after": [],
+            "outcome": "verified"
+          }
+        ],
+        "outcome": "verified"
+      },
+      {
+        "trial": 1,
+        "id": "line_total_ignores_quantity",
+        "defect_class": "pricing",
+        "baseline_failures": [
+          "regression.mixed_cart",
+          "regression.mixed_cart_coupon",
+          "regression.quantity_ten"
+        ],
+        "baseline_matches_corpus": true,
+        "attempts": [
+          {
+            "attempt_number": 1,
+            "prior_feedback": null,
+            "provider": "openai-compatible",
+            "model": "deepseek-v4-pro",
+            "prompt_tokens": 1740,
+            "completion_tokens": 8146,
+            "generation_ms": 90667,
+            "decision": "patch",
+            "explanation": "The line total was being set to the unit price without multiplying by quantity. This fix computes line_total_cents as unit_price_cents * item.quantity, making mixed-cart and quantity subtotals correct while preserving coupon and validation behavior.",
+            "diff": "--- a/apps/buggyshop-backend/app/routes/checkout.py\n+++ b/apps/buggyshop-backend/app/routes/checkout.py\n@@ -28,6 +28,6 @@\n                 \"quantity\": item.quantity,\n                 \"unit_price_cents\": product[\"price_cents\"],\n-                \"line_total_cents\": product[\"price_cents\"],\n+                \"line_total_cents\": product[\"price_cents\"] * item.quantity,\n             }\n         )\n \n",
+            "diff_sha256": "1d042f0b56523af8770f76623acc89cc60dc1c4a2c31766bc30c1d4594aaed6e",
+            "diff_recounted": false,
+            "model_diff": null,
+            "policy": {
+              "is_valid": true,
+              "error": null
+            },
+            "failing_after": [],
+            "outcome": "verified"
+          }
+        ],
+        "outcome": "verified"
+      },
+      {
+        "trial": 1,
+        "id": "discount_sign_inverted",
+        "defect_class": "pricing",
+        "baseline_failures": [
+          "regression.tenoff",
+          "regression.fifteen",
+          "regression.normalized_coupon",
+          "regression.mixed_cart_coupon"
+        ],
+        "baseline_matches_corpus": true,
+        "attempts": [
+          {
+            "attempt_number": 1,
+            "prior_feedback": null,
+            "provider": "openai-compatible",
+            "model": "deepseek-v4-pro",
+            "prompt_tokens": 1853,
+            "completion_tokens": 4997,
+            "generation_ms": 56531,
+            "decision": "patch",
+            "explanation": "The checkout total was adding the discount instead of subtracting it. Changing the total calculation from subtotal + discount to subtotal - discount restores the contract that total is subtotal minus discount, while preserving all other validation and pricing behavior.",
+            "diff": "--- a/apps/buggyshop-backend/app/routes/checkout.py\n+++ b/apps/buggyshop-backend/app/routes/checkout.py\n@@ -43,3 +43,3 @@\n     discount = cast(int, discounts.get(coupon_code, 0))\n-    total = subtotal + discount\n+    total = subtotal - discount\n     order: Order = {\n",
+            "diff_sha256": "d32d1c2675f84e16378b9fc391649507f98c2bf55f4b988a81c6deacce390fab",
+            "diff_recounted": false,
+            "model_diff": null,
+            "policy": {
+              "is_valid": true,
+              "error": null
+            },
+            "failing_after": [],
+            "outcome": "verified"
+          }
+        ],
+        "outcome": "verified"
+      },
+      {
+        "trial": 1,
+        "id": "discount_first_line_only",
+        "defect_class": "pricing",
+        "baseline_failures": [
+          "regression.mixed_cart_coupon"
+        ],
+        "baseline_matches_corpus": true,
+        "attempts": [
+          {
+            "attempt_number": 1,
+            "prior_feedback": null,
+            "provider": "openai-compatible",
+            "model": "deepseek-v4-pro",
+            "prompt_tokens": 1352,
+            "completion_tokens": 4049,
+            "generation_ms": 42703,
+            "decision": "patch",
+            "explanation": "The coupon discount used the first line item's total instead of the full subtotal. Replaced those references with subtotal so TENOFF is 10% and FIFTEEN is 15% of the whole cart subtotal, rounded down with integer arithmetic.",
+            "diff": "--- a/apps/buggyshop-backend/app/routes/checkout.py\n+++ b/apps/buggyshop-backend/app/routes/checkout.py\n@@ -36,4 +36,4 @@\n     discounts: dict[str, int | None] = {\n-        \"TENOFF\": line_items[0][\"line_total_cents\"] // 10,\n-        \"FIFTEEN\": line_items[0][\"line_total_cents\"] * 15 // 100,\n+        \"TENOFF\": subtotal // 10,\n+        \"FIFTEEN\": subtotal * 15 // 100,\n     }\n",
+            "diff_sha256": "591d0e536c2a18787e1c3889c8fd88dceac0d767ae68bb8c9cba8f77c3432d10",
+            "diff_recounted": false,
+            "model_diff": null,
+            "policy": {
+              "is_valid": true,
+              "error": null
+            },
+            "failing_after": [],
+            "outcome": "verified"
+          }
+        ],
+        "outcome": "verified"
+      },
+      {
+        "trial": 1,
+        "id": "unknown_coupon_accepted",
+        "defect_class": "validation",
+        "baseline_failures": [
+          "regression.unknown_coupon"
+        ],
+        "baseline_matches_corpus": true,
+        "attempts": [
+          {
+            "attempt_number": 1,
+            "prior_feedback": null,
+            "provider": "openai-compatible",
+            "model": "deepseek-v4-pro",
+            "prompt_tokens": 1088,
+            "completion_tokens": 3526,
+            "generation_ms": 38779,
+            "decision": "patch",
+            "explanation": "Added coupon code validation so any nonempty code other than TENOFF or FIFTEEN raises HTTP 400 before creating an order. Empty/whitespace-only coupons still normalize to an empty string and receive zero discount.",
+            "diff": "--- a/apps/buggyshop-backend/app/routes/checkout.py\n+++ b/apps/buggyshop-backend/app/routes/checkout.py\n@@ -36,7 +36,9 @@ def checkout(payload: CheckoutRequest, namespace: str = \"demo\") -> Order:\n     discounts: dict[str, int | None] = {\n         \"TENOFF\": subtotal // 10,\n         \"FIFTEEN\": subtotal * 15 // 100,\n     }\n+    if coupon_code and coupon_code not in discounts:\n+        raise HTTPException(status_code=400, detail=\"Unknown coupon code\")\n     discount = cast(int, discounts.get(coupon_code, 0))\n     total = subtotal - discount\n     order: Order = {\n",
+            "diff_sha256": "0c1a94a10f1b02ceac5b171a992e7262586af88f23a1733e92f74261f7cd17e3",
+            "diff_recounted": false,
+            "model_diff": null,
+            "policy": {
+              "is_valid": true,
+              "error": null
+            },
+            "failing_after": [],
+            "outcome": "verified"
+          }
+        ],
+        "outcome": "verified"
+      },
+      {
+        "trial": 1,
+        "id": "missing_coupon_key_error",
+        "defect_class": "null handling",
+        "baseline_failures": [
+          "regression.missing_coupon",
+          "regression.null_coupon",
+          "regression.empty_coupon",
+          "regression.whitespace_coupon",
+          "regression.mixed_cart",
+          "regression.quantity_ten"
+        ],
+        "baseline_matches_corpus": true,
+        "attempts": [
+          {
+            "attempt_number": 1,
+            "prior_feedback": null,
+            "provider": "openai-compatible",
+            "model": "deepseek-v4-pro",
+            "prompt_tokens": 4158,
+            "completion_tokens": 3143,
+            "generation_ms": 37048,
+            "decision": "patch",
+            "explanation": "The empty normalized coupon code falls through to a dictionary lookup that is missing, causing a KeyError instead of applying zero discount. Use discounts.get(coupon_code, 0) inside the existing cast so absent, null, empty, and whitespace-only coupons resolve to zero discount. Non-empty unknown coupons are still rejected with HTTP 400 before discount lookup.",
+            "diff": "--- a/apps/buggyshop-backend/app/routes/checkout.py\n+++ b/apps/buggyshop-backend/app/routes/checkout.py\n@@ -40,8 +40,8 @@\n     if coupon_code and coupon_code not in discounts:\n         raise HTTPException(status_code=400, detail=\"Invalid coupon code\")\n \n-    discount = cast(int, discounts[coupon_code])\n+    discount = cast(int, discounts.get(coupon_code, 0))\n     total = subtotal - discount\n     order: Order = {\n         \"id\": str(uuid4()),\n         \"line_items\": line_items,\n",
+            "diff_sha256": "63a5deefe3790f7cfdfaa1a90ee83368c2a4be52d555bc7ca2ae47a5d9dfdf05",
+            "diff_recounted": true,
+            "model_diff": "--- a/apps/buggyshop-backend/app/routes/checkout.py\n+++ b/apps/buggyshop-backend/app/routes/checkout.py\n@@ -40,7 +40,7 @@\n     if coupon_code and coupon_code not in discounts:\n         raise HTTPException(status_code=400, detail=\"Invalid coupon code\")\n \n-    discount = cast(int, discounts[coupon_code])\n+    discount = cast(int, discounts.get(coupon_code, 0))\n     total = subtotal - discount\n     order: Order = {\n         \"id\": str(uuid4()),\n         \"line_items\": line_items,\n",
+            "policy": {
+              "is_valid": true,
+              "error": null
+            },
+            "failing_after": [],
+            "outcome": "verified"
+          }
+        ],
+        "outcome": "verified"
+      },
+      {
+        "trial": 1,
+        "id": "order_wrong_namespace",
+        "defect_class": "persistence",
+        "baseline_failures": [
+          "regression.missing_coupon",
+          "regression.null_coupon",
+          "regression.empty_coupon",
+          "regression.whitespace_coupon",
+          "regression.tenoff",
+          "regression.fifteen",
+          "regression.normalized_coupon",
+          "regression.mixed_cart",
+          "regression.mixed_cart_coupon",
+          "regression.quantity_ten"
+        ],
+        "baseline_matches_corpus": true,
+        "attempts": [
+          {
+            "attempt_number": 1,
+            "prior_feedback": null,
+            "outcome": "provider_timeout",
+            "generation_ms": 120061
+          },
+          {
+            "attempt_number": 2,
+            "prior_feedback": null,
+            "provider": "openai-compatible",
+            "model": "deepseek-v4-pro",
+            "prompt_tokens": 2953,
+            "completion_tokens": 9419,
+            "generation_ms": 118273,
+            "decision": "patch",
+            "explanation": "Removed the manually generated id field from the order payload because the contract and regression expectations return the stored order without an id. Replaced the hardcoded \"demo\" namespace with the caller-provided namespace parameter so successful checkouts are stored in the correct namespace.",
+            "diff": "--- a/apps/buggyshop-backend/app/routes/checkout.py\n+++ b/apps/buggyshop-backend/app/routes/checkout.py\n@@ -3,6 +3,5 @@\n from typing import cast\n-from uuid import uuid4\n \n from fastapi import HTTPException\n \n from app.catalog import get_product\n@@ -43,10 +42,9 @@\n     discount = cast(int, discounts.get(coupon_code, 0))\n     total = subtotal - discount\n     order: Order = {\n-        \"id\": str(uuid4()),\n         \"line_items\": line_items,\n         \"subtotal\": subtotal,\n         \"discount\": discount,\n         \"total\": total,\n     }\n-    return create_order(\"demo\", order)\n+    return create_order(namespace, order)\n",
+            "diff_sha256": "f7c970a672708ca3df830e8b461e78164346bab54928c6259052fd190c6fb07a",
+            "diff_recounted": true,
+            "model_diff": "--- a/apps/buggyshop-backend/app/routes/checkout.py\n+++ b/apps/buggyshop-backend/app/routes/checkout.py\n@@ -3,6 +3,5 @@\n from typing import cast\n-from uuid import uuid4\n \n from fastapi import HTTPException\n \n from app.catalog import get_product\n@@ -43,10 +43,9 @@\n     discount = cast(int, discounts.get(coupon_code, 0))\n     total = subtotal - discount\n     order: Order = {\n-        \"id\": str(uuid4()),\n         \"line_items\": line_items,\n         \"subtotal\": subtotal,\n         \"discount\": discount,\n         \"total\": total,\n     }\n-    return create_order(\"demo\", order)\n+    return create_order(namespace, order)\n",
+            "policy": {
+              "is_valid": true,
+              "error": null
+            },
+            "failing_after": [
+              "regression.missing_coupon",
+              "regression.null_coupon",
+              "regression.empty_coupon",
+              "regression.whitespace_coupon",
+              "regression.tenoff",
+              "regression.fifteen",
+              "regression.normalized_coupon",
+              "regression.mixed_cart",
+              "regression.mixed_cart_coupon",
+              "regression.quantity_ten"
+            ],
+            "outcome": "verification_failed"
+          }
+        ],
+        "outcome": "verification_failed"
+      },
+      {
+        "trial": 2,
+        "id": "seeded_missing_coupon",
+        "defect_class": "null handling",
+        "baseline_failures": [
+          "regression.missing_coupon",
+          "regression.null_coupon",
+          "regression.empty_coupon",
+          "regression.whitespace_coupon",
+          "regression.mixed_cart",
+          "regression.quantity_ten"
+        ],
+        "baseline_matches_corpus": true,
+        "attempts": [
+          {
+            "attempt_number": 1,
+            "prior_feedback": null,
+            "provider": "openai-compatible",
+            "model": "deepseek-v4-pro",
+            "prompt_tokens": 4335,
+            "completion_tokens": 3205,
+            "generation_ms": 36430,
+            "decision": "patch",
+            "explanation": "The empty/absent coupon path left discount as None because discounts.get returned None; subtotal - None raised TypeError. Providing 0 as the default restores zero discount while preserving existing coupon validation and integer arithmetic.",
+            "diff": "--- a/apps/buggyshop-backend/app/routes/checkout.py\n+++ b/apps/buggyshop-backend/app/routes/checkout.py\n@@ -40,8 +40,8 @@\n     if coupon_code and coupon_code not in discounts:\n         raise HTTPException(status_code=400, detail=\"Invalid coupon code\")\n \n-    discount = cast(int, discounts.get(coupon_code))\n+    discount = cast(int, discounts.get(coupon_code, 0))\n     total = subtotal - discount\n     order: Order = {\n         \"id\": str(uuid4()),\n         \"line_items\": line_items,\n",
+            "diff_sha256": "aef3937bf3d3e59e09087ef49548392387a924e340aa1e6308917ff129e0283a",
+            "diff_recounted": true,
+            "model_diff": "--- a/apps/buggyshop-backend/app/routes/checkout.py\n+++ b/apps/buggyshop-backend/app/routes/checkout.py\n@@ -41,7 +41,7 @@\n     if coupon_code and coupon_code not in discounts:\n         raise HTTPException(status_code=400, detail=\"Invalid coupon code\")\n \n-    discount = cast(int, discounts.get(coupon_code))\n+    discount = cast(int, discounts.get(coupon_code, 0))\n     total = subtotal - discount\n     order: Order = {\n         \"id\": str(uuid4()),\n         \"line_items\": line_items,\n",
+            "policy": {
+              "is_valid": true,
+              "error": null
+            },
+            "failing_after": [],
+            "outcome": "verified"
+          }
+        ],
+        "outcome": "verified"
+      },
+      {
+        "trial": 2,
+        "id": "fifteen_float_rounding",
+        "defect_class": "rounding",
+        "baseline_failures": [
+          "regression.fifteen"
+        ],
+        "baseline_matches_corpus": true,
+        "attempts": [
+          {
+            "attempt_number": 1,
+            "prior_feedback": null,
+            "provider": "openai-compatible",
+            "model": "deepseek-v4-pro",
+            "prompt_tokens": 1258,
+            "completion_tokens": 1695,
+            "generation_ms": 17486,
+            "decision": "patch",
+            "explanation": "Replaced the FIFTEEN discount calculation using floating-point round() with integer arithmetic that truncates 15 percent of the subtotal down to whole cents, matching the contract. For subtotal 1999, this returns 299 instead of 300. All other validation and pricing behavior is preserved.",
+            "diff": "--- a/apps/buggyshop-backend/app/routes/checkout.py\n+++ b/apps/buggyshop-backend/app/routes/checkout.py\n@@ -35,7 +35,7 @@\n     coupon_code = (payload.coupon_code or \"\").strip().upper()\n     discounts: dict[str, int | None] = {\n         \"TENOFF\": subtotal // 10,\n-        \"FIFTEEN\": round(subtotal * 0.15),\n+        \"FIFTEEN\": (subtotal * 15) // 100,\n     }\n     if coupon_code and coupon_code not in discounts:\n         raise HTTPException(status_code=400, detail=\"Invalid coupon code\")\n",
+            "diff_sha256": "03aca050726e454342d7542103d5c94628ba33ccbd8c8c8b1a1bcfa82dd5d18b",
+            "diff_recounted": false,
+            "model_diff": null,
+            "policy": {
+              "is_valid": true,
+              "error": null
+            },
+            "failing_after": [],
+            "outcome": "verified"
+          }
+        ],
+        "outcome": "verified"
+      },
+      {
+        "trial": 2,
+        "id": "coupon_case_sensitive",
+        "defect_class": "input normalization",
+        "baseline_failures": [
+          "regression.normalized_coupon"
+        ],
+        "baseline_matches_corpus": true,
+        "attempts": [
+          {
+            "attempt_number": 1,
+            "prior_feedback": null,
+            "outcome": "proposal_base_mismatch",
+            "generation_ms": 69956
+          },
+          {
+            "attempt_number": 2,
+            "prior_feedback": {
+              "gate": "proposal_base_mismatch",
+              "policy_error": null,
+              "failed_check_count": 0,
+              "failed_checks": [],
+              "included_rejected_diff": false
+            },
+            "provider": "openai-compatible",
+            "model": "deepseek-v4-pro",
+            "prompt_tokens": 1229,
+            "completion_tokens": 4131,
+            "generation_ms": 47698,
+            "decision": "patch",
+            "explanation": "Normalize coupon codes by trimming and uppercasing so mixed-case inputs like \" tenoff \" match the TENOFF discount table entry. Empty or whitespace-only coupons remain empty and produce zero discount; invalid nonempty coupons still raise HTTP 400 before order creation.",
+            "diff": "--- a/apps/buggyshop-backend/app/routes/checkout.py\n+++ b/apps/buggyshop-backend/app/routes/checkout.py\n@@ -35,1 +35,1 @@\n-    coupon_code = (payload.coupon_code or \"\").strip()\n+    coupon_code = (payload.coupon_code or \"\").strip().upper()\n",
+            "diff_sha256": "081f8c701bebae514fbe4affee6f01286d94f084e03e39845cdff051695a5a68",
+            "diff_recounted": true,
+            "model_diff": "--- a/apps/buggyshop-backend/app/routes/checkout.py\n+++ b/apps/buggyshop-backend/app/routes/checkout.py\n@@ -35 +35 @@\n-    coupon_code = (payload.coupon_code or \"\").strip()\n+    coupon_code = (payload.coupon_code or \"\").strip().upper()\n",
+            "policy": {
+              "is_valid": true,
+              "error": null
+            },
+            "failing_after": [],
+            "outcome": "verified"
+          }
+        ],
+        "outcome": "verified"
+      },
+      {
+        "trial": 2,
+        "id": "coupon_whitespace_untrimmed",
+        "defect_class": "input normalization",
+        "baseline_failures": [
+          "regression.whitespace_coupon",
+          "regression.normalized_coupon"
+        ],
+        "baseline_matches_corpus": true,
+        "attempts": [
+          {
+            "attempt_number": 1,
+            "prior_feedback": null,
+            "provider": "openai-compatible",
+            "model": "deepseek-v4-pro",
+            "prompt_tokens": 1271,
+            "completion_tokens": 3690,
+            "generation_ms": 40440,
+            "decision": "patch",
+            "explanation": "Normalize coupon input by trimming surrounding whitespace before uppercasing. This makes whitespace-only coupons evaluate to an empty string and therefore zero discount, while padded codes like ' tenoff ' normalize to 'TENOFF'. All existing pricing and validation logic remains unchanged.",
+            "diff": "--- a/apps/buggyshop-backend/app/routes/checkout.py\n+++ b/apps/buggyshop-backend/app/routes/checkout.py\n@@ -33,7 +33,7 @@\n \n     subtotal = sum(item[\"line_total_cents\"] for item in line_items)\n-    coupon_code = (payload.coupon_code or \"\").upper()\n+    coupon_code = (payload.coupon_code or \"\").strip().upper()\n     discounts: dict[str, int | None] = {\n         \"TENOFF\": subtotal // 10,\n         \"FIFTEEN\": subtotal * 15 // 100,\n     }\n",
+            "diff_sha256": "456a75edcd120365ed368d05637af497d81c8379c30ae170581c33e3fa1272b6",
+            "diff_recounted": false,
+            "model_diff": null,
+            "policy": {
+              "is_valid": true,
+              "error": null
+            },
+            "failing_after": [],
+            "outcome": "verified"
+          }
+        ],
+        "outcome": "verified"
+      },
+      {
+        "trial": 2,
+        "id": "line_total_ignores_quantity",
+        "defect_class": "pricing",
+        "baseline_failures": [
+          "regression.mixed_cart",
+          "regression.mixed_cart_coupon",
+          "regression.quantity_ten"
+        ],
+        "baseline_matches_corpus": true,
+        "attempts": [
+          {
+            "attempt_number": 1,
+            "prior_feedback": null,
+            "provider": "openai-compatible",
+            "model": "deepseek-v4-pro",
+            "prompt_tokens": 1746,
+            "completion_tokens": 3563,
+            "generation_ms": 33986,
+            "decision": "patch",
+            "explanation": "The cart line total was set to only the unit price, ignoring the item quantity. This caused incorrect subtotals and order totals for any quantity other than 1. The fix multiples the catalog unit price by the requested quantity to satisfy the contract that a line total is unit price times quantity.",
+            "diff": "--- a/apps/buggyshop-backend/app/routes/checkout.py\n+++ b/apps/buggyshop-backend/app/routes/checkout.py\n@@ -27,6 +27,6 @@\n                 \"product_id\": product[\"id\"],\n                 \"quantity\": item.quantity,\n                 \"unit_price_cents\": product[\"price_cents\"],\n-                \"line_total_cents\": product[\"price_cents\"],\n+                \"line_total_cents\": product[\"price_cents\"] * item.quantity,\n             }\n         )\n",
+            "diff_sha256": "0e0f4d09ddb7c8e1674af4235289ae2f9e38f9389c54869c2ead207237c97672",
+            "diff_recounted": true,
+            "model_diff": "--- a/apps/buggyshop-backend/app/routes/checkout.py\n+++ b/apps/buggyshop-backend/app/routes/checkout.py\n@@ -27,5 +27,5 @@\n                 \"product_id\": product[\"id\"],\n                 \"quantity\": item.quantity,\n                 \"unit_price_cents\": product[\"price_cents\"],\n-                \"line_total_cents\": product[\"price_cents\"],\n+                \"line_total_cents\": product[\"price_cents\"] * item.quantity,\n             }\n         )\n",
+            "policy": {
+              "is_valid": true,
+              "error": null
+            },
+            "failing_after": [],
+            "outcome": "verified"
+          }
+        ],
+        "outcome": "verified"
+      },
+      {
+        "trial": 2,
+        "id": "discount_sign_inverted",
+        "defect_class": "pricing",
+        "baseline_failures": [
+          "regression.tenoff",
+          "regression.fifteen",
+          "regression.normalized_coupon",
+          "regression.mixed_cart_coupon"
+        ],
+        "baseline_matches_corpus": true,
+        "attempts": [
+          {
+            "attempt_number": 1,
+            "prior_feedback": null,
+            "provider": "openai-compatible",
+            "model": "deepseek-v4-pro",
+            "prompt_tokens": 1838,
+            "completion_tokens": 2622,
+            "generation_ms": 26218,
+            "decision": "patch",
+            "explanation": "The checkout route incorrectly added the discount instead of subtracting it. The contract requires total = subtotal - discount, so changing the operator from + to - restores the expected totals for TENOFF and FIFTEEN while preserving all other validation and storage behavior.",
+            "diff": "--- a/apps/buggyshop-backend/app/routes/checkout.py\n+++ b/apps/buggyshop-backend/app/routes/checkout.py\n@@ -41,7 +41,7 @@\n         raise HTTPException(status_code=400, detail=\"Invalid coupon code\")\n \n     discount = cast(int, discounts.get(coupon_code, 0))\n-    total = subtotal + discount\n+    total = subtotal - discount\n     order: Order = {\n         \"id\": str(uuid4()),\n         \"line_items\": line_items,\n",
+            "diff_sha256": "0b752ad2f16fba5b9ab1a253c407a4a833e74ddfdbb71937c673cd6499bdfd66",
+            "diff_recounted": false,
+            "model_diff": null,
+            "policy": {
+              "is_valid": true,
+              "error": null
+            },
+            "failing_after": [],
+            "outcome": "verified"
+          }
+        ],
+        "outcome": "verified"
+      },
+      {
+        "trial": 2,
+        "id": "discount_first_line_only",
+        "defect_class": "pricing",
+        "baseline_failures": [
+          "regression.mixed_cart_coupon"
+        ],
+        "baseline_matches_corpus": true,
+        "attempts": [
+          {
+            "attempt_number": 1,
+            "prior_feedback": null,
+            "provider": "openai-compatible",
+            "model": "deepseek-v4-pro",
+            "prompt_tokens": 1354,
+            "completion_tokens": 2062,
+            "generation_ms": 19995,
+            "decision": "patch",
+            "explanation": "The discounts were incorrectly calculated from the first line item's total instead of the cart subtotal. This caused mixed carts to receive a smaller discount than the contract requires. The fix changes TENOFF to use subtotal // 10 and FIFTEEN to use subtotal * 15 // 100, preserving integer arithmetic and round-down behavior.",
+            "diff": "--- a/apps/buggyshop-backend/app/routes/checkout.py\n+++ b/apps/buggyshop-backend/app/routes/checkout.py\n@@ -34,8 +34,8 @@\n     subtotal = sum(item[\"line_total_cents\"] for item in line_items)\n     coupon_code = (payload.coupon_code or \"\").strip().upper()\n     discounts: dict[str, int | None] = {\n-        \"TENOFF\": line_items[0][\"line_total_cents\"] // 10,\n-        \"FIFTEEN\": line_items[0][\"line_total_cents\"] * 15 // 100,\n+        \"TENOFF\": subtotal // 10,\n+        \"FIFTEEN\": subtotal * 15 // 100,\n     }\n     if coupon_code and coupon_code not in discounts:\n         raise HTTPException(status_code=400, detail=\"Invalid coupon code\")\n",
+            "diff_sha256": "86ab8375e0a3c6eae917787e94fb19750ffdbee00f21026f8d0c424284538d04",
+            "diff_recounted": true,
+            "model_diff": "--- a/apps/buggyshop-backend/app/routes/checkout.py\n+++ b/apps/buggyshop-backend/app/routes/checkout.py\n@@ -34,7 +34,7 @@\n     subtotal = sum(item[\"line_total_cents\"] for item in line_items)\n     coupon_code = (payload.coupon_code or \"\").strip().upper()\n     discounts: dict[str, int | None] = {\n-        \"TENOFF\": line_items[0][\"line_total_cents\"] // 10,\n-        \"FIFTEEN\": line_items[0][\"line_total_cents\"] * 15 // 100,\n+        \"TENOFF\": subtotal // 10,\n+        \"FIFTEEN\": subtotal * 15 // 100,\n     }\n     if coupon_code and coupon_code not in discounts:\n         raise HTTPException(status_code=400, detail=\"Invalid coupon code\")\n",
+            "policy": {
+              "is_valid": true,
+              "error": null
+            },
+            "failing_after": [],
+            "outcome": "verified"
+          }
+        ],
+        "outcome": "verified"
+      },
+      {
+        "trial": 2,
+        "id": "unknown_coupon_accepted",
+        "defect_class": "validation",
+        "baseline_failures": [
+          "regression.unknown_coupon"
+        ],
+        "baseline_matches_corpus": true,
+        "attempts": [
+          {
+            "attempt_number": 1,
+            "prior_feedback": null,
+            "provider": "openai-compatible",
+            "model": "deepseek-v4-pro",
+            "prompt_tokens": 1088,
+            "completion_tokens": 5139,
+            "generation_ms": 58193,
+            "decision": "patch",
+            "explanation": "Added coupon whitelist validation after normalization. Unknown nonempty coupon codes are now rejected with HTTP 400 before order creation, while empty/whitespace coupons still map to zero discount and recognized coupons keep existing integer-arithmetic discounts.",
+            "diff": "--- a/apps/buggyshop-backend/app/routes/checkout.py\n+++ b/apps/buggyshop-backend/app/routes/checkout.py\n@@ -34,6 +34,8 @@\n     subtotal = sum(item[\"line_total_cents\"] for item in line_items)\n     coupon_code = (payload.coupon_code or \"\").strip().upper()\n+    if coupon_code not in {\"\", \"TENOFF\", \"FIFTEEN\"}:\n+        raise HTTPException(status_code=400, detail=\"Unknown coupon code\")\n     discounts: dict[str, int | None] = {\n         \"TENOFF\": subtotal // 10,\n         \"FIFTEEN\": subtotal * 15 // 100,\n     }\n",
+            "diff_sha256": "f11865a84c19d9651fa28a0fb1444479ce55623d94db4eaa7352328016f14c4a",
+            "diff_recounted": false,
+            "model_diff": null,
+            "policy": {
+              "is_valid": true,
+              "error": null
+            },
+            "failing_after": [],
+            "outcome": "verified"
+          }
+        ],
+        "outcome": "verified"
+      },
+      {
+        "trial": 2,
+        "id": "missing_coupon_key_error",
+        "defect_class": "null handling",
+        "baseline_failures": [
+          "regression.missing_coupon",
+          "regression.null_coupon",
+          "regression.empty_coupon",
+          "regression.whitespace_coupon",
+          "regression.mixed_cart",
+          "regression.quantity_ten"
+        ],
+        "baseline_matches_corpus": true,
+        "attempts": [
+          {
+            "attempt_number": 1,
+            "prior_feedback": null,
+            "provider": "openai-compatible",
+            "model": "deepseek-v4-pro",
+            "prompt_tokens": 4158,
+            "completion_tokens": 2461,
+            "generation_ms": 23861,
+            "decision": "patch",
+            "explanation": "The coupon normalization maps absent, null, empty, or whitespace-only coupons to an empty string. The code then tries discounts[\"\"] unconditionally, causing KeyError for valid zero-discount checkouts. This patch sets discount to 0 when coupon_code is empty, preserving the existing nonempty coupon validation and all other behavior.",
+            "diff": "--- a/apps/buggyshop-backend/app/routes/checkout.py\n+++ b/apps/buggyshop-backend/app/routes/checkout.py\n@@ -40,7 +40,7 @@\n     if coupon_code and coupon_code not in discounts:\n         raise HTTPException(status_code=400, detail=\"Invalid coupon code\")\n \n-    discount = cast(int, discounts[coupon_code])\n+    discount = cast(int, discounts[coupon_code]) if coupon_code else 0\n     total = subtotal - discount\n     order: Order = {\n         \"id\": str(uuid4()),\n",
+            "diff_sha256": "25e108e68bacc1354e26239281bede6167c2f69060a47d09d12b0509943a555b",
+            "diff_recounted": false,
+            "model_diff": null,
+            "policy": {
+              "is_valid": true,
+              "error": null
+            },
+            "failing_after": [],
+            "outcome": "verified"
+          }
+        ],
+        "outcome": "verified"
+      },
+      {
+        "trial": 2,
+        "id": "order_wrong_namespace",
+        "defect_class": "persistence",
+        "baseline_failures": [
+          "regression.missing_coupon",
+          "regression.null_coupon",
+          "regression.empty_coupon",
+          "regression.whitespace_coupon",
+          "regression.tenoff",
+          "regression.fifteen",
+          "regression.normalized_coupon",
+          "regression.mixed_cart",
+          "regression.mixed_cart_coupon",
+          "regression.quantity_ten"
+        ],
+        "baseline_matches_corpus": true,
+        "attempts": [
+          {
+            "attempt_number": 1,
+            "prior_feedback": null,
+            "outcome": "provider_timeout",
+            "generation_ms": 120008
+          },
+          {
+            "attempt_number": 2,
+            "prior_feedback": null,
+            "provider": "openai-compatible",
+            "model": "deepseek-v4-pro",
+            "prompt_tokens": 2945,
+            "completion_tokens": 8928,
+            "generation_ms": 110459,
+            "decision": "patch",
+            "explanation": "Removed the premature order id from the checkout response, which was not part of the stored/returned Order contract and caused the observed HTTP body mismatches. Also fixed persistence to use the caller-provided namespace instead of the hardcoded 'demo' namespace. All pricing, coupon handling, and validation remain unchanged.",
+            "diff": "--- a/apps/buggyshop-backend/app/routes/checkout.py\n+++ b/apps/buggyshop-backend/app/routes/checkout.py\n@@ -1,7 +1,6 @@\n \"\"\"Create synthetic orders from catalog prices and normalized coupon codes.\"\"\"\n \n from typing import cast\n-from uuid import uuid4\n \n from fastapi import HTTPException\n \n@@ -43,10 +42,9 @@ def checkout(payload: CheckoutRequest, namespace: str = \"demo\") -> Order:\n     discount = cast(int, discounts.get(coupon_code, 0))\n     total = subtotal - discount\n     order: Order = {\n-        \"id\": str(uuid4()),\n         \"line_items\": line_items,\n         \"subtotal\": subtotal,\n         \"discount\": discount,\n         \"total\": total,\n     }\n-    return create_order(\"demo\", order)\n+    return create_order(namespace, order)\n",
+            "diff_sha256": "dcffe3a33ef14775707f8a1d52453967b1c8c77a68346e73c32634a1fb4ae267",
+            "diff_recounted": true,
+            "model_diff": "--- a/apps/buggyshop-backend/app/routes/checkout.py\n+++ b/apps/buggyshop-backend/app/routes/checkout.py\n@@ -1,7 +1,6 @@\n \"\"\"Create synthetic orders from catalog prices and normalized coupon codes.\"\"\"\n \n from typing import cast\n-from uuid import uuid4\n \n from fastapi import HTTPException\n \n@@ -43,10 +43,9 @@ def checkout(payload: CheckoutRequest, namespace: str = \"demo\") -> Order:\n     discount = cast(int, discounts.get(coupon_code, 0))\n     total = subtotal - discount\n     order: Order = {\n-        \"id\": str(uuid4()),\n         \"line_items\": line_items,\n         \"subtotal\": subtotal,\n         \"discount\": discount,\n         \"total\": total,\n     }\n-    return create_order(\"demo\", order)\n+    return create_order(namespace, order)\n",
+            "policy": {
+              "is_valid": true,
+              "error": null
+            },
+            "failing_after": [
+              "regression.missing_coupon",
+              "regression.null_coupon",
+              "regression.empty_coupon",
+              "regression.whitespace_coupon",
+              "regression.tenoff",
+              "regression.fifteen",
+              "regression.normalized_coupon",
+              "regression.mixed_cart",
+              "regression.mixed_cart_coupon",
+              "regression.quantity_ten"
+            ],
+            "outcome": "verification_failed"
+          }
+        ],
+        "outcome": "verification_failed"
+      }
+    ],
+    "summary": {
+      "runs": 20,
+      "verified": 18,
+      "verified_first_attempt": 17,
+      "verified_after_gate_feedback": 0,
+      "verified_after_other_retry": 1,
+      "outcomes": {
+        "verification_failed": 2,
+        "verified": 18
+      },
+      "baseline_matches_corpus": 20,
+      "model_attempts": 23,
+      "total_tokens": 126860,
+      "median_generation_ms": 40574.0
+    }
+  },
+  "runtime_limits": {
+    "sessions": 48,
+    "verified_sessions": 48,
+    "limits": {
+      "mode": "cgroup-v2-scope",
+      "memory_max_bytes": 536870912,
+      "memory_swap_max_bytes": 0,
+      "tasks_max": 64,
+      "cpu_quota_percent": 100,
+      "verified": true
+    }
+  },
+  "patches": {
+    "cases": [
+      {
+        "id": "reference_default_zero",
+        "kind": "correct",
+        "policy": {
+          "is_valid": true,
+          "error": null
+        },
+        "symptom_status": 201,
+        "symptom_check_accepts": true,
+        "faultline_accepts": true,
+        "failing": [],
+        "matches_corpus": true
+      },
+      {
+        "id": "alternative_or_zero",
+        "kind": "correct",
+        "policy": {
+          "is_valid": true,
+          "error": null
+        },
+        "symptom_status": 201,
+        "symptom_check_accepts": true,
+        "faultline_accepts": true,
+        "failing": [],
+        "matches_corpus": true
+      },
+      {
+        "id": "zero_all_discounts",
+        "kind": "wrong",
+        "policy": {
+          "is_valid": true,
+          "error": null
+        },
+        "symptom_status": 201,
+        "symptom_check_accepts": true,
+        "faultline_accepts": false,
+        "failing": [
+          "regression.tenoff",
+          "regression.fifteen",
+          "regression.normalized_coupon",
+          "regression.mixed_cart_coupon"
+        ],
+        "matches_corpus": true
+      },
+      {
+        "id": "null_coupon_only",
+        "kind": "wrong",
+        "policy": {
+          "is_valid": true,
+          "error": null
+        },
+        "symptom_status": 201,
+        "symptom_check_accepts": true,
+        "faultline_accepts": false,
+        "failing": [
+          "regression.empty_coupon",
+          "regression.whitespace_coupon"
+        ],
+        "matches_corpus": true
+      },
+      {
+        "id": "silence_type_error",
+        "kind": "wrong",
+        "policy": {
+          "is_valid": true,
+          "error": null
+        },
+        "symptom_status": 500,
+        "symptom_check_accepts": false,
+        "faultline_accepts": false,
+        "failing": [
+          "regression.missing_coupon",
+          "regression.null_coupon",
+          "regression.empty_coupon",
+          "regression.whitespace_coupon",
+          "regression.mixed_cart",
+          "regression.quantity_ten"
+        ],
+        "matches_corpus": true
+      },
+      {
+        "id": "drop_coupon_validation",
+        "kind": "wrong",
+        "policy": {
+          "is_valid": true,
+          "error": null
+        },
+        "symptom_status": 201,
+        "symptom_check_accepts": true,
+        "faultline_accepts": false,
+        "failing": [
+          "regression.unknown_coupon"
+        ],
+        "matches_corpus": true
+      },
+      {
+        "id": "round_percentages",
+        "kind": "wrong",
+        "policy": {
+          "is_valid": true,
+          "error": null
+        },
+        "symptom_status": 201,
+        "symptom_check_accepts": true,
+        "faultline_accepts": false,
+        "failing": [
+          "regression.tenoff",
+          "regression.fifteen",
+          "regression.normalized_coupon",
+          "regression.mixed_cart_coupon"
+        ],
+        "matches_corpus": true
+      },
+      {
+        "id": "early_return_unsaved",
+        "kind": "wrong",
+        "policy": {
+          "is_valid": true,
+          "error": null
+        },
+        "symptom_status": 201,
+        "symptom_check_accepts": true,
+        "faultline_accepts": false,
+        "failing": [
+          "regression.missing_coupon",
+          "regression.null_coupon",
+          "regression.empty_coupon",
+          "regression.whitespace_coupon",
+          "regression.mixed_cart",
+          "regression.quantity_ten"
+        ],
+        "matches_corpus": true
+      },
+      {
+        "id": "debug_logging_import",
+        "kind": "out_of_policy",
+        "policy": {
+          "is_valid": false,
+          "error": "Module imports are forbidden; import an approved symbol"
+        },
+        "symptom_check_accepts": null,
+        "faultline_accepts": false,
+        "failing": [],
+        "matches_corpus": true
+      },
+      {
+        "id": "out_of_scope_schema",
+        "kind": "out_of_policy",
+        "policy": {
+          "is_valid": false,
+          "error": "Require one existing allowlisted file with canonical paths"
+        },
+        "symptom_check_accepts": null,
+        "faultline_accepts": false,
+        "failing": [],
+        "matches_corpus": true
+      },
+      {
+        "id": "stale_context",
+        "kind": "out_of_policy",
+        "policy": {
+          "is_valid": false,
+          "error": "Patch does not match the exact seeded source"
+        },
+        "symptom_check_accepts": null,
+        "faultline_accepts": false,
+        "failing": [],
+        "matches_corpus": true
+      }
+    ],
+    "summary": {
+      "correct": 2,
+      "correct_accepted_by_faultline": 2,
+      "correct_accepted_by_symptom_check": 2,
+      "wrong": 6,
+      "wrong_accepted_by_faultline": 0,
+      "wrong_accepted_by_symptom_check": 5,
+      "out_of_policy": 3,
+      "out_of_policy_rejected_by_policy": 3,
+      "all_match_corpus": true
+    }
+  },
+  "finished_at": "2026-10-28T10:48:19.548897+00:00"
+}

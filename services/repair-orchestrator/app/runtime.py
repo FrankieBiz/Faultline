@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import Literal, Protocol
 
 from app.snapshots import Snapshot
-from shared.contracts.models import ExecutionReport
+from shared.contracts.models import ExecutionReport, ResourceLimits
 
 Phase = Literal["baseline", "verification"]
 REQUIRED_EVIDENCE = frozenset({"screenshot", "trace", "requests", "logs"})
@@ -60,13 +60,19 @@ class RuntimeArtifact:
 
 @dataclass(frozen=True)
 class RuntimeExecution:
-    """Report and resource provenance observed by the runtime controller."""
+    """Report and resource provenance observed by the runtime controller.
+
+    ``resource_limits`` carries aggregate candidate limits read back from the
+    live scope, an explicit ``disabled`` record, or None for runtimes (including
+    test simulations) that establish no aggregate limits at all.
+    """
 
     report: ExecutionReport
     generation_id: str
     snapshot_sha256: str
     exit_code: int
     artifacts: tuple[RuntimeArtifact, ...]
+    resource_limits: ResourceLimits | None = None
 
 
 class RuntimeUnavailable(RuntimeError):

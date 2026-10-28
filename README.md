@@ -12,7 +12,7 @@ Recorded local workflow evidence; this screenshot does not represent a live Meta
 
 ## Run it
 
-Requires Linux with working unprivileged user namespaces and Bubblewrap (`bwrap`), Git, Python 3.13 via `uv`, and Node.js 24+. On Fedora, if Bubblewrap is missing: `sudo dnf install bubblewrap`. The controller fails closed when its execution requirements are unavailable.
+Requires Linux with working unprivileged user namespaces and Bubblewrap (`bwrap`), cgroup v2 with a systemd user session (run from a desktop terminal or user service, not a bare SSH login), Git, Python 3.13 via `uv`, and Node.js 24+. On Fedora, if Bubblewrap is missing: `sudo dnf install bubblewrap`. The controller fails closed when its execution requirements, including enforced aggregate resource limits, are unavailable.
 
 ```bash
 make setup
@@ -29,7 +29,9 @@ Open [the Inspector](http://127.0.0.1:4000). Alternate ports can be set with `BU
 | Seeded API | http://127.0.0.1:8000 |
 | Controller | http://127.0.0.1:9000 |
 
-To use Meta generation, supply `META_API_KEY` through the server environment or an ignored local `.env`. Optional settings are `META_BASE_URL` and `META_MODEL_NAME` (default `muse-spark-1.3`). Never put credentials in browser code. The startup probe reports the actual provider and availability.
+To use Meta generation, supply `META_API_KEY` through the server environment or an ignored local `.env`. Optional settings are `META_BASE_URL`, `META_MODEL_NAME` (default `muse-spark-1.3`), `META_REASONING_EFFORT`, `META_RESPONSE_FORMAT`, and `META_TIMEOUT_SECONDS`; see the [orchestrator README](services/repair-orchestrator/README.md#configuration). Never put credentials in browser code. The startup probe reports the actual provider and availability.
+
+Provider identity comes from the endpoint host, not from variable names: only Meta-operated hosts are labeled Meta, loopback endpoints are `local`, and anything else is `openai-compatible`. An attempt is attributed to a provider only when that provider actually returned a response.
 
 Without model credentials, the adapter explicitly identifies itself as `deterministic-checkout-v1`. This is useful for local verification; **it is not a Meta model trial**. Configured provider failures do not silently select that fallback.
 
@@ -43,22 +45,40 @@ The rehearsal exits unsuccessfully for failed, cancelled, interrupted, timed-out
 
 1. Reproduce the seeded checkout failure in a fresh real Chromium session.
 2. Correlate the HTTP error with observed server failure evidence.
-3. Ask the configured provider for a schema-bound, single-file unified diff.
-4. Reject stale source hashes, wrong paths, malformed hunks, oversized changes, syntax errors, and forbidden imports/capabilities. Limits: 16 KiB diff, 32 KiB source, 100 changed lines.
+3. Ask the configured provider for a schema-bound, single-file unified diff. The prompt states the checkout's business contract, not the defect or its fix.
+4. Reject stale source hashes, wrong paths, malformed hunks, oversized changes, syntax errors, and forbidden imports/capabilities. Limits: 16 KiB diff, 32 KiB source, 100 changed lines. Miscounted hunk headers are recounted from the hunk body, as `git apply --recount` does; content is never altered.
 5. Apply the candidate to a fresh detached worktree from the pinned fixture commit. Export application files separately from tests and reference solutions.
-6. Execute the candidate inside the restricted runtime. Run the browser journey and independent HTTP business assertions, retaining real screenshots, Playwright traces, request logs, and reports.
-7. Verify execution identity and artifact hashes, then confirm resource cleanup before recording a verified result. Cleanup failure quarantines further admission.
+6. Execute the candidate inside the restricted runtime: Linux namespaces plus an aggregate cgroup v2 scope (512 MiB, no swap, 64 tasks, one CPU) whose limits are read back from the kernel. Run the browser journey and 27 independent HTTP business assertions, retaining real screenshots, Playwright traces, request logs, and reports.
+7. If any gate rejects the first attempt, send its findings (failing checks with expected and observed values, or the policy error) back as untrusted evidence for one more attempt.
+8. Verify execution identity and artifact hashes, then confirm resource cleanup before recording a verified result. Cleanup failure quarantines further admission.
 
 Static AST inspection and Git worktrees are policy and source-management tools. The runtime provides process isolation. Passing this bounded suite is evidence for the tested fixture behavior, not a proof that arbitrary code is safe.
 
+## Evaluation
+
+The controller demo covers one registered defect. To test more than that fixture, `./scripts/evaluate.sh` runs the same adapter, patch policy, feedback loop, and oracle over a hash-pinned corpus, executing every variant and candidate in the isolated runtime. [Full method and results](docs/EVALUATION.md).
+
+**What verification catches.** Of six plausible but wrong repairs of the registered defect, a naive check that the failing request now returns HTTP 201 accepted five. FaultLine accepted none, accepted both correct repairs, and rejected three out-of-policy patches before execution.
+
+**Unfamiliar defects.** Nine further single-defect variants (rounding, normalization, pricing, validation, persistence) test repairs the provider was not told about. The deterministic fallback repairs only the registered defect (1 of 10), as expected. To exercise the loop with real model output before Meta credentials were configured, a non-Meta model (DeepSeek `deepseek-v4-pro`, labeled as such in every record) verified 18 of 20 runs over two trials. In two runs the gates rejected its wrong patches. No live Meta evaluation has been run yet; it requires `META_API_KEY`.
+
+These results describe an authored corpus for one checkout route, not arbitrary applications.
+
+## Evidence tools
+
+- `scripts/trial_ledger.py` runs repeated controller jobs and records provider, outcomes, attempts, tokens, latency, assertions, and cleanup together. `--require-provider meta` refuses to record anything else as a Meta trial.
+- `scripts/export_replay.py` exports a finished job as a static, read-only, checksummed replay with no scripts or external requests. A reviewed example from a deterministic rehearsal is in [`docs/replay/`](docs/replay/83d1c403-9f6a-4d69-9a46-e39c83ac2471/index.html); its trace archives are omitted because they contain local file paths.
+- Recorded evidence from this review is in [`docs/evidence/`](docs/evidence/).
+
 ## Scope and limits
 
-- One registered live scenario: `scripted_checkout_repair`.
+- One registered live scenario: `scripted_checkout_repair`, plus an authored evaluation corpus of ten defects and eleven candidate patches for the same route.
 - Pricing uses integer cents; coupons are `TENOFF` and `FIFTEEN`.
 - Additional chaos scenarios are explicitly authored previews, not live backend defects.
 - No continuous production monitoring, Sentry/GitHub integration, rollout, or automatic production deployment.
 - No measured customer adoption, revenue saved, recovery SLA, or externally awarded judging score.
-- Local checks, contained browser execution, and live Meta inference are separate verification claims. See [the review](docs/QUALITY_REVIEW.md) for the latest evidence and remaining release work.
+- Namespaces plus cgroup limits on a shared kernel, not a VM; no seccomp filter. An internal adversarial review is recorded; external review is still outstanding.
+- Local checks, contained browser execution, and live Meta inference are separate verification claims. No live Meta trial has been recorded yet. See [the review](docs/QUALITY_REVIEW.md) for the latest evidence and remaining release work.
 
 ## Repository
 
@@ -69,14 +89,14 @@ Static AST inspection and Git worktrees are policy and source-management tools. 
 | [services/repair-orchestrator](services/repair-orchestrator) | Durable admission, model adapter, patch policy, runtime, cleanup |
 | [tools/browser-runner](tools/browser-runner) | Trusted Playwright journey, assertions, and evidence |
 | [web/inspector-ui](web/inspector-ui) | Readiness, job results, diffs, and evidence inspection |
-| [shared](shared) / [fixtures](fixtures) | Canonical contracts, scenario, and pinned source provenance |
-| [scripts](scripts) | Dependency setup, supervised startup, reconciliation, rehearsal |
+| [shared](shared) / [fixtures](fixtures) | Canonical contracts, scenario, pinned source provenance, and the evaluation corpus |
+| [scripts](scripts) | Dependency setup, supervised startup, reconciliation, rehearsal, evaluation, trial ledger, replay export |
 
-`make check` runs Python lint/format/type checks and tests, fixture provenance, storefront lint/type/build, runner type/build/unit tests, Inspector type/build, and Python distribution builds. `make browser` runs Inspector browser regressions; `make integration` requires actual isolated Chromium checks. See the service documentation for runtime integration verification.
+`make check` runs Python lint/format/type checks and tests, fixture and evaluation-corpus provenance, storefront lint/type/build, runner type/build/unit tests, Inspector type/build, and Python distribution builds. `make browser` runs Inspector browser regressions; `make integration` requires actual isolated Chromium and cgroup checks; `make evaluate` runs the evaluation. See the service documentation for runtime integration verification.
 
 ## Hackathon materials
 
-[Event brief](docs/HACKATHON_BRIEF.md), [project status](docs/PROJECT_STATUS.md), [submission draft](docs/DEVPOST_SUBMISSION.md), [video storyboard](docs/VIDEO_STORYBOARD.md), [technical dossier](docs/SUBMISSION.md).
+[Event brief](docs/HACKATHON_BRIEF.md), [project status](docs/PROJECT_STATUS.md), [score assessment](docs/HACKATHON_SCORE_ASSESSMENT.md), [evaluation](docs/EVALUATION.md), [impact evidence](docs/IMPACT_EVIDENCE.md), [submission draft](docs/DEVPOST_SUBMISSION.md), [video storyboard](docs/VIDEO_STORYBOARD.md), [technical dossier](docs/SUBMISSION.md).
 
 The official event pages list submission on November 4, 2026 at 9 PM ET, subject to organizer changes ([Meta](https://dev.meta.ai/events/global-hackathon), [Cerebral Valley](https://events.cerebralvalley.ai/e/meta-ai-developer-hackathon); retrieved October 27, 2026). Preserved webinar materials in `meta-provided/` are immutable.
 

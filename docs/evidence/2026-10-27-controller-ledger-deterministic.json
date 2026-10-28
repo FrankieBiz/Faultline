@@ -1,0 +1,724 @@
+{
+  "schema_version": "1.0",
+  "tool": "scripts/trial_ledger.py",
+  "generated_at": "2026-10-27T21:23:41Z",
+  "started_at": "2026-10-27T21:23:16Z",
+  "complete": true,
+  "stop_reason": null,
+  "classification": "deterministic_workflow_rehearsals",
+  "classification_note": "All 5 recorded proposals came from provider deterministic. Deterministic workflow rehearsal: not a Meta model trial. The built-in deterministic generator produced every proposal.",
+  "provider_counts": {
+    "deterministic": 5
+  },
+  "config": {
+    "api": "http://127.0.0.1:24000/api/faultline",
+    "scenario_id": "scripted_checkout_repair",
+    "mode": "repair",
+    "trials_requested": 5,
+    "deadline_seconds": 190.0,
+    "cancel_grace_seconds": 30.0,
+    "require_provider": "deterministic"
+  },
+  "readiness": {
+    "checked_at": "2026-10-27T21:23:16Z",
+    "status": "ready",
+    "runtime_ready": true,
+    "quarantined": false,
+    "reason": null,
+    "probe_time": "2026-10-27T21:23:02.637616+00:00",
+    "provider": "deterministic",
+    "model": "deterministic-checkout-v1",
+    "available": true,
+    "model_reason": null,
+    "probe_prompt_tokens": null,
+    "probe_completion_tokens": null,
+    "resource_limits": {
+      "requested": "required",
+      "mode": "cgroup-v2-scope",
+      "configured": {
+        "memory_max_bytes": 536870912,
+        "memory_swap_max_bytes": 0,
+        "tasks_max": 64,
+        "cpu_quota_percent": 100,
+        "oom_policy": "kill"
+      },
+      "enforcement_preflight": "passed",
+      "probe": {
+        "memory_max_bytes": 67108864,
+        "memory_swap_max_bytes": 0,
+        "tasks_max": 16,
+        "allocation_attempt_bytes": 268435456,
+        "thread_attempts": 64,
+        "oom_events": 1,
+        "oom_kill_events": 1,
+        "pids_max_events": 1,
+        "environment_clean": true,
+        "hog_exit_code": -9,
+        "threads_started": 13
+      },
+      "reason": null
+    }
+  },
+  "stop_readiness": null,
+  "summary": {
+    "trials_requested": 5,
+    "trials_run": 5,
+    "outcome_counts": {
+      "verified": 5
+    },
+    "verified_count": 5,
+    "verified_rate": 1.0,
+    "verified_on_first_attempt": 5,
+    "verified_on_second_attempt": 0,
+    "cleanup_confirmed_count": 5,
+    "expected_failure_reproduced_count": 5,
+    "deadline_exceeded_count": 0,
+    "attempts_total": 5,
+    "policy_rejected_attempts": 0,
+    "wall_seconds": {
+      "known_count": 5,
+      "median": 4.785,
+      "p95": 4.89,
+      "min": 4.711,
+      "max": 4.89
+    },
+    "prompt_tokens": {
+      "attempt_count": 5,
+      "known_count": 0,
+      "total": null
+    },
+    "completion_tokens": {
+      "attempt_count": 5,
+      "known_count": 0,
+      "total": null
+    },
+    "provider_models": [
+      {
+        "provider": "deterministic",
+        "model": "deterministic-checkout-v1"
+      }
+    ]
+  },
+  "trials": [
+    {
+      "trial": 1,
+      "idempotency_key": "4bad5913-c7a8-49f6-94c8-5bc336dfffe4",
+      "job_id": "19fd54db-0d66-4ee0-9d95-4fa88b3e0139",
+      "evidence_recorded": true,
+      "scenario_id": "scripted_checkout_repair",
+      "requested_mode": "repair",
+      "effective_mode": "repair",
+      "repair_block_reason": null,
+      "created_at": "2026-10-27T21:23:16.161153Z",
+      "updated_at": "2026-10-27T21:23:20.946040Z",
+      "wall_seconds": 4.785,
+      "terminal": true,
+      "state": "succeeded",
+      "stage": "completed",
+      "outcome": "verified",
+      "cleanup_status": "succeeded",
+      "error_code": null,
+      "failed_stage": null,
+      "deadline_exceeded": false,
+      "cancel_requested_by_ledger": false,
+      "baseline_verdict": "failed",
+      "expected_failure_reproduced": true,
+      "attempts": [
+        {
+          "attempt_id": "403f4664-c4b3-48e8-8b3e-96e200bbc7ed",
+          "attempt_number": 1,
+          "outcome": "verified",
+          "provider": "deterministic",
+          "model": "deterministic-checkout-v1",
+          "dispatched_provider": "deterministic",
+          "dispatched_model": "deterministic-checkout-v1",
+          "prompt_tokens": null,
+          "completion_tokens": null,
+          "policy_valid": true,
+          "policy_error": null,
+          "diff_sha256": "f9193387309f43e0ea1d584bd43af316f4c23f4c83b6c0a8bcd36abb8b3a8d70",
+          "diff_changed_lines": 2,
+          "prior_feedback": null
+        }
+      ],
+      "verification_executions": [
+        {
+          "execution_id": "9ac47b84-d76a-4471-b4b2-7e492e6a1f1a",
+          "attempt_id": "403f4664-c4b3-48e8-8b3e-96e200bbc7ed",
+          "verdict": "passed",
+          "assertions_passed": 44,
+          "assertions_total": 44,
+          "runtime_kind": "isolated-browser",
+          "resource_limits": {
+            "mode": "cgroup-v2-scope",
+            "memory_max_bytes": 536870912,
+            "memory_swap_max_bytes": 0,
+            "tasks_max": 64,
+            "cpu_quota_percent": 100,
+            "verified": true
+          }
+        }
+      ],
+      "artifact_count": 12,
+      "artifacts": [
+        {
+          "role": "screenshot",
+          "sha256": "b958ca79e3175605bba5bb837f3c27af9b6e0a749e9ff68c673290ee7efa274e",
+          "size_bytes": 95389
+        },
+        {
+          "role": "trace",
+          "sha256": "523b7ba4103f92a2f92a29117ccf887cd2715d3d0086720c95eecf6e9c7ca8db",
+          "size_bytes": 650932
+        },
+        {
+          "role": "requests",
+          "sha256": "e84c16bd1172b7da7f51704bf423ed656404d468aa24dd65fd07bce9af5f9774",
+          "size_bytes": 5437
+        },
+        {
+          "role": "logs",
+          "sha256": "fa074b2b957a1e45853a27cab8fbc0964e0ccd169b66145f407e8591924d596e",
+          "size_bytes": 2357
+        },
+        {
+          "role": "report",
+          "sha256": "fd7a80b4dccf060d470a184b16d04de9bc867f17a828ebaad80889dd36a7779c",
+          "size_bytes": 13217
+        },
+        {
+          "role": "proposal",
+          "sha256": "fc9402a3d07bc6c5dda838cb299c03e02830aafbaa5965711b487fffaa51aca0",
+          "size_bytes": 740
+        },
+        {
+          "role": "diff",
+          "sha256": "f9193387309f43e0ea1d584bd43af316f4c23f4c83b6c0a8bcd36abb8b3a8d70",
+          "size_bytes": 449
+        },
+        {
+          "role": "screenshot",
+          "sha256": "2b3f83e6ae74c51ce7f1d8876666bdd6833d02542ed75941dae12d42c4289c90",
+          "size_bytes": 67470
+        },
+        {
+          "role": "trace",
+          "sha256": "fbb2ad9875c4140da173a67792b348d26e2be5579f5d37c389207ee0512584f1",
+          "size_bytes": 621427
+        },
+        {
+          "role": "requests",
+          "sha256": "5fe77198cbf41189ec32cbdcef1788a06043905703869266e7b91552febbff50",
+          "size_bytes": 6033
+        },
+        {
+          "role": "logs",
+          "sha256": "fac79eb4dd6445fccc29927bded6d6d65182395c61d2d43963ef33818ffd0da4",
+          "size_bytes": 32
+        },
+        {
+          "role": "report",
+          "sha256": "567d5155cacada6b391e1d92c93b8959460c6b90b5feec2a54b4553e4e820edc",
+          "size_bytes": 11525
+        }
+      ],
+      "verified": true
+    },
+    {
+      "trial": 2,
+      "idempotency_key": "62a6e2a0-ba78-4651-a5ee-872317e1e660",
+      "job_id": "20aa5735-f8d4-454d-ad01-881829f7e803",
+      "evidence_recorded": true,
+      "scenario_id": "scripted_checkout_repair",
+      "requested_mode": "repair",
+      "effective_mode": "repair",
+      "repair_block_reason": null,
+      "created_at": "2026-10-27T21:23:21.343139Z",
+      "updated_at": "2026-10-27T21:23:26.119168Z",
+      "wall_seconds": 4.776,
+      "terminal": true,
+      "state": "succeeded",
+      "stage": "completed",
+      "outcome": "verified",
+      "cleanup_status": "succeeded",
+      "error_code": null,
+      "failed_stage": null,
+      "deadline_exceeded": false,
+      "cancel_requested_by_ledger": false,
+      "baseline_verdict": "failed",
+      "expected_failure_reproduced": true,
+      "attempts": [
+        {
+          "attempt_id": "5727e53c-a081-4398-9863-292de04d6c0a",
+          "attempt_number": 1,
+          "outcome": "verified",
+          "provider": "deterministic",
+          "model": "deterministic-checkout-v1",
+          "dispatched_provider": "deterministic",
+          "dispatched_model": "deterministic-checkout-v1",
+          "prompt_tokens": null,
+          "completion_tokens": null,
+          "policy_valid": true,
+          "policy_error": null,
+          "diff_sha256": "f9193387309f43e0ea1d584bd43af316f4c23f4c83b6c0a8bcd36abb8b3a8d70",
+          "diff_changed_lines": 2,
+          "prior_feedback": null
+        }
+      ],
+      "verification_executions": [
+        {
+          "execution_id": "c6271d35-a526-4aae-8681-55e241b07dc8",
+          "attempt_id": "5727e53c-a081-4398-9863-292de04d6c0a",
+          "verdict": "passed",
+          "assertions_passed": 44,
+          "assertions_total": 44,
+          "runtime_kind": "isolated-browser",
+          "resource_limits": {
+            "mode": "cgroup-v2-scope",
+            "memory_max_bytes": 536870912,
+            "memory_swap_max_bytes": 0,
+            "tasks_max": 64,
+            "cpu_quota_percent": 100,
+            "verified": true
+          }
+        }
+      ],
+      "artifact_count": 12,
+      "artifacts": [
+        {
+          "role": "screenshot",
+          "sha256": "b958ca79e3175605bba5bb837f3c27af9b6e0a749e9ff68c673290ee7efa274e",
+          "size_bytes": 95389
+        },
+        {
+          "role": "trace",
+          "sha256": "eb45c502d2239dfe4696311fea0413a15c1f876184c2e0d5cfdaa5d5a6f3b297",
+          "size_bytes": 601234
+        },
+        {
+          "role": "requests",
+          "sha256": "59c7cd6593d3681b426c838ccbc5018aa719c1dcbd507fdc3d54c9179d436bc2",
+          "size_bytes": 5437
+        },
+        {
+          "role": "logs",
+          "sha256": "199c545d94c830da796e20f87144a3050cc12e728bd242fb2ea461490cf0b2e2",
+          "size_bytes": 2357
+        },
+        {
+          "role": "report",
+          "sha256": "5559aae8e5a316692833ff35403d1f868115d36059ae9af362e022b891eb3a36",
+          "size_bytes": 13217
+        },
+        {
+          "role": "proposal",
+          "sha256": "fc9402a3d07bc6c5dda838cb299c03e02830aafbaa5965711b487fffaa51aca0",
+          "size_bytes": 740
+        },
+        {
+          "role": "diff",
+          "sha256": "f9193387309f43e0ea1d584bd43af316f4c23f4c83b6c0a8bcd36abb8b3a8d70",
+          "size_bytes": 449
+        },
+        {
+          "role": "screenshot",
+          "sha256": "5dcd6c9655bb493498a840e8d13544c9cdde14543791f94592cdf0dd419123e6",
+          "size_bytes": 67909
+        },
+        {
+          "role": "trace",
+          "sha256": "d1fcb6487395cd5cb2b8f6c205e4ee5e0fdd86ca0dd31f1be7598476c4cbb893",
+          "size_bytes": 580819
+        },
+        {
+          "role": "requests",
+          "sha256": "312ed8a9f03c2cc52ba287101357bbc6e8debebae06a2f88b8b13d59a8e37e98",
+          "size_bytes": 6033
+        },
+        {
+          "role": "logs",
+          "sha256": "fac79eb4dd6445fccc29927bded6d6d65182395c61d2d43963ef33818ffd0da4",
+          "size_bytes": 32
+        },
+        {
+          "role": "report",
+          "sha256": "a1fec1c14c14dcd95051a09aca0f534dd5c5c129cc23564bc017b5eaae873541",
+          "size_bytes": 11523
+        }
+      ],
+      "verified": true
+    },
+    {
+      "trial": 3,
+      "idempotency_key": "f8fd4dbb-4572-4c3a-a765-462ca5a2e0c8",
+      "job_id": "09599b17-d7f0-41c2-b944-7d643960ad82",
+      "evidence_recorded": true,
+      "scenario_id": "scripted_checkout_repair",
+      "requested_mode": "repair",
+      "effective_mode": "repair",
+      "repair_block_reason": null,
+      "created_at": "2026-10-27T21:23:26.449114Z",
+      "updated_at": "2026-10-27T21:23:31.236194Z",
+      "wall_seconds": 4.787,
+      "terminal": true,
+      "state": "succeeded",
+      "stage": "completed",
+      "outcome": "verified",
+      "cleanup_status": "succeeded",
+      "error_code": null,
+      "failed_stage": null,
+      "deadline_exceeded": false,
+      "cancel_requested_by_ledger": false,
+      "baseline_verdict": "failed",
+      "expected_failure_reproduced": true,
+      "attempts": [
+        {
+          "attempt_id": "97d92ce7-e560-4c07-97b3-cc18b118b277",
+          "attempt_number": 1,
+          "outcome": "verified",
+          "provider": "deterministic",
+          "model": "deterministic-checkout-v1",
+          "dispatched_provider": "deterministic",
+          "dispatched_model": "deterministic-checkout-v1",
+          "prompt_tokens": null,
+          "completion_tokens": null,
+          "policy_valid": true,
+          "policy_error": null,
+          "diff_sha256": "f9193387309f43e0ea1d584bd43af316f4c23f4c83b6c0a8bcd36abb8b3a8d70",
+          "diff_changed_lines": 2,
+          "prior_feedback": null
+        }
+      ],
+      "verification_executions": [
+        {
+          "execution_id": "0960def0-87ea-40ca-8c74-b4f06748a424",
+          "attempt_id": "97d92ce7-e560-4c07-97b3-cc18b118b277",
+          "verdict": "passed",
+          "assertions_passed": 44,
+          "assertions_total": 44,
+          "runtime_kind": "isolated-browser",
+          "resource_limits": {
+            "mode": "cgroup-v2-scope",
+            "memory_max_bytes": 536870912,
+            "memory_swap_max_bytes": 0,
+            "tasks_max": 64,
+            "cpu_quota_percent": 100,
+            "verified": true
+          }
+        }
+      ],
+      "artifact_count": 12,
+      "artifacts": [
+        {
+          "role": "screenshot",
+          "sha256": "b958ca79e3175605bba5bb837f3c27af9b6e0a749e9ff68c673290ee7efa274e",
+          "size_bytes": 95389
+        },
+        {
+          "role": "trace",
+          "sha256": "af689ac0ac7055be612c058f9106673c90b04934ed74e1a2cc6487e27cd0e3f6",
+          "size_bytes": 676794
+        },
+        {
+          "role": "requests",
+          "sha256": "f4b30b78145e7baf7706ed27ba833318e17006dacc75feb34fad4ebf81abd8ab",
+          "size_bytes": 5437
+        },
+        {
+          "role": "logs",
+          "sha256": "0d4d840683012ff66349fca82a14cd1e16613edd6d33b5dbe36d43fbfe1b4685",
+          "size_bytes": 2357
+        },
+        {
+          "role": "report",
+          "sha256": "d906073d1adef122aff9e5e725874950fa6069246b4c95e30b3a72ea5f7f91f0",
+          "size_bytes": 13217
+        },
+        {
+          "role": "proposal",
+          "sha256": "fc9402a3d07bc6c5dda838cb299c03e02830aafbaa5965711b487fffaa51aca0",
+          "size_bytes": 740
+        },
+        {
+          "role": "diff",
+          "sha256": "f9193387309f43e0ea1d584bd43af316f4c23f4c83b6c0a8bcd36abb8b3a8d70",
+          "size_bytes": 449
+        },
+        {
+          "role": "screenshot",
+          "sha256": "88edac91c89529ecd605856b8468ef8173c81df2e3534658475a232024b49e91",
+          "size_bytes": 68003
+        },
+        {
+          "role": "trace",
+          "sha256": "dbaa6f5aad37d450004bc4478ea6b6d72cf8ad71dbec32cc4868792c6ab1a729",
+          "size_bytes": 605771
+        },
+        {
+          "role": "requests",
+          "sha256": "9922719111633c5ffedcae50b6ce31e6e7cf3874c63e67f54aacf2848ebc4c73",
+          "size_bytes": 6033
+        },
+        {
+          "role": "logs",
+          "sha256": "fac79eb4dd6445fccc29927bded6d6d65182395c61d2d43963ef33818ffd0da4",
+          "size_bytes": 32
+        },
+        {
+          "role": "report",
+          "sha256": "57f67938d4a0c78319df4e807f905814c6685450d95082883bdbabe8609ece8b",
+          "size_bytes": 11526
+        }
+      ],
+      "verified": true
+    },
+    {
+      "trial": 4,
+      "idempotency_key": "7c0e248d-c801-4998-bdd7-2c981fbfb750",
+      "job_id": "e38e347e-207b-4b8f-8914-be5f1baa84ec",
+      "evidence_recorded": true,
+      "scenario_id": "scripted_checkout_repair",
+      "requested_mode": "repair",
+      "effective_mode": "repair",
+      "repair_block_reason": null,
+      "created_at": "2026-10-27T21:23:31.605757Z",
+      "updated_at": "2026-10-27T21:23:36.317072Z",
+      "wall_seconds": 4.711,
+      "terminal": true,
+      "state": "succeeded",
+      "stage": "completed",
+      "outcome": "verified",
+      "cleanup_status": "succeeded",
+      "error_code": null,
+      "failed_stage": null,
+      "deadline_exceeded": false,
+      "cancel_requested_by_ledger": false,
+      "baseline_verdict": "failed",
+      "expected_failure_reproduced": true,
+      "attempts": [
+        {
+          "attempt_id": "184b493f-0e81-4f6a-9958-e9b71ec899bb",
+          "attempt_number": 1,
+          "outcome": "verified",
+          "provider": "deterministic",
+          "model": "deterministic-checkout-v1",
+          "dispatched_provider": "deterministic",
+          "dispatched_model": "deterministic-checkout-v1",
+          "prompt_tokens": null,
+          "completion_tokens": null,
+          "policy_valid": true,
+          "policy_error": null,
+          "diff_sha256": "f9193387309f43e0ea1d584bd43af316f4c23f4c83b6c0a8bcd36abb8b3a8d70",
+          "diff_changed_lines": 2,
+          "prior_feedback": null
+        }
+      ],
+      "verification_executions": [
+        {
+          "execution_id": "32e0b54a-77ab-4313-acf2-65a4e77d2160",
+          "attempt_id": "184b493f-0e81-4f6a-9958-e9b71ec899bb",
+          "verdict": "passed",
+          "assertions_passed": 44,
+          "assertions_total": 44,
+          "runtime_kind": "isolated-browser",
+          "resource_limits": {
+            "mode": "cgroup-v2-scope",
+            "memory_max_bytes": 536870912,
+            "memory_swap_max_bytes": 0,
+            "tasks_max": 64,
+            "cpu_quota_percent": 100,
+            "verified": true
+          }
+        }
+      ],
+      "artifact_count": 12,
+      "artifacts": [
+        {
+          "role": "screenshot",
+          "sha256": "b958ca79e3175605bba5bb837f3c27af9b6e0a749e9ff68c673290ee7efa274e",
+          "size_bytes": 95389
+        },
+        {
+          "role": "trace",
+          "sha256": "b5eb1eb5313178fb98a13f28bcb171a898ed3c9fa1ca35d40150167ed091e28f",
+          "size_bytes": 621580
+        },
+        {
+          "role": "requests",
+          "sha256": "ec3510fff93980456c756e87a58a1abc447b9150fa8c450e51485b6f48a55bb4",
+          "size_bytes": 5437
+        },
+        {
+          "role": "logs",
+          "sha256": "e2e13a27a2c917748f893e632676fa92db1239ad2e36e85eabb878814b05ad89",
+          "size_bytes": 2357
+        },
+        {
+          "role": "report",
+          "sha256": "0e9c40e03d6e0eb77e745b10dba17227b755699a7843bb0045a24322f331885c",
+          "size_bytes": 13218
+        },
+        {
+          "role": "proposal",
+          "sha256": "fc9402a3d07bc6c5dda838cb299c03e02830aafbaa5965711b487fffaa51aca0",
+          "size_bytes": 740
+        },
+        {
+          "role": "diff",
+          "sha256": "f9193387309f43e0ea1d584bd43af316f4c23f4c83b6c0a8bcd36abb8b3a8d70",
+          "size_bytes": 449
+        },
+        {
+          "role": "screenshot",
+          "sha256": "366a653e16b4dd5947ce5b19d65df01097a294a6dbca9e139f80093a96b87afb",
+          "size_bytes": 67511
+        },
+        {
+          "role": "trace",
+          "sha256": "5401a294800a433b1c37e1e65908cd08d1cec3dc2c2397609953cd26447fd12e",
+          "size_bytes": 589427
+        },
+        {
+          "role": "requests",
+          "sha256": "bdf278e9e4bc60c12cab20c835c459ea6a1fc48d2117fbaa9d7476a8171fab5d",
+          "size_bytes": 6033
+        },
+        {
+          "role": "logs",
+          "sha256": "fac79eb4dd6445fccc29927bded6d6d65182395c61d2d43963ef33818ffd0da4",
+          "size_bytes": 32
+        },
+        {
+          "role": "report",
+          "sha256": "35192ec918b66ad5206b03e6c8959d115243072f9833b77626ae79b06d15c036",
+          "size_bytes": 11526
+        }
+      ],
+      "verified": true
+    },
+    {
+      "trial": 5,
+      "idempotency_key": "eea5a143-649e-4b6b-89f5-9e2d50cf2028",
+      "job_id": "83d1c403-9f6a-4d69-9a46-e39c83ac2471",
+      "evidence_recorded": true,
+      "scenario_id": "scripted_checkout_repair",
+      "requested_mode": "repair",
+      "effective_mode": "repair",
+      "repair_block_reason": null,
+      "created_at": "2026-10-27T21:23:36.737470Z",
+      "updated_at": "2026-10-27T21:23:41.627770Z",
+      "wall_seconds": 4.89,
+      "terminal": true,
+      "state": "succeeded",
+      "stage": "completed",
+      "outcome": "verified",
+      "cleanup_status": "succeeded",
+      "error_code": null,
+      "failed_stage": null,
+      "deadline_exceeded": false,
+      "cancel_requested_by_ledger": false,
+      "baseline_verdict": "failed",
+      "expected_failure_reproduced": true,
+      "attempts": [
+        {
+          "attempt_id": "5d3fd112-2874-4ff1-ae59-cf4925ff1a00",
+          "attempt_number": 1,
+          "outcome": "verified",
+          "provider": "deterministic",
+          "model": "deterministic-checkout-v1",
+          "dispatched_provider": "deterministic",
+          "dispatched_model": "deterministic-checkout-v1",
+          "prompt_tokens": null,
+          "completion_tokens": null,
+          "policy_valid": true,
+          "policy_error": null,
+          "diff_sha256": "f9193387309f43e0ea1d584bd43af316f4c23f4c83b6c0a8bcd36abb8b3a8d70",
+          "diff_changed_lines": 2,
+          "prior_feedback": null
+        }
+      ],
+      "verification_executions": [
+        {
+          "execution_id": "2d71ce5a-160a-42f1-9a12-608f6ab4265b",
+          "attempt_id": "5d3fd112-2874-4ff1-ae59-cf4925ff1a00",
+          "verdict": "passed",
+          "assertions_passed": 44,
+          "assertions_total": 44,
+          "runtime_kind": "isolated-browser",
+          "resource_limits": {
+            "mode": "cgroup-v2-scope",
+            "memory_max_bytes": 536870912,
+            "memory_swap_max_bytes": 0,
+            "tasks_max": 64,
+            "cpu_quota_percent": 100,
+            "verified": true
+          }
+        }
+      ],
+      "artifact_count": 12,
+      "artifacts": [
+        {
+          "role": "screenshot",
+          "sha256": "b958ca79e3175605bba5bb837f3c27af9b6e0a749e9ff68c673290ee7efa274e",
+          "size_bytes": 95389
+        },
+        {
+          "role": "trace",
+          "sha256": "765ac3a27e2ae8afb2c241f461b255af7b0ef60831661d0314379430a5ee4d7c",
+          "size_bytes": 666434
+        },
+        {
+          "role": "requests",
+          "sha256": "9b0236f523c4dbd14b8680426a37b7c59b888909d62b6eede855ba33206cea41",
+          "size_bytes": 5437
+        },
+        {
+          "role": "logs",
+          "sha256": "b35ebe184227d955365fe7c170310c52e20640dd7e521b367be1059c09cea215",
+          "size_bytes": 2357
+        },
+        {
+          "role": "report",
+          "sha256": "7e7c745725d5144324412e39a23b6824d4e005c2ac1d2cb9d62d6ae84ada3432",
+          "size_bytes": 13218
+        },
+        {
+          "role": "proposal",
+          "sha256": "fc9402a3d07bc6c5dda838cb299c03e02830aafbaa5965711b487fffaa51aca0",
+          "size_bytes": 740
+        },
+        {
+          "role": "diff",
+          "sha256": "f9193387309f43e0ea1d584bd43af316f4c23f4c83b6c0a8bcd36abb8b3a8d70",
+          "size_bytes": 449
+        },
+        {
+          "role": "screenshot",
+          "sha256": "bf4103d988b28054e26ec4416067eb306c97775b1b83e6daee7a5d050094f446",
+          "size_bytes": 67479
+        },
+        {
+          "role": "trace",
+          "sha256": "cddc36b0ed5720120b459f711c61d4d34915ce8640b351282de775dd6054b22e",
+          "size_bytes": 551269
+        },
+        {
+          "role": "requests",
+          "sha256": "3c035c283678bfc581d239cc6ddd23c853211f9d172868bf640eb16c7b518ffe",
+          "size_bytes": 6033
+        },
+        {
+          "role": "logs",
+          "sha256": "fac79eb4dd6445fccc29927bded6d6d65182395c61d2d43963ef33818ffd0da4",
+          "size_bytes": 32
+        },
+        {
+          "role": "report",
+          "sha256": "4d07f82acc58de207c95364336aa7380b55d192653996a98da607a3ab46fc5b8",
+          "size_bytes": 11526
+        }
+      ],
+      "verified": true
+    }
+  ]
+}

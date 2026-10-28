@@ -1,0 +1,14 @@
+--- a/apps/buggyshop-backend/app/routes/checkout.py
++++ b/apps/buggyshop-backend/app/routes/checkout.py
+@@ -40,7 +40,10 @@
+     if coupon_code and coupon_code not in discounts:
+         raise HTTPException(status_code=400, detail="Invalid coupon code")
+ 
+-    discount = cast(int, discounts.get(coupon_code))
++    if payload.coupon_code is None:
++        discount = 0
++    else:
++        discount = cast(int, discounts.get(coupon_code))
+     total = subtotal - discount
+     order: Order = {
+         "id": str(uuid4()),

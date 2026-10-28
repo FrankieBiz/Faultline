@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import AuthoredPreview from "@/components/AuthoredPreview";
 import { Artifacts, Assertions, Attempts, EventLog, Seam, Track } from "@/components/Evidence";
 import {
-  ApiError, OUTCOME, REASON, STAGE_LABEL, TERMINAL, api, providerLabel,
+  ApiError, OUTCOME, REASON, STAGE_LABEL, TERMINAL, api, limitsStatusLabel, providerLabel,
   type Job, type JobDetail, type JobEvent, type Readiness, type Tone,
 } from "@/lib/faultline-api";
 
@@ -228,6 +228,12 @@ export default function Inspector() {
             <div>
               <dt>Provider</dt>
               <dd>{readiness ? providerLabel(readiness.model) : "unknown"}</dd>
+            </div>
+            <div>
+              <dt>Containment</dt>
+              <dd data-tone={readiness?.resource_limits?.enforcement_preflight === "passed" ? "ok" : readiness?.resource_limits ? "warn" : "idle"}>
+                {readiness ? limitsStatusLabel(readiness.resource_limits) : "unknown"}
+              </dd>
             </div>
           </dl>
         </div>

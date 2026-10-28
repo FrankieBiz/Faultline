@@ -1,0 +1,1368 @@
+{
+  "job": {
+    "id": "83d1c403-9f6a-4d69-9a46-e39c83ac2471",
+    "scenario_id": "scripted_checkout_repair",
+    "state": "succeeded",
+    "stage": "completed",
+    "outcome": "verified",
+    "cleanup_status": "succeeded",
+    "created_at": "2026-10-27T21:23:36.737470Z",
+    "updated_at": "2026-10-27T21:23:41.627770Z",
+    "error_details": null,
+    "schema_version": "1.0",
+    "idempotency_key": "eea5a143-649e-4b6b-89f5-9e2d50cf2028",
+    "request_fingerprint": "111f8f6d7c898851bedca803b564b73c5cff8132862e10e18380c4c87c8119f5",
+    "requested_mode": "repair",
+    "effective_mode": "repair",
+    "repair_block_reason": null,
+    "cancel_requested": false,
+    "deadline_at": "2026-10-27T21:26:36.745489Z",
+    "seed_commit": "44b2a13b412588de7596ef0f3bb2d1aae47799a5",
+    "seed_source_hash": "2d4a180d4fc88cf7693cf98ec8bb7acee4e28a5793a2c1ac267af74414ecc634",
+    "fixture_version": "checkout-optional-coupon-v1",
+    "scenario_version": "1.0",
+    "baseline_execution_id": "69063525-abb2-4d8f-ad17-f4562fc3334f"
+  },
+  "baseline": {
+    "schema_version": "1.0",
+    "job_id": "83d1c403-9f6a-4d69-9a46-e39c83ac2471",
+    "phase": "baseline",
+    "attempt_id": null,
+    "app_generation_id": "6b5c8a63-4dc9-466c-9e9c-3c0c5712182c",
+    "candidate_snapshot_sha256": "bf25e7f80451cba31ca4ed9c267f626d247564b50b8bb5e7ba7d2b09564a95f8",
+    "runtime_kind": "isolated-browser",
+    "artifact_ids": [
+      "dae9b8a2-e658-45ad-8e42-c795951fc82a",
+      "fccd9971-969f-4b37-bf3a-90aae3419ac8",
+      "34bd1c14-bd92-46d0-ad9a-914e20a87e0f",
+      "5d991f34-c082-45c9-8847-1f00bc891ab3",
+      "11190d29-fdea-4915-8a67-7cea998f5341"
+    ],
+    "started_at": "2026-10-27T21:23:37.437687Z",
+    "finished_at": "2026-10-27T21:23:38.825947Z",
+    "report": {
+      "execution_id": "69063525-abb2-4d8f-ad17-f4562fc3334f",
+      "case_id": "d424e69f-e64a-4065-9be5-596bf3f79e30",
+      "scenario_id": "scripted_checkout_repair",
+      "verdict": "failed",
+      "duration_ms": 1342.8185230004601,
+      "observations": [
+        {
+          "id": "df9dd46f-6abf-42c5-b85e-caa08bebabd9",
+          "kind": "http_error",
+          "source": "POST /api/checkout",
+          "message": "POST /api/checkout returned HTTP 500: {\"detail\":\"TypeError: unsupported operand type(s) for -: 'int' and 'NoneType'\"}",
+          "data": {
+            "step": "submit_order",
+            "request": {
+              "url": "http://127.0.0.1:47453/api/checkout",
+              "method": "POST",
+              "status": 500,
+              "request_id": "c39ae698-15f1-45c5-a3a8-938c2845c33a"
+            },
+            "response_body": "{\"detail\":\"TypeError: unsupported operand type(s) for -: 'int' and 'NoneType'\"}",
+            "expected": "HTTP 201 with a created order",
+            "artifact_ids": [
+              "c6d3fa8a-be2f-4e77-99d5-6f063e0b0665",
+              "e7512ba6-435c-4df0-a4de-4185f63ec61c",
+              "f20af00d-dbb1-41ab-970a-7f109f3c0f90",
+              "d588dbb9-82e2-4a64-967a-b3beb2a3b2f7"
+            ],
+            "status": 500,
+            "request_id": "c39ae698-15f1-45c5-a3a8-938c2845c33a",
+            "case_id": "d424e69f-e64a-4065-9be5-596bf3f79e30"
+          },
+          "timestamp": "2026-10-27T21:23:38.457000Z"
+        },
+        {
+          "id": "ff070d9b-9599-4945-bf0f-7efd4fa12478",
+          "kind": "assertion",
+          "source": "oracle",
+          "message": "checkout.status_201: HTTP 500",
+          "data": {
+            "assertion_ids": [
+              "checkout.status_201"
+            ],
+            "expected": [
+              "HTTP 201"
+            ],
+            "observed": "HTTP 500",
+            "artifact_ids": [
+              "c6d3fa8a-be2f-4e77-99d5-6f063e0b0665",
+              "e7512ba6-435c-4df0-a4de-4185f63ec61c",
+              "f20af00d-dbb1-41ab-970a-7f109f3c0f90",
+              "d588dbb9-82e2-4a64-967a-b3beb2a3b2f7"
+            ]
+          },
+          "timestamp": "2026-10-27T21:23:38.729000Z"
+        },
+        {
+          "id": "ad6a2ab9-44e5-4e6f-893c-c2a6db34699d",
+          "kind": "assertion",
+          "source": "oracle",
+          "message": "checkout.order_schema_valid: order has keys [detail] instead of [discount, id, line_items, subtotal, total]",
+          "data": {
+            "assertion_ids": [
+              "checkout.order_schema_valid"
+            ],
+            "expected": [
+              "201 body matches the order schema"
+            ],
+            "observed": "order has keys [detail] instead of [discount, id, line_items, subtotal, total]",
+            "artifact_ids": [
+              "c6d3fa8a-be2f-4e77-99d5-6f063e0b0665",
+              "e7512ba6-435c-4df0-a4de-4185f63ec61c",
+              "f20af00d-dbb1-41ab-970a-7f109f3c0f90",
+              "d588dbb9-82e2-4a64-967a-b3beb2a3b2f7"
+            ]
+          },
+          "timestamp": "2026-10-27T21:23:38.729000Z"
+        },
+        {
+          "id": "477c1e0b-8f24-45b2-9f33-893565ea4467",
+          "kind": "assertion",
+          "source": "oracle",
+          "message": "checkout.order_id_is_uuid, checkout.line_items_match_cart, checkout.subtotal_matches_catalog, checkout.no_coupon_discount_is_zero, checkout.total_matches_subtotal, checkout.readback_matches_response: no valid order (HTTP 500)",
+          "data": {
+            "assertion_ids": [
+              "checkout.order_id_is_uuid",
+              "checkout.line_items_match_cart",
+              "checkout.subtotal_matches_catalog",
+              "checkout.no_coupon_discount_is_zero",
+              "checkout.total_matches_subtotal",
+              "checkout.readback_matches_response"
+            ],
+            "expected": [
+              "server-generated UUID order id",
+              "trail-mug×2 @1999=3998",
+              "subtotal 3998",
+              "discount 0 (no coupon)",
+              "total 3998",
+              "GET /api/orders/{id} returns the same order"
+            ],
+            "observed": "no valid order (HTTP 500)",
+            "artifact_ids": [
+              "c6d3fa8a-be2f-4e77-99d5-6f063e0b0665",
+              "e7512ba6-435c-4df0-a4de-4185f63ec61c",
+              "f20af00d-dbb1-41ab-970a-7f109f3c0f90",
+              "d588dbb9-82e2-4a64-967a-b3beb2a3b2f7"
+            ]
+          },
+          "timestamp": "2026-10-27T21:23:38.729000Z"
+        },
+        {
+          "id": "47345801-62b7-42ab-a9d0-5d23c0e5aeef",
+          "kind": "assertion",
+          "source": "oracle",
+          "message": "checkout.confirmation_shown: failure alert: Checkout failed The store returned HTTP 500 (Internal Server Error) and didn't confirm an order. Your cart is unchanged, so you can place the order again. TypeError: unsupported operand type(s) for -: 'int' and 'NoneType'",
+          "data": {
+            "assertion_ids": [
+              "checkout.confirmation_shown"
+            ],
+            "expected": [
+              "order confirmation shown and no failure alert"
+            ],
+            "observed": "failure alert: Checkout failed The store returned HTTP 500 (Internal Server Error) and didn't confirm an order. Your cart is unchanged, so you can place the order again. TypeError: unsupported operand type(s) for -: 'int' and 'NoneType'",
+            "artifact_ids": [
+              "c6d3fa8a-be2f-4e77-99d5-6f063e0b0665",
+              "e7512ba6-435c-4df0-a4de-4185f63ec61c",
+              "f20af00d-dbb1-41ab-970a-7f109f3c0f90",
+              "d588dbb9-82e2-4a64-967a-b3beb2a3b2f7"
+            ]
+          },
+          "timestamp": "2026-10-27T21:23:38.729000Z"
+        },
+        {
+          "id": "b8a958da-5278-4dfd-8673-fa68dda8eeae",
+          "kind": "assertion",
+          "source": "oracle",
+          "message": "checkout.confirmation_matches_order: no confirmation view",
+          "data": {
+            "assertion_ids": [
+              "checkout.confirmation_matches_order"
+            ],
+            "expected": [
+              "displayed ID, quantity, subtotal, discount, and total equal the order"
+            ],
+            "observed": "no confirmation view",
+            "artifact_ids": [
+              "c6d3fa8a-be2f-4e77-99d5-6f063e0b0665",
+              "e7512ba6-435c-4df0-a4de-4185f63ec61c",
+              "f20af00d-dbb1-41ab-970a-7f109f3c0f90",
+              "d588dbb9-82e2-4a64-967a-b3beb2a3b2f7"
+            ]
+          },
+          "timestamp": "2026-10-27T21:23:38.729000Z"
+        },
+        {
+          "id": "f5f1f8c1-480e-455c-89f7-bc8cfd6f7de2",
+          "kind": "assertion",
+          "source": "oracle",
+          "message": "checkout.exactly_one_stored_order: 0 order(s)",
+          "data": {
+            "assertion_ids": [
+              "checkout.exactly_one_stored_order"
+            ],
+            "expected": [
+              "exactly 1 order in the case namespace"
+            ],
+            "observed": "0 order(s)",
+            "artifact_ids": [
+              "c6d3fa8a-be2f-4e77-99d5-6f063e0b0665",
+              "e7512ba6-435c-4df0-a4de-4185f63ec61c",
+              "f20af00d-dbb1-41ab-970a-7f109f3c0f90",
+              "d588dbb9-82e2-4a64-967a-b3beb2a3b2f7"
+            ]
+          },
+          "timestamp": "2026-10-27T21:23:38.729000Z"
+        },
+        {
+          "id": "ea040f76-c169-4c10-9a77-a000589d53d0",
+          "kind": "assertion",
+          "source": "oracle",
+          "message": "checkout.no_server_errors: POST http://127.0.0.1:47453/api/checkout → 500",
+          "data": {
+            "assertion_ids": [
+              "checkout.no_server_errors"
+            ],
+            "expected": [
+              "no first-party HTTP 5xx responses"
+            ],
+            "observed": "POST http://127.0.0.1:47453/api/checkout → 500",
+            "artifact_ids": [
+              "c6d3fa8a-be2f-4e77-99d5-6f063e0b0665",
+              "e7512ba6-435c-4df0-a4de-4185f63ec61c",
+              "f20af00d-dbb1-41ab-970a-7f109f3c0f90",
+              "d588dbb9-82e2-4a64-967a-b3beb2a3b2f7"
+            ]
+          },
+          "timestamp": "2026-10-27T21:23:38.729000Z"
+        },
+        {
+          "id": "b44a805f-d2ba-4932-b094-a44d50685b0b",
+          "kind": "server_exception",
+          "source": "apps/buggyshop-backend/app/routes/checkout.py",
+          "message": "TypeError: unsupported operand type(s) for -: 'int' and 'NoneType'",
+          "data": {
+            "request_id": "c39ae698-15f1-45c5-a3a8-938c2845c33a",
+            "case_id": "d424e69f-e64a-4065-9be5-596bf3f79e30",
+            "exception_type": "TypeError",
+            "traceback": "Traceback (most recent call last):\n  File \"/packages/starlette/_exception_handler.py\", line 42, in wrapped_app\n    await app(scope, receive, sender)\n  File \"/packages/fastapi/routing.py\", line 152, in app\n    response = await f(request)\n               ^^^^^^^^^^^^^^^^\n  File \"/packages/fastapi/routing.py\", line 745, in app\n    raw_response = await run_endpoint_function(\n                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n    ...<3 lines>...\n    )\n    ^\n  File \"/packages/fastapi/routing.py\", line 374, in run_endpoint_function\n    return await run_in_threadpool(\n           ^^^^^^^^^^^^^^^^^^^^^^^^\n        _run_sync_endpoint, function=dependant.call, arguments=values\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n    )\n    ^\n  File \"/packages/starlette/concurrency.py\", line 34, in run_in_threadpool\n    return await anyio.to_thread.run_sync(func)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/packages/anyio/to_thread.py\", line 65, in run_sync\n    return await get_async_backend().run_sync_in_worker_thread(\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n        func, args, abandon_on_cancel=abandon_on_cancel, limiter=limiter\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n    )\n    ^\n  File \"/packages/anyio/_backends/_asyncio.py\", line 2706, in run_sync_in_worker_thread\n    return await future\n           ^^^^^^^^^^^^\n  File \"/packages/anyio/_backends/_asyncio.py\", line 1100, in run\n    result = context.run(func, *args)\n  File \"/packages/fastapi/telemetry/_api.py\", line 244, in _run_sync_endpoint\n    return function(**arguments)\n  File \"/snapshot/apps/buggyshop-backend/app/main.py\", line 101, in create_checkout\n    return checkout_route.checkout(payload, namespace)\n           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^\n  File \"/snapshot/apps/buggyshop-backend/app/routes/checkout.py\", line 44, in checkout\n    total = subtotal - discount\n            ~~~~~~~~~^~~~~~~~~~\nTypeError: unsupported operand type(s) for -: 'int' and 'NoneType'\n"
+          },
+          "timestamp": "2026-10-27T21:23:38.780479Z"
+        }
+      ],
+      "assertions": [
+        {
+          "id": "checkout.flow_completed",
+          "passed": true,
+          "expected": "catalog → product → quantity 2 → cart → checkout → Place order",
+          "observed": "order submitted through the checkout page",
+          "duration_ms": 0.013
+        },
+        {
+          "id": "checkout.single_request",
+          "passed": true,
+          "expected": "exactly one POST /api/checkout",
+          "observed": "1 checkout request(s)",
+          "duration_ms": 0.004
+        },
+        {
+          "id": "checkout.request_payload",
+          "passed": true,
+          "expected": "items [{\"product_id\":\"trail-mug\",\"quantity\":2}] and coupon meaning no coupon",
+          "observed": "items [{\"product_id\":\"trail-mug\",\"quantity\":2}]; coupon_code null (means no coupon)",
+          "duration_ms": 0.021
+        },
+        {
+          "id": "checkout.status_201",
+          "passed": false,
+          "expected": "HTTP 201",
+          "observed": "HTTP 500",
+          "duration_ms": 0.002
+        },
+        {
+          "id": "checkout.order_schema_valid",
+          "passed": false,
+          "expected": "201 body matches the order schema",
+          "observed": "order has keys [detail] instead of [discount, id, line_items, subtotal, total]",
+          "duration_ms": 0.003
+        },
+        {
+          "id": "checkout.order_id_is_uuid",
+          "passed": false,
+          "expected": "server-generated UUID order id",
+          "observed": "no valid order (HTTP 500)",
+          "duration_ms": 0.005
+        },
+        {
+          "id": "checkout.line_items_match_cart",
+          "passed": false,
+          "expected": "trail-mug×2 @1999=3998",
+          "observed": "no valid order (HTTP 500)",
+          "duration_ms": 0.001
+        },
+        {
+          "id": "checkout.subtotal_matches_catalog",
+          "passed": false,
+          "expected": "subtotal 3998",
+          "observed": "no valid order (HTTP 500)",
+          "duration_ms": 0.001
+        },
+        {
+          "id": "checkout.no_coupon_discount_is_zero",
+          "passed": false,
+          "expected": "discount 0 (no coupon)",
+          "observed": "no valid order (HTTP 500)",
+          "duration_ms": 0.002
+        },
+        {
+          "id": "checkout.total_matches_subtotal",
+          "passed": false,
+          "expected": "total 3998",
+          "observed": "no valid order (HTTP 500)",
+          "duration_ms": 0.001
+        },
+        {
+          "id": "checkout.confirmation_shown",
+          "passed": false,
+          "expected": "order confirmation shown and no failure alert",
+          "observed": "failure alert: Checkout failed The store returned HTTP 500 (Internal Server Error) and didn't confirm an order. Your cart is unchanged, so you can place the order again. TypeError: unsupported operand type(s) for -: 'int' and 'NoneType'",
+          "duration_ms": 0.005
+        },
+        {
+          "id": "checkout.confirmation_matches_order",
+          "passed": false,
+          "expected": "displayed ID, quantity, subtotal, discount, and total equal the order",
+          "observed": "no confirmation view",
+          "duration_ms": 0.003
+        },
+        {
+          "id": "checkout.readback_matches_response",
+          "passed": false,
+          "expected": "GET /api/orders/{id} returns the same order",
+          "observed": "no valid order (HTTP 500)",
+          "duration_ms": 0.002
+        },
+        {
+          "id": "checkout.exactly_one_stored_order",
+          "passed": false,
+          "expected": "exactly 1 order in the case namespace",
+          "observed": "0 order(s)",
+          "duration_ms": 0.004
+        },
+        {
+          "id": "checkout.no_server_errors",
+          "passed": false,
+          "expected": "no first-party HTTP 5xx responses",
+          "observed": "POST http://127.0.0.1:47453/api/checkout → 500",
+          "duration_ms": 0.005
+        },
+        {
+          "id": "checkout.no_browser_exceptions",
+          "passed": true,
+          "expected": "no uncaught browser exceptions",
+          "observed": "none",
+          "duration_ms": 0.002
+        },
+        {
+          "id": "checkout.failure_visible",
+          "passed": true,
+          "expected": "measured baseline failure evidence",
+          "observed": "failure alert: Checkout failed The store returned HTTP 500 (Internal Server Error) and didn't confirm an order. Your cart is unchanged, so you can place the order again. TypeError: unsupported operand type(s) for -: 'int' and 'NoneType'",
+          "duration_ms": 0.0
+        },
+        {
+          "id": "checkout.no_order_on_failure",
+          "passed": true,
+          "expected": "measured baseline failure evidence",
+          "observed": "{\"orders\":[]}",
+          "duration_ms": 0.0
+        }
+      ],
+      "raw_logs": "2026-10-27T21:23:37.699Z runner execution 69063525-abb2-4d8f-ad17-f4562fc3334f case d424e69f-e64a-4065-9be5-596bf3f79e30 scenario scripted_checkout_repair coupon null\n2026-10-27T21:23:38.079Z network GET http://127.0.0.1:47453/api/products -> HTTP 200 request_id=fe76d8cd-a38b-4441-b516-47615bf17dc3\n2026-10-27T21:23:38.157Z network GET http://127.0.0.1:47453/api/products/trail-mug -> HTTP 200 request_id=098bb0b2-1959-4166-b502-814d354aaf95\n2026-10-27T21:23:38.321Z network GET http://127.0.0.1:47453/api/products -> HTTP 200 request_id=774489f9-c92b-4eb8-b2bd-1f99a088c48e\n2026-10-27T21:23:38.434Z network POST http://127.0.0.1:47453/api/checkout -> HTTP 500 request_id=c39ae698-15f1-45c5-a3a8-938c2845c33a\n2026-10-27T21:23:38.457Z network body {\"detail\":\"TypeError: unsupported operand type(s) for -: 'int' and 'NoneType'\"}\n2026-10-27T21:23:38.461Z console.error Failed to load resource: the server responded with a status of 500 (Internal Server Error) (http://127.0.0.1:47453/api/checkout:0:0)\n2026-10-27T21:23:38.481Z runner flow reached the order outcome\n2026-10-27T21:23:38.542Z runner readback order=skipped namespace=200\n2026-10-27T21:23:38.728Z runner outcome assertion_failed"
+    },
+    "resource_limits": {
+      "mode": "cgroup-v2-scope",
+      "memory_max_bytes": 536870912,
+      "memory_swap_max_bytes": 0,
+      "tasks_max": 64,
+      "cpu_quota_percent": 100,
+      "verified": true
+    }
+  },
+  "attempts": [
+    {
+      "id": "5d3fd112-2874-4ff1-ae59-cf4925ff1a00",
+      "job_id": "83d1c403-9f6a-4d69-9a46-e39c83ac2471",
+      "attempt_number": 1,
+      "prompt_tokens": null,
+      "completion_tokens": null,
+      "raw_patch": "{\"decision\":\"patch\",\"target_file\":\"apps/buggyshop-backend/app/routes/checkout.py\",\"base_sha256\":\"2d4a180d4fc88cf7693cf98ec8bb7acee4e28a5793a2c1ac267af74414ecc634\",\"unified_diff\":\"--- a/apps/buggyshop-backend/app/routes/checkout.py\\n+++ b/apps/buggyshop-backend/app/routes/checkout.py\\n@@ -40,7 +40,7 @@\\n     if coupon_code and coupon_code not in discounts:\\n         raise HTTPException(status_code=400, detail=\\\"Invalid coupon code\\\")\\n \\n-    discount = cast(int, discounts.get(coupon_code))\\n+    discount = cast(int, discounts.get(coupon_code, 0))\\n     total = subtotal - discount\\n     order: Order = {\\n         \\\"id\\\": str(uuid4()),\\n\",\"explanation\":\"Deterministic fallback: default the optional coupon discount to zero.\"}",
+      "parsed_diff": "--- a/apps/buggyshop-backend/app/routes/checkout.py\n+++ b/apps/buggyshop-backend/app/routes/checkout.py\n@@ -40,7 +40,7 @@\n     if coupon_code and coupon_code not in discounts:\n         raise HTTPException(status_code=400, detail=\"Invalid coupon code\")\n \n-    discount = cast(int, discounts.get(coupon_code))\n+    discount = cast(int, discounts.get(coupon_code, 0))\n     total = subtotal - discount\n     order: Order = {\n         \"id\": str(uuid4()),\n",
+      "validation_result": {
+        "dispatched_provider": "deterministic",
+        "dispatched_model": "deterministic-checkout-v1",
+        "provider": "deterministic",
+        "model": "deterministic-checkout-v1",
+        "generation_ms": 1,
+        "diff_recounted": false,
+        "is_valid": true,
+        "target_file": "apps/buggyshop-backend/app/routes/checkout.py",
+        "syntax_valid": true,
+        "error_message": null,
+        "ast_safe": true,
+        "base_sha256": "2d4a180d4fc88cf7693cf98ec8bb7acee4e28a5793a2c1ac267af74414ecc634",
+        "candidate_sha256": "e2c7a4e916b2249023affd44fa768a4c00d9ec54c67b288fe0caedc6c34130c2",
+        "target_sha256": "955fda85c77527b46042e595970dcacfd020efb13f0afb2c94b492f264fc0865",
+        "app_generation_id": "cbddc9a5-e5ae-4c28-ab23-53a4caa02b35",
+        "verification_execution_id": "2d71ce5a-160a-42f1-9a12-608f6ab4265b"
+      },
+      "outcome": "verified"
+    }
+  ],
+  "executions": [
+    {
+      "schema_version": "1.0",
+      "job_id": "83d1c403-9f6a-4d69-9a46-e39c83ac2471",
+      "phase": "baseline",
+      "attempt_id": null,
+      "app_generation_id": "6b5c8a63-4dc9-466c-9e9c-3c0c5712182c",
+      "candidate_snapshot_sha256": "bf25e7f80451cba31ca4ed9c267f626d247564b50b8bb5e7ba7d2b09564a95f8",
+      "runtime_kind": "isolated-browser",
+      "artifact_ids": [
+        "dae9b8a2-e658-45ad-8e42-c795951fc82a",
+        "fccd9971-969f-4b37-bf3a-90aae3419ac8",
+        "34bd1c14-bd92-46d0-ad9a-914e20a87e0f",
+        "5d991f34-c082-45c9-8847-1f00bc891ab3",
+        "11190d29-fdea-4915-8a67-7cea998f5341"
+      ],
+      "started_at": "2026-10-27T21:23:37.437687Z",
+      "finished_at": "2026-10-27T21:23:38.825947Z",
+      "report": {
+        "execution_id": "69063525-abb2-4d8f-ad17-f4562fc3334f",
+        "case_id": "d424e69f-e64a-4065-9be5-596bf3f79e30",
+        "scenario_id": "scripted_checkout_repair",
+        "verdict": "failed",
+        "duration_ms": 1342.8185230004601,
+        "observations": [
+          {
+            "id": "df9dd46f-6abf-42c5-b85e-caa08bebabd9",
+            "kind": "http_error",
+            "source": "POST /api/checkout",
+            "message": "POST /api/checkout returned HTTP 500: {\"detail\":\"TypeError: unsupported operand type(s) for -: 'int' and 'NoneType'\"}",
+            "data": {
+              "step": "submit_order",
+              "request": {
+                "url": "http://127.0.0.1:47453/api/checkout",
+                "method": "POST",
+                "status": 500,
+                "request_id": "c39ae698-15f1-45c5-a3a8-938c2845c33a"
+              },
+              "response_body": "{\"detail\":\"TypeError: unsupported operand type(s) for -: 'int' and 'NoneType'\"}",
+              "expected": "HTTP 201 with a created order",
+              "artifact_ids": [
+                "c6d3fa8a-be2f-4e77-99d5-6f063e0b0665",
+                "e7512ba6-435c-4df0-a4de-4185f63ec61c",
+                "f20af00d-dbb1-41ab-970a-7f109f3c0f90",
+                "d588dbb9-82e2-4a64-967a-b3beb2a3b2f7"
+              ],
+              "status": 500,
+              "request_id": "c39ae698-15f1-45c5-a3a8-938c2845c33a",
+              "case_id": "d424e69f-e64a-4065-9be5-596bf3f79e30"
+            },
+            "timestamp": "2026-10-27T21:23:38.457000Z"
+          },
+          {
+            "id": "ff070d9b-9599-4945-bf0f-7efd4fa12478",
+            "kind": "assertion",
+            "source": "oracle",
+            "message": "checkout.status_201: HTTP 500",
+            "data": {
+              "assertion_ids": [
+                "checkout.status_201"
+              ],
+              "expected": [
+                "HTTP 201"
+              ],
+              "observed": "HTTP 500",
+              "artifact_ids": [
+                "c6d3fa8a-be2f-4e77-99d5-6f063e0b0665",
+                "e7512ba6-435c-4df0-a4de-4185f63ec61c",
+                "f20af00d-dbb1-41ab-970a-7f109f3c0f90",
+                "d588dbb9-82e2-4a64-967a-b3beb2a3b2f7"
+              ]
+            },
+            "timestamp": "2026-10-27T21:23:38.729000Z"
+          },
+          {
+            "id": "ad6a2ab9-44e5-4e6f-893c-c2a6db34699d",
+            "kind": "assertion",
+            "source": "oracle",
+            "message": "checkout.order_schema_valid: order has keys [detail] instead of [discount, id, line_items, subtotal, total]",
+            "data": {
+              "assertion_ids": [
+                "checkout.order_schema_valid"
+              ],
+              "expected": [
+                "201 body matches the order schema"
+              ],
+              "observed": "order has keys [detail] instead of [discount, id, line_items, subtotal, total]",
+              "artifact_ids": [
+                "c6d3fa8a-be2f-4e77-99d5-6f063e0b0665",
+                "e7512ba6-435c-4df0-a4de-4185f63ec61c",
+                "f20af00d-dbb1-41ab-970a-7f109f3c0f90",
+                "d588dbb9-82e2-4a64-967a-b3beb2a3b2f7"
+              ]
+            },
+            "timestamp": "2026-10-27T21:23:38.729000Z"
+          },
+          {
+            "id": "477c1e0b-8f24-45b2-9f33-893565ea4467",
+            "kind": "assertion",
+            "source": "oracle",
+            "message": "checkout.order_id_is_uuid, checkout.line_items_match_cart, checkout.subtotal_matches_catalog, checkout.no_coupon_discount_is_zero, checkout.total_matches_subtotal, checkout.readback_matches_response: no valid order (HTTP 500)",
+            "data": {
+              "assertion_ids": [
+                "checkout.order_id_is_uuid",
+                "checkout.line_items_match_cart",
+                "checkout.subtotal_matches_catalog",
+                "checkout.no_coupon_discount_is_zero",
+                "checkout.total_matches_subtotal",
+                "checkout.readback_matches_response"
+              ],
+              "expected": [
+                "server-generated UUID order id",
+                "trail-mug×2 @1999=3998",
+                "subtotal 3998",
+                "discount 0 (no coupon)",
+                "total 3998",
+                "GET /api/orders/{id} returns the same order"
+              ],
+              "observed": "no valid order (HTTP 500)",
+              "artifact_ids": [
+                "c6d3fa8a-be2f-4e77-99d5-6f063e0b0665",
+                "e7512ba6-435c-4df0-a4de-4185f63ec61c",
+                "f20af00d-dbb1-41ab-970a-7f109f3c0f90",
+                "d588dbb9-82e2-4a64-967a-b3beb2a3b2f7"
+              ]
+            },
+            "timestamp": "2026-10-27T21:23:38.729000Z"
+          },
+          {
+            "id": "47345801-62b7-42ab-a9d0-5d23c0e5aeef",
+            "kind": "assertion",
+            "source": "oracle",
+            "message": "checkout.confirmation_shown: failure alert: Checkout failed The store returned HTTP 500 (Internal Server Error) and didn't confirm an order. Your cart is unchanged, so you can place the order again. TypeError: unsupported operand type(s) for -: 'int' and 'NoneType'",
+            "data": {
+              "assertion_ids": [
+                "checkout.confirmation_shown"
+              ],
+              "expected": [
+                "order confirmation shown and no failure alert"
+              ],
+              "observed": "failure alert: Checkout failed The store returned HTTP 500 (Internal Server Error) and didn't confirm an order. Your cart is unchanged, so you can place the order again. TypeError: unsupported operand type(s) for -: 'int' and 'NoneType'",
+              "artifact_ids": [
+                "c6d3fa8a-be2f-4e77-99d5-6f063e0b0665",
+                "e7512ba6-435c-4df0-a4de-4185f63ec61c",
+                "f20af00d-dbb1-41ab-970a-7f109f3c0f90",
+                "d588dbb9-82e2-4a64-967a-b3beb2a3b2f7"
+              ]
+            },
+            "timestamp": "2026-10-27T21:23:38.729000Z"
+          },
+          {
+            "id": "b8a958da-5278-4dfd-8673-fa68dda8eeae",
+            "kind": "assertion",
+            "source": "oracle",
+            "message": "checkout.confirmation_matches_order: no confirmation view",
+            "data": {
+              "assertion_ids": [
+                "checkout.confirmation_matches_order"
+              ],
+              "expected": [
+                "displayed ID, quantity, subtotal, discount, and total equal the order"
+              ],
+              "observed": "no confirmation view",
+              "artifact_ids": [
+                "c6d3fa8a-be2f-4e77-99d5-6f063e0b0665",
+                "e7512ba6-435c-4df0-a4de-4185f63ec61c",
+                "f20af00d-dbb1-41ab-970a-7f109f3c0f90",
+                "d588dbb9-82e2-4a64-967a-b3beb2a3b2f7"
+              ]
+            },
+            "timestamp": "2026-10-27T21:23:38.729000Z"
+          },
+          {
+            "id": "f5f1f8c1-480e-455c-89f7-bc8cfd6f7de2",
+            "kind": "assertion",
+            "source": "oracle",
+            "message": "checkout.exactly_one_stored_order: 0 order(s)",
+            "data": {
+              "assertion_ids": [
+                "checkout.exactly_one_stored_order"
+              ],
+              "expected": [
+                "exactly 1 order in the case namespace"
+              ],
+              "observed": "0 order(s)",
+              "artifact_ids": [
+                "c6d3fa8a-be2f-4e77-99d5-6f063e0b0665",
+                "e7512ba6-435c-4df0-a4de-4185f63ec61c",
+                "f20af00d-dbb1-41ab-970a-7f109f3c0f90",
+                "d588dbb9-82e2-4a64-967a-b3beb2a3b2f7"
+              ]
+            },
+            "timestamp": "2026-10-27T21:23:38.729000Z"
+          },
+          {
+            "id": "ea040f76-c169-4c10-9a77-a000589d53d0",
+            "kind": "assertion",
+            "source": "oracle",
+            "message": "checkout.no_server_errors: POST http://127.0.0.1:47453/api/checkout → 500",
+            "data": {
+              "assertion_ids": [
+                "checkout.no_server_errors"
+              ],
+              "expected": [
+                "no first-party HTTP 5xx responses"
+              ],
+              "observed": "POST http://127.0.0.1:47453/api/checkout → 500",
+              "artifact_ids": [
+                "c6d3fa8a-be2f-4e77-99d5-6f063e0b0665",
+                "e7512ba6-435c-4df0-a4de-4185f63ec61c",
+                "f20af00d-dbb1-41ab-970a-7f109f3c0f90",
+                "d588dbb9-82e2-4a64-967a-b3beb2a3b2f7"
+              ]
+            },
+            "timestamp": "2026-10-27T21:23:38.729000Z"
+          },
+          {
+            "id": "b44a805f-d2ba-4932-b094-a44d50685b0b",
+            "kind": "server_exception",
+            "source": "apps/buggyshop-backend/app/routes/checkout.py",
+            "message": "TypeError: unsupported operand type(s) for -: 'int' and 'NoneType'",
+            "data": {
+              "request_id": "c39ae698-15f1-45c5-a3a8-938c2845c33a",
+              "case_id": "d424e69f-e64a-4065-9be5-596bf3f79e30",
+              "exception_type": "TypeError",
+              "traceback": "Traceback (most recent call last):\n  File \"/packages/starlette/_exception_handler.py\", line 42, in wrapped_app\n    await app(scope, receive, sender)\n  File \"/packages/fastapi/routing.py\", line 152, in app\n    response = await f(request)\n               ^^^^^^^^^^^^^^^^\n  File \"/packages/fastapi/routing.py\", line 745, in app\n    raw_response = await run_endpoint_function(\n                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n    ...<3 lines>...\n    )\n    ^\n  File \"/packages/fastapi/routing.py\", line 374, in run_endpoint_function\n    return await run_in_threadpool(\n           ^^^^^^^^^^^^^^^^^^^^^^^^\n        _run_sync_endpoint, function=dependant.call, arguments=values\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n    )\n    ^\n  File \"/packages/starlette/concurrency.py\", line 34, in run_in_threadpool\n    return await anyio.to_thread.run_sync(func)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/packages/anyio/to_thread.py\", line 65, in run_sync\n    return await get_async_backend().run_sync_in_worker_thread(\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n        func, args, abandon_on_cancel=abandon_on_cancel, limiter=limiter\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n    )\n    ^\n  File \"/packages/anyio/_backends/_asyncio.py\", line 2706, in run_sync_in_worker_thread\n    return await future\n           ^^^^^^^^^^^^\n  File \"/packages/anyio/_backends/_asyncio.py\", line 1100, in run\n    result = context.run(func, *args)\n  File \"/packages/fastapi/telemetry/_api.py\", line 244, in _run_sync_endpoint\n    return function(**arguments)\n  File \"/snapshot/apps/buggyshop-backend/app/main.py\", line 101, in create_checkout\n    return checkout_route.checkout(payload, namespace)\n           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^\n  File \"/snapshot/apps/buggyshop-backend/app/routes/checkout.py\", line 44, in checkout\n    total = subtotal - discount\n            ~~~~~~~~~^~~~~~~~~~\nTypeError: unsupported operand type(s) for -: 'int' and 'NoneType'\n"
+            },
+            "timestamp": "2026-10-27T21:23:38.780479Z"
+          }
+        ],
+        "assertions": [
+          {
+            "id": "checkout.flow_completed",
+            "passed": true,
+            "expected": "catalog → product → quantity 2 → cart → checkout → Place order",
+            "observed": "order submitted through the checkout page",
+            "duration_ms": 0.013
+          },
+          {
+            "id": "checkout.single_request",
+            "passed": true,
+            "expected": "exactly one POST /api/checkout",
+            "observed": "1 checkout request(s)",
+            "duration_ms": 0.004
+          },
+          {
+            "id": "checkout.request_payload",
+            "passed": true,
+            "expected": "items [{\"product_id\":\"trail-mug\",\"quantity\":2}] and coupon meaning no coupon",
+            "observed": "items [{\"product_id\":\"trail-mug\",\"quantity\":2}]; coupon_code null (means no coupon)",
+            "duration_ms": 0.021
+          },
+          {
+            "id": "checkout.status_201",
+            "passed": false,
+            "expected": "HTTP 201",
+            "observed": "HTTP 500",
+            "duration_ms": 0.002
+          },
+          {
+            "id": "checkout.order_schema_valid",
+            "passed": false,
+            "expected": "201 body matches the order schema",
+            "observed": "order has keys [detail] instead of [discount, id, line_items, subtotal, total]",
+            "duration_ms": 0.003
+          },
+          {
+            "id": "checkout.order_id_is_uuid",
+            "passed": false,
+            "expected": "server-generated UUID order id",
+            "observed": "no valid order (HTTP 500)",
+            "duration_ms": 0.005
+          },
+          {
+            "id": "checkout.line_items_match_cart",
+            "passed": false,
+            "expected": "trail-mug×2 @1999=3998",
+            "observed": "no valid order (HTTP 500)",
+            "duration_ms": 0.001
+          },
+          {
+            "id": "checkout.subtotal_matches_catalog",
+            "passed": false,
+            "expected": "subtotal 3998",
+            "observed": "no valid order (HTTP 500)",
+            "duration_ms": 0.001
+          },
+          {
+            "id": "checkout.no_coupon_discount_is_zero",
+            "passed": false,
+            "expected": "discount 0 (no coupon)",
+            "observed": "no valid order (HTTP 500)",
+            "duration_ms": 0.002
+          },
+          {
+            "id": "checkout.total_matches_subtotal",
+            "passed": false,
+            "expected": "total 3998",
+            "observed": "no valid order (HTTP 500)",
+            "duration_ms": 0.001
+          },
+          {
+            "id": "checkout.confirmation_shown",
+            "passed": false,
+            "expected": "order confirmation shown and no failure alert",
+            "observed": "failure alert: Checkout failed The store returned HTTP 500 (Internal Server Error) and didn't confirm an order. Your cart is unchanged, so you can place the order again. TypeError: unsupported operand type(s) for -: 'int' and 'NoneType'",
+            "duration_ms": 0.005
+          },
+          {
+            "id": "checkout.confirmation_matches_order",
+            "passed": false,
+            "expected": "displayed ID, quantity, subtotal, discount, and total equal the order",
+            "observed": "no confirmation view",
+            "duration_ms": 0.003
+          },
+          {
+            "id": "checkout.readback_matches_response",
+            "passed": false,
+            "expected": "GET /api/orders/{id} returns the same order",
+            "observed": "no valid order (HTTP 500)",
+            "duration_ms": 0.002
+          },
+          {
+            "id": "checkout.exactly_one_stored_order",
+            "passed": false,
+            "expected": "exactly 1 order in the case namespace",
+            "observed": "0 order(s)",
+            "duration_ms": 0.004
+          },
+          {
+            "id": "checkout.no_server_errors",
+            "passed": false,
+            "expected": "no first-party HTTP 5xx responses",
+            "observed": "POST http://127.0.0.1:47453/api/checkout → 500",
+            "duration_ms": 0.005
+          },
+          {
+            "id": "checkout.no_browser_exceptions",
+            "passed": true,
+            "expected": "no uncaught browser exceptions",
+            "observed": "none",
+            "duration_ms": 0.002
+          },
+          {
+            "id": "checkout.failure_visible",
+            "passed": true,
+            "expected": "measured baseline failure evidence",
+            "observed": "failure alert: Checkout failed The store returned HTTP 500 (Internal Server Error) and didn't confirm an order. Your cart is unchanged, so you can place the order again. TypeError: unsupported operand type(s) for -: 'int' and 'NoneType'",
+            "duration_ms": 0.0
+          },
+          {
+            "id": "checkout.no_order_on_failure",
+            "passed": true,
+            "expected": "measured baseline failure evidence",
+            "observed": "{\"orders\":[]}",
+            "duration_ms": 0.0
+          }
+        ],
+        "raw_logs": "2026-10-27T21:23:37.699Z runner execution 69063525-abb2-4d8f-ad17-f4562fc3334f case d424e69f-e64a-4065-9be5-596bf3f79e30 scenario scripted_checkout_repair coupon null\n2026-10-27T21:23:38.079Z network GET http://127.0.0.1:47453/api/products -> HTTP 200 request_id=fe76d8cd-a38b-4441-b516-47615bf17dc3\n2026-10-27T21:23:38.157Z network GET http://127.0.0.1:47453/api/products/trail-mug -> HTTP 200 request_id=098bb0b2-1959-4166-b502-814d354aaf95\n2026-10-27T21:23:38.321Z network GET http://127.0.0.1:47453/api/products -> HTTP 200 request_id=774489f9-c92b-4eb8-b2bd-1f99a088c48e\n2026-10-27T21:23:38.434Z network POST http://127.0.0.1:47453/api/checkout -> HTTP 500 request_id=c39ae698-15f1-45c5-a3a8-938c2845c33a\n2026-10-27T21:23:38.457Z network body {\"detail\":\"TypeError: unsupported operand type(s) for -: 'int' and 'NoneType'\"}\n2026-10-27T21:23:38.461Z console.error Failed to load resource: the server responded with a status of 500 (Internal Server Error) (http://127.0.0.1:47453/api/checkout:0:0)\n2026-10-27T21:23:38.481Z runner flow reached the order outcome\n2026-10-27T21:23:38.542Z runner readback order=skipped namespace=200\n2026-10-27T21:23:38.728Z runner outcome assertion_failed"
+      },
+      "resource_limits": {
+        "mode": "cgroup-v2-scope",
+        "memory_max_bytes": 536870912,
+        "memory_swap_max_bytes": 0,
+        "tasks_max": 64,
+        "cpu_quota_percent": 100,
+        "verified": true
+      }
+    },
+    {
+      "schema_version": "1.0",
+      "job_id": "83d1c403-9f6a-4d69-9a46-e39c83ac2471",
+      "phase": "verification",
+      "attempt_id": "5d3fd112-2874-4ff1-ae59-cf4925ff1a00",
+      "app_generation_id": "cbddc9a5-e5ae-4c28-ab23-53a4caa02b35",
+      "candidate_snapshot_sha256": "e2c7a4e916b2249023affd44fa768a4c00d9ec54c67b288fe0caedc6c34130c2",
+      "runtime_kind": "isolated-browser",
+      "artifact_ids": [
+        "7bed0fcf-2775-4ed4-b7f3-58aeebfdcec3",
+        "0d5ae717-fa87-43d6-ba16-301b25999f4e",
+        "58135268-9920-487c-982f-72bd57f16588",
+        "71399032-d2a2-45fe-aaf8-4cd92f099fad",
+        "d6b03b8f-a7a2-4680-86e0-af58c958296f"
+      ],
+      "started_at": "2026-10-27T21:23:39.845772Z",
+      "finished_at": "2026-10-27T21:23:41.372096Z",
+      "report": {
+        "execution_id": "2d71ce5a-160a-42f1-9a12-608f6ab4265b",
+        "case_id": "0ab8b40a-81d1-4a13-84be-a4c828df05f4",
+        "scenario_id": "scripted_checkout_repair",
+        "verdict": "passed",
+        "duration_ms": 1469.6992440149188,
+        "observations": [],
+        "assertions": [
+          {
+            "id": "checkout.flow_completed",
+            "passed": true,
+            "expected": "catalog → product → quantity 2 → cart → checkout → Place order",
+            "observed": "order submitted through the checkout page",
+            "duration_ms": 0.017
+          },
+          {
+            "id": "checkout.single_request",
+            "passed": true,
+            "expected": "exactly one POST /api/checkout",
+            "observed": "1 checkout request(s)",
+            "duration_ms": 0.005
+          },
+          {
+            "id": "checkout.request_payload",
+            "passed": true,
+            "expected": "items [{\"product_id\":\"trail-mug\",\"quantity\":2}] and coupon meaning no coupon",
+            "observed": "items [{\"product_id\":\"trail-mug\",\"quantity\":2}]; coupon_code null (means no coupon)",
+            "duration_ms": 0.027
+          },
+          {
+            "id": "checkout.status_201",
+            "passed": true,
+            "expected": "HTTP 201",
+            "observed": "HTTP 201",
+            "duration_ms": 0.003
+          },
+          {
+            "id": "checkout.order_schema_valid",
+            "passed": true,
+            "expected": "201 body matches the order schema",
+            "observed": "valid order body",
+            "duration_ms": 0.003
+          },
+          {
+            "id": "checkout.order_id_is_uuid",
+            "passed": true,
+            "expected": "server-generated UUID order id",
+            "observed": "6cb32b66-0f9e-42fe-85af-a0f0f4fff3fa",
+            "duration_ms": 0.068
+          },
+          {
+            "id": "checkout.line_items_match_cart",
+            "passed": true,
+            "expected": "trail-mug×2 @1999=3998",
+            "observed": "trail-mug×2 @1999=3998",
+            "duration_ms": 0.008
+          },
+          {
+            "id": "checkout.subtotal_matches_catalog",
+            "passed": true,
+            "expected": "subtotal 3998",
+            "observed": "subtotal 3998",
+            "duration_ms": 0.002
+          },
+          {
+            "id": "checkout.no_coupon_discount_is_zero",
+            "passed": true,
+            "expected": "discount 0 (no coupon)",
+            "observed": "discount 0",
+            "duration_ms": 0.003
+          },
+          {
+            "id": "checkout.total_matches_subtotal",
+            "passed": true,
+            "expected": "total 3998",
+            "observed": "total 3998",
+            "duration_ms": 0.002
+          },
+          {
+            "id": "checkout.confirmation_shown",
+            "passed": true,
+            "expected": "order confirmation shown and no failure alert",
+            "observed": "confirmation shown",
+            "duration_ms": 0.003
+          },
+          {
+            "id": "checkout.confirmation_matches_order",
+            "passed": true,
+            "expected": "displayed ID, quantity, subtotal, discount, and total equal the order",
+            "observed": "all displayed values match the order",
+            "duration_ms": 0.022
+          },
+          {
+            "id": "checkout.readback_matches_response",
+            "passed": true,
+            "expected": "GET /api/orders/{id} returns the same order",
+            "observed": "identical",
+            "duration_ms": 0.018
+          },
+          {
+            "id": "checkout.exactly_one_stored_order",
+            "passed": true,
+            "expected": "exactly 1 order in the case namespace",
+            "observed": "1 order(s)",
+            "duration_ms": 0.006
+          },
+          {
+            "id": "checkout.no_server_errors",
+            "passed": true,
+            "expected": "no first-party HTTP 5xx responses",
+            "observed": "none",
+            "duration_ms": 0.002
+          },
+          {
+            "id": "checkout.no_browser_exceptions",
+            "passed": true,
+            "expected": "no uncaught browser exceptions",
+            "observed": "none",
+            "duration_ms": 0.002
+          },
+          {
+            "id": "regression.missing_coupon",
+            "passed": true,
+            "expected": "{'line_items': [{'product_id': 'trail-mug', 'quantity': 1, 'unit_price_cents': 1999, 'line_total_cents': 1999}], 'subtotal': 1999, 'discount': 0, 'total': 1999}",
+            "observed": "HTTP 201: {'id': 'f2d00808-876e-4607-b6dc-6857e66a7494', 'line_items': [{'product_id': 'trail-mug', 'quantity': 1, 'unit_price_cents': 1999, 'line_total_cents': 1999}], 'subtotal': 1999, 'discount': 0, 'total': 1999}",
+            "duration_ms": 0.0
+          },
+          {
+            "id": "regression.null_coupon",
+            "passed": true,
+            "expected": "{'line_items': [{'product_id': 'trail-mug', 'quantity': 1, 'unit_price_cents': 1999, 'line_total_cents': 1999}], 'subtotal': 1999, 'discount': 0, 'total': 1999}",
+            "observed": "HTTP 201: {'id': 'd4784b6b-f7e2-4651-866c-998e85e36158', 'line_items': [{'product_id': 'trail-mug', 'quantity': 1, 'unit_price_cents': 1999, 'line_total_cents': 1999}], 'subtotal': 1999, 'discount': 0, 'total': 1999}",
+            "duration_ms": 0.0
+          },
+          {
+            "id": "regression.empty_coupon",
+            "passed": true,
+            "expected": "{'line_items': [{'product_id': 'trail-mug', 'quantity': 1, 'unit_price_cents': 1999, 'line_total_cents': 1999}], 'subtotal': 1999, 'discount': 0, 'total': 1999}",
+            "observed": "HTTP 201: {'id': '64e0755d-a949-4d09-bcea-4a9a5d20fcc2', 'line_items': [{'product_id': 'trail-mug', 'quantity': 1, 'unit_price_cents': 1999, 'line_total_cents': 1999}], 'subtotal': 1999, 'discount': 0, 'total': 1999}",
+            "duration_ms": 0.0
+          },
+          {
+            "id": "regression.whitespace_coupon",
+            "passed": true,
+            "expected": "{'line_items': [{'product_id': 'trail-mug', 'quantity': 1, 'unit_price_cents': 1999, 'line_total_cents': 1999}], 'subtotal': 1999, 'discount': 0, 'total': 1999}",
+            "observed": "HTTP 201: {'id': 'c626871a-a833-4d0e-a404-7aeebf9374b3', 'line_items': [{'product_id': 'trail-mug', 'quantity': 1, 'unit_price_cents': 1999, 'line_total_cents': 1999}], 'subtotal': 1999, 'discount': 0, 'total': 1999}",
+            "duration_ms": 0.0
+          },
+          {
+            "id": "regression.tenoff",
+            "passed": true,
+            "expected": "{'line_items': [{'product_id': 'trail-mug', 'quantity': 1, 'unit_price_cents': 1999, 'line_total_cents': 1999}], 'subtotal': 1999, 'discount': 199, 'total': 1800}",
+            "observed": "HTTP 201: {'id': '3fc2b883-7b70-47f0-af16-428c11ad6085', 'line_items': [{'product_id': 'trail-mug', 'quantity': 1, 'unit_price_cents': 1999, 'line_total_cents': 1999}], 'subtotal': 1999, 'discount': 199, 'total': 1800}",
+            "duration_ms": 0.0
+          },
+          {
+            "id": "regression.fifteen",
+            "passed": true,
+            "expected": "{'line_items': [{'product_id': 'trail-mug', 'quantity': 1, 'unit_price_cents': 1999, 'line_total_cents': 1999}], 'subtotal': 1999, 'discount': 299, 'total': 1700}",
+            "observed": "HTTP 201: {'id': '9d40ed7d-515c-465a-9d16-0ef437ef4058', 'line_items': [{'product_id': 'trail-mug', 'quantity': 1, 'unit_price_cents': 1999, 'line_total_cents': 1999}], 'subtotal': 1999, 'discount': 299, 'total': 1700}",
+            "duration_ms": 0.0
+          },
+          {
+            "id": "regression.normalized_coupon",
+            "passed": true,
+            "expected": "{'line_items': [{'product_id': 'trail-mug', 'quantity': 1, 'unit_price_cents': 1999, 'line_total_cents': 1999}], 'subtotal': 1999, 'discount': 199, 'total': 1800}",
+            "observed": "HTTP 201: {'id': 'cc0d317d-b07a-4ae7-bb8b-458b6e07d946', 'line_items': [{'product_id': 'trail-mug', 'quantity': 1, 'unit_price_cents': 1999, 'line_total_cents': 1999}], 'subtotal': 1999, 'discount': 199, 'total': 1800}",
+            "duration_ms": 0.0
+          },
+          {
+            "id": "regression.mixed_cart",
+            "passed": true,
+            "expected": "{'line_items': [{'product_id': 'trail-mug', 'quantity': 1, 'unit_price_cents': 1999, 'line_total_cents': 1999}, {'product_id': 'field-notebook', 'quantity': 2, 'unit_price_cents': 1500, 'line_total_cents': 3000}], 'subtotal': 4999, 'discount': 0, 'total': 4999}",
+            "observed": "HTTP 201: {'id': '0f5e5cf4-1707-4fcc-b340-c8433595d63e', 'line_items': [{'product_id': 'trail-mug', 'quantity': 1, 'unit_price_cents': 1999, 'line_total_cents': 1999}, {'product_id': 'field-notebook', 'quantity': 2, 'unit_price_cents': 1500, 'line_total_cents': 3000}], 'subtotal': 4999, 'discount': 0, 'total': 4999}",
+            "duration_ms": 0.0
+          },
+          {
+            "id": "regression.mixed_cart_coupon",
+            "passed": true,
+            "expected": "{'line_items': [{'product_id': 'trail-mug', 'quantity': 1, 'unit_price_cents': 1999, 'line_total_cents': 1999}, {'product_id': 'field-notebook', 'quantity': 2, 'unit_price_cents': 1500, 'line_total_cents': 3000}], 'subtotal': 4999, 'discount': 499, 'total': 4500}",
+            "observed": "HTTP 201: {'id': 'e034aa0c-8197-4997-9f87-81633bd2e6e2', 'line_items': [{'product_id': 'trail-mug', 'quantity': 1, 'unit_price_cents': 1999, 'line_total_cents': 1999}, {'product_id': 'field-notebook', 'quantity': 2, 'unit_price_cents': 1500, 'line_total_cents': 3000}], 'subtotal': 4999, 'discount': 499, 'total': 4500}",
+            "duration_ms": 0.0
+          },
+          {
+            "id": "regression.quantity_ten",
+            "passed": true,
+            "expected": "{'line_items': [{'product_id': 'trail-mug', 'quantity': 10, 'unit_price_cents': 1999, 'line_total_cents': 19990}], 'subtotal': 19990, 'discount': 0, 'total': 19990}",
+            "observed": "HTTP 201: {'id': '7b186285-0efc-4ceb-9fec-9167b1ce8dc2', 'line_items': [{'product_id': 'trail-mug', 'quantity': 10, 'unit_price_cents': 1999, 'line_total_cents': 19990}], 'subtotal': 19990, 'discount': 0, 'total': 19990}",
+            "duration_ms": 0.0
+          },
+          {
+            "id": "regression.empty_cart",
+            "passed": true,
+            "expected": "HTTP 422 and no order",
+            "observed": "HTTP 422",
+            "duration_ms": 0.0
+          },
+          {
+            "id": "regression.duplicate_product",
+            "passed": true,
+            "expected": "HTTP 422 and no order",
+            "observed": "HTTP 422",
+            "duration_ms": 0.0
+          },
+          {
+            "id": "regression.unknown_product",
+            "passed": true,
+            "expected": "HTTP 422 and no order",
+            "observed": "HTTP 422",
+            "duration_ms": 0.0
+          },
+          {
+            "id": "regression.unknown_coupon",
+            "passed": true,
+            "expected": "HTTP 400 and no order",
+            "observed": "HTTP 400",
+            "duration_ms": 0.0
+          },
+          {
+            "id": "regression.invalid_coupon_type",
+            "passed": true,
+            "expected": "HTTP 422 and no order",
+            "observed": "HTTP 422",
+            "duration_ms": 0.0
+          },
+          {
+            "id": "regression.client_price",
+            "passed": true,
+            "expected": "HTTP 422 and no order",
+            "observed": "HTTP 422",
+            "duration_ms": 0.0
+          },
+          {
+            "id": "regression.unknown_fields",
+            "passed": true,
+            "expected": "HTTP 422 and no order",
+            "observed": "HTTP 422",
+            "duration_ms": 0.0
+          },
+          {
+            "id": "regression.quantity_missing",
+            "passed": true,
+            "expected": "HTTP 422 and no order",
+            "observed": "HTTP 422",
+            "duration_ms": 0.0
+          },
+          {
+            "id": "regression.quantity_zero",
+            "passed": true,
+            "expected": "HTTP 422 and no order",
+            "observed": "HTTP 422",
+            "duration_ms": 0.0
+          },
+          {
+            "id": "regression.quantity_eleven",
+            "passed": true,
+            "expected": "HTTP 422 and no order",
+            "observed": "HTTP 422",
+            "duration_ms": 0.0
+          },
+          {
+            "id": "regression.quantity_negative",
+            "passed": true,
+            "expected": "HTTP 422 and no order",
+            "observed": "HTTP 422",
+            "duration_ms": 0.0
+          },
+          {
+            "id": "regression.quantity_fraction",
+            "passed": true,
+            "expected": "HTTP 422 and no order",
+            "observed": "HTTP 422",
+            "duration_ms": 0.0
+          },
+          {
+            "id": "regression.quantity_string",
+            "passed": true,
+            "expected": "HTTP 422 and no order",
+            "observed": "HTTP 422",
+            "duration_ms": 0.0
+          },
+          {
+            "id": "regression.quantity_boolean",
+            "passed": true,
+            "expected": "HTTP 422 and no order",
+            "observed": "HTTP 422",
+            "duration_ms": 0.0
+          },
+          {
+            "id": "regression.quantity_null",
+            "passed": true,
+            "expected": "HTTP 422 and no order",
+            "observed": "HTTP 422",
+            "duration_ms": 0.0
+          },
+          {
+            "id": "regression.unknown_order",
+            "passed": true,
+            "expected": "HTTP 404",
+            "observed": "HTTP 404",
+            "duration_ms": 0.0
+          },
+          {
+            "id": "regression.unknown_product_readback",
+            "passed": true,
+            "expected": "HTTP 404",
+            "observed": "HTTP 404",
+            "duration_ms": 0.0
+          },
+          {
+            "id": "confirmation.checkout",
+            "passed": true,
+            "expected": "actual browser confirmation matches created order",
+            "observed": "browser oracle confirmation assertions",
+            "duration_ms": 0.0
+          }
+        ],
+        "raw_logs": "2026-10-27T21:23:40.099Z runner execution 2d71ce5a-160a-42f1-9a12-608f6ab4265b case 0ab8b40a-81d1-4a13-84be-a4c828df05f4 scenario scripted_checkout_repair coupon null\n2026-10-27T21:23:40.451Z network GET http://127.0.0.1:43265/api/products -> HTTP 200 request_id=9deeef48-c470-4b05-bdca-5d84d755bb20\n2026-10-27T21:23:40.574Z network GET http://127.0.0.1:43265/api/products/trail-mug -> HTTP 200 request_id=cab61c63-4c9a-4756-a304-051700742847\n2026-10-27T21:23:40.724Z network GET http://127.0.0.1:43265/api/products -> HTTP 200 request_id=2caba2e5-9c0d-48c0-86c7-cd074b070981\n2026-10-27T21:23:40.821Z network POST http://127.0.0.1:43265/api/checkout -> HTTP 201 request_id=b8215ce0-88d3-4b74-8755-bddd4889a4fa\n2026-10-27T21:23:40.889Z runner flow reached the order outcome\n2026-10-27T21:23:40.984Z runner readback order=200 namespace=200\n2026-10-27T21:23:41.114Z runner outcome passed"
+      },
+      "resource_limits": {
+        "mode": "cgroup-v2-scope",
+        "memory_max_bytes": 536870912,
+        "memory_swap_max_bytes": 0,
+        "tasks_max": 64,
+        "cpu_quota_percent": 100,
+        "verified": true
+      }
+    }
+  ],
+  "artifacts": [
+    {
+      "schema_version": "1.0",
+      "id": "dae9b8a2-e658-45ad-8e42-c795951fc82a",
+      "job_id": "83d1c403-9f6a-4d69-9a46-e39c83ac2471",
+      "execution_id": "69063525-abb2-4d8f-ad17-f4562fc3334f",
+      "attempt_id": null,
+      "role": "screenshot",
+      "content_type": "image/png",
+      "size_bytes": 95389,
+      "sha256": "b958ca79e3175605bba5bb837f3c27af9b6e0a749e9ff68c673290ee7efa274e",
+      "created_at": "2026-10-27T21:23:38.792583Z"
+    },
+    {
+      "schema_version": "1.0",
+      "id": "fccd9971-969f-4b37-bf3a-90aae3419ac8",
+      "job_id": "83d1c403-9f6a-4d69-9a46-e39c83ac2471",
+      "execution_id": "69063525-abb2-4d8f-ad17-f4562fc3334f",
+      "attempt_id": null,
+      "role": "trace",
+      "content_type": "application/zip",
+      "size_bytes": 666434,
+      "sha256": "765ac3a27e2ae8afb2c241f461b255af7b0ef60831661d0314379430a5ee4d7c",
+      "created_at": "2026-10-27T21:23:38.805202Z"
+    },
+    {
+      "schema_version": "1.0",
+      "id": "34bd1c14-bd92-46d0-ad9a-914e20a87e0f",
+      "job_id": "83d1c403-9f6a-4d69-9a46-e39c83ac2471",
+      "execution_id": "69063525-abb2-4d8f-ad17-f4562fc3334f",
+      "attempt_id": null,
+      "role": "requests",
+      "content_type": "application/json",
+      "size_bytes": 5437,
+      "sha256": "9b0236f523c4dbd14b8680426a37b7c59b888909d62b6eede855ba33206cea41",
+      "created_at": "2026-10-27T21:23:38.812510Z"
+    },
+    {
+      "schema_version": "1.0",
+      "id": "5d991f34-c082-45c9-8847-1f00bc891ab3",
+      "job_id": "83d1c403-9f6a-4d69-9a46-e39c83ac2471",
+      "execution_id": "69063525-abb2-4d8f-ad17-f4562fc3334f",
+      "attempt_id": null,
+      "role": "logs",
+      "content_type": "text/plain",
+      "size_bytes": 2357,
+      "sha256": "b35ebe184227d955365fe7c170310c52e20640dd7e521b367be1059c09cea215",
+      "created_at": "2026-10-27T21:23:38.818336Z"
+    },
+    {
+      "schema_version": "1.0",
+      "id": "11190d29-fdea-4915-8a67-7cea998f5341",
+      "job_id": "83d1c403-9f6a-4d69-9a46-e39c83ac2471",
+      "execution_id": "69063525-abb2-4d8f-ad17-f4562fc3334f",
+      "attempt_id": null,
+      "role": "report",
+      "content_type": "application/json",
+      "size_bytes": 13218,
+      "sha256": "7e7c745725d5144324412e39a23b6824d4e005c2ac1d2cb9d62d6ae84ada3432",
+      "created_at": "2026-10-27T21:23:38.824087Z"
+    },
+    {
+      "schema_version": "1.0",
+      "id": "a710c69f-cfbd-4662-9453-2efde6d69d8a",
+      "job_id": "83d1c403-9f6a-4d69-9a46-e39c83ac2471",
+      "execution_id": null,
+      "attempt_id": "5d3fd112-2874-4ff1-ae59-cf4925ff1a00",
+      "role": "proposal",
+      "content_type": "application/json",
+      "size_bytes": 740,
+      "sha256": "fc9402a3d07bc6c5dda838cb299c03e02830aafbaa5965711b487fffaa51aca0",
+      "created_at": "2026-10-27T21:23:38.840347Z"
+    },
+    {
+      "schema_version": "1.0",
+      "id": "504d0577-7863-4b99-af92-2429e79d0817",
+      "job_id": "83d1c403-9f6a-4d69-9a46-e39c83ac2471",
+      "execution_id": null,
+      "attempt_id": "5d3fd112-2874-4ff1-ae59-cf4925ff1a00",
+      "role": "diff",
+      "content_type": "text/plain",
+      "size_bytes": 449,
+      "sha256": "f9193387309f43e0ea1d584bd43af316f4c23f4c83b6c0a8bcd36abb8b3a8d70",
+      "created_at": "2026-10-27T21:23:38.849690Z"
+    },
+    {
+      "schema_version": "1.0",
+      "id": "7bed0fcf-2775-4ed4-b7f3-58aeebfdcec3",
+      "job_id": "83d1c403-9f6a-4d69-9a46-e39c83ac2471",
+      "execution_id": "2d71ce5a-160a-42f1-9a12-608f6ab4265b",
+      "attempt_id": "5d3fd112-2874-4ff1-ae59-cf4925ff1a00",
+      "role": "screenshot",
+      "content_type": "image/png",
+      "size_bytes": 67479,
+      "sha256": "bf4103d988b28054e26ec4416067eb306c97775b1b83e6daee7a5d050094f446",
+      "created_at": "2026-10-27T21:23:41.339604Z"
+    },
+    {
+      "schema_version": "1.0",
+      "id": "0d5ae717-fa87-43d6-ba16-301b25999f4e",
+      "job_id": "83d1c403-9f6a-4d69-9a46-e39c83ac2471",
+      "execution_id": "2d71ce5a-160a-42f1-9a12-608f6ab4265b",
+      "attempt_id": "5d3fd112-2874-4ff1-ae59-cf4925ff1a00",
+      "role": "trace",
+      "content_type": "application/zip",
+      "size_bytes": 551269,
+      "sha256": "cddc36b0ed5720120b459f711c61d4d34915ce8640b351282de775dd6054b22e",
+      "created_at": "2026-10-27T21:23:41.347005Z"
+    },
+    {
+      "schema_version": "1.0",
+      "id": "58135268-9920-487c-982f-72bd57f16588",
+      "job_id": "83d1c403-9f6a-4d69-9a46-e39c83ac2471",
+      "execution_id": "2d71ce5a-160a-42f1-9a12-608f6ab4265b",
+      "attempt_id": "5d3fd112-2874-4ff1-ae59-cf4925ff1a00",
+      "role": "requests",
+      "content_type": "application/json",
+      "size_bytes": 6033,
+      "sha256": "3c035c283678bfc581d239cc6ddd23c853211f9d172868bf640eb16c7b518ffe",
+      "created_at": "2026-10-27T21:23:41.354146Z"
+    },
+    {
+      "schema_version": "1.0",
+      "id": "71399032-d2a2-45fe-aaf8-4cd92f099fad",
+      "job_id": "83d1c403-9f6a-4d69-9a46-e39c83ac2471",
+      "execution_id": "2d71ce5a-160a-42f1-9a12-608f6ab4265b",
+      "attempt_id": "5d3fd112-2874-4ff1-ae59-cf4925ff1a00",
+      "role": "logs",
+      "content_type": "text/plain",
+      "size_bytes": 32,
+      "sha256": "fac79eb4dd6445fccc29927bded6d6d65182395c61d2d43963ef33818ffd0da4",
+      "created_at": "2026-10-27T21:23:41.361556Z"
+    },
+    {
+      "schema_version": "1.0",
+      "id": "d6b03b8f-a7a2-4680-86e0-af58c958296f",
+      "job_id": "83d1c403-9f6a-4d69-9a46-e39c83ac2471",
+      "execution_id": "2d71ce5a-160a-42f1-9a12-608f6ab4265b",
+      "attempt_id": "5d3fd112-2874-4ff1-ae59-cf4925ff1a00",
+      "role": "report",
+      "content_type": "application/json",
+      "size_bytes": 11526,
+      "sha256": "4d07f82acc58de207c95364336aa7380b55d192653996a98da607a3ab46fc5b8",
+      "created_at": "2026-10-27T21:23:41.369783Z"
+    }
+  ],
+  "events": [
+    {
+      "schema_version": "1.0",
+      "job_id": "83d1c403-9f6a-4d69-9a46-e39c83ac2471",
+      "sequence": 1,
+      "timestamp": "2026-10-27T21:23:36.737816Z",
+      "stage": "preparing",
+      "message_code": "queued",
+      "message": "Job accepted."
+    },
+    {
+      "schema_version": "1.0",
+      "job_id": "83d1c403-9f6a-4d69-9a46-e39c83ac2471",
+      "sequence": 2,
+      "timestamp": "2026-10-27T21:23:36.748311Z",
+      "stage": "preparing",
+      "message_code": "preparing",
+      "message": "Entered preparing."
+    },
+    {
+      "schema_version": "1.0",
+      "job_id": "83d1c403-9f6a-4d69-9a46-e39c83ac2471",
+      "sequence": 3,
+      "timestamp": "2026-10-27T21:23:37.418452Z",
+      "stage": "baseline",
+      "message_code": "baseline",
+      "message": "Entered baseline."
+    },
+    {
+      "schema_version": "1.0",
+      "job_id": "83d1c403-9f6a-4d69-9a46-e39c83ac2471",
+      "sequence": 4,
+      "timestamp": "2026-10-27T21:23:38.831925Z",
+      "stage": "diagnosing",
+      "message_code": "diagnosing",
+      "message": "Entered diagnosing."
+    },
+    {
+      "schema_version": "1.0",
+      "job_id": "83d1c403-9f6a-4d69-9a46-e39c83ac2471",
+      "sequence": 5,
+      "timestamp": "2026-10-27T21:23:38.842284Z",
+      "stage": "patch_validation",
+      "message_code": "patch_validation",
+      "message": "Entered patch_validation."
+    },
+    {
+      "schema_version": "1.0",
+      "job_id": "83d1c403-9f6a-4d69-9a46-e39c83ac2471",
+      "sequence": 6,
+      "timestamp": "2026-10-27T21:23:38.851417Z",
+      "stage": "activating",
+      "message_code": "activating",
+      "message": "Entered activating."
+    },
+    {
+      "schema_version": "1.0",
+      "job_id": "83d1c403-9f6a-4d69-9a46-e39c83ac2471",
+      "sequence": 7,
+      "timestamp": "2026-10-27T21:23:39.825077Z",
+      "stage": "verification",
+      "message_code": "verification",
+      "message": "Entered verification."
+    },
+    {
+      "schema_version": "1.0",
+      "job_id": "83d1c403-9f6a-4d69-9a46-e39c83ac2471",
+      "sequence": 8,
+      "timestamp": "2026-10-27T21:23:41.383067Z",
+      "stage": "cleanup",
+      "message_code": "cleanup",
+      "message": "Entered cleanup."
+    },
+    {
+      "schema_version": "1.0",
+      "job_id": "83d1c403-9f6a-4d69-9a46-e39c83ac2471",
+      "sequence": 9,
+      "timestamp": "2026-10-27T21:23:41.627925Z",
+      "stage": "completed",
+      "message_code": "verified",
+      "message": "Job completed: verified."
+    }
+  ]
+}

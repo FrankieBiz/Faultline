@@ -3,11 +3,18 @@
 import ast
 import difflib
 import hashlib
+from collections.abc import Callable
 
 import pytest
 
 from app.model_adapter import deterministic_diff
-from app.policy import TARGET_FILE, PatchPolicy, parse_unified_diff, validate_ast
+from app.policy import (
+    TARGET_FILE,
+    PatchPolicy,
+    parse_unified_diff,
+    recount_unified_diff,
+    validate_ast,
+)
 
 
 def patch(source: str, candidate: str) -> str:
@@ -187,3 +194,47 @@ def test_private_class_pattern_attributes_are_rejected() -> None:
     )
     assert syntax_valid and not safe
     assert error is not None
+
+
+def test_recount_repairs_only_derivable_hunk_metadata(seeded_source: str) -> None:
+    correct = deterministic_diff(seeded_source)
+    # Models commonly miscount hunk lengths and starts; the content is unchanged.
+    miscounted = correct.replace("@@ -40,7 +40,7 @@", "@@ -38,9 +38,9 @@")
+    assert not PatchPolicy().validate(miscounted, seeded_source).is_valid
+    recounted = recount_unified_diff(miscounted, seeded_source)
+    assert recounted == correct
+    assert PatchPolicy().validate(recounted, seeded_source).is_valid
+    assert recount_unified_diff(correct, seeded_source) == correct
+
+
+def test_recount_restores_blank_context_and_drops_trailing_blank_lines(
+    seeded_source: str,
+) -> None:
+    correct = deterministic_diff(seeded_source)
+    stripped = correct.replace("\n \n", "\n\n", 1) + "\n\n"
+    assert stripped != correct
+    assert recount_unified_diff(stripped, seeded_source) == correct
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        # Content that does not occur in the source is never matched fuzzily.
+        lambda diff: diff.replace("raise HTTPException", "raise ValueError"),
+        # A malformed header or non-diff body line is left for the parser to reject.
+        lambda diff: diff.replace("@@ -40,7 +40,7 @@", "@@ forty @@"),
+        lambda diff: diff.replace("     total = subtotal", "*    total = subtotal"),
+    ],
+)
+def test_recount_never_alters_content_or_invents_matches(
+    seeded_source: str, change: Callable[[str], str]
+) -> None:
+    altered = change(deterministic_diff(seeded_source))
+    assert recount_unified_diff(altered, seeded_source) == altered
+    assert not PatchPolicy().validate(altered, seeded_source).is_valid
+
+
+def test_recount_refuses_ambiguous_relocation() -> None:
+    source = "a = 1\nb = 2\na = 1\nb = 2\n"
+    diff = f"--- a/{TARGET_FILE}\n+++ b/{TARGET_FILE}\n@@ -9,2 +9,2 @@\n a = 1\n-b = 2\n+b = 3\n"
+    assert recount_unified_diff(diff, source) == diff

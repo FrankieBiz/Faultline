@@ -192,6 +192,67 @@ def parse_unified_diff(diff: str, source: str) -> ParsedPatch:
     return ParsedPatch(TARGET_FILE, tuple(hunks), candidate)
 
 
+_LOOSE_HUNK = re.compile(r"@@ -(\d+)(?:,\d+)? \+\d+(?:,\d+)? @@( [^\r\n]*)?\n?\Z")
+
+
+def recount_unified_diff(diff: str, source: str) -> str:
+    """Recompute derivable hunk metadata, like ``git apply --recount``.
+
+    Line counts follow from each hunk body, and a start line follows from the
+    single exact occurrence of the hunk's old side in ``source`` when the
+    declared start does not match. Content lines are never edited or fuzzily
+    matched; blank lines inside a hunk regain their context prefix. The input
+    is returned unchanged whenever this is ambiguous, so the strict parser
+    still decides every proposal.
+    """
+    lines = diff.splitlines(keepends=True)
+    first = next((index for index, line in enumerate(lines) if line.startswith("@@")), None)
+    if first is None:
+        return diff
+    original = source.splitlines(keepends=True)
+    output = lines[:first]
+    hunks: list[tuple[int, str, list[str]]] = []
+    cursor = first
+    while cursor < len(lines):
+        match = _LOOSE_HUNK.fullmatch(lines[cursor])
+        if match is None:
+            return diff
+        cursor += 1
+        body: list[str] = []
+        while cursor < len(lines) and not lines[cursor].startswith("@@"):
+            body.append(lines[cursor])
+            cursor += 1
+        while body and body[-1] == "\n":
+            body.pop()
+        body = [" \n" if line == "\n" else line for line in body]
+        if not body or any(line[:1] not in {" ", "-", "+", "\\"} for line in body):
+            return diff
+        hunks.append((int(match[1]), match[2] or "", body))
+    position = delta = 0
+    for declared, section, body in hunks:
+        old = [line[1:] for line in body if line[:1] in {" ", "-"}]
+        new_count = sum(1 for line in body if line[:1] in {" ", "+"})
+        if not old or any(line.startswith("\\") for line in body):
+            return diff
+        start = declared - 1
+        if original[start : start + len(old)] != old:
+            found = [
+                index
+                for index in range(len(original) - len(old) + 1)
+                if original[index : index + len(old)] == old
+            ]
+            if len(found) != 1:
+                return diff
+            start = found[0]
+        if start < position:
+            return diff
+        output.append(f"@@ -{start + 1},{len(old)} +{start + 1 + delta},{new_count} @@{section}\n")
+        output.extend(body)
+        position = start + len(old)
+        delta += new_count - len(old)
+    return "".join(output)
+
+
 def validate_ast(source: str) -> tuple[bool, bool, str | None]:
     """Parse without executing and reject forbidden capabilities and aliases."""
     try:

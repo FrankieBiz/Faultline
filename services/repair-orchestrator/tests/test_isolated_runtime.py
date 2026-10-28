@@ -132,6 +132,9 @@ async def test_actual_browser_baseline_and_healthy_fixture_in_bubblewrap(tmp_pat
             result = await runtime.execute(job, str(uuid4()), phase, snap, 20000)
             assert result.report.duration_ms > 0
             assert result.snapshot_sha256 == snap.sha256
+            limits = result.resource_limits
+            assert limits is not None
+            assert limits.verified is (runtime.aggregate_mode == "required")
             evidence = {item.role: item for item in result.artifacts}
             assert set(evidence) == {"screenshot", "trace", "requests", "logs"}
             assert evidence["screenshot"].content.startswith(b"\x89PNG\r\n\x1a\n")

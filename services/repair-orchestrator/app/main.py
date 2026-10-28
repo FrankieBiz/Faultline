@@ -248,6 +248,9 @@ def create_app(
         """Expose safe component readiness and deterministic/provider identity."""
         lease = control.database.get_lease()
         runtime_ready = control.worker.runtime.ready
+        # Optional runtime capabilities; simulations and the unavailable runtime lack them.
+        runtime_reason = getattr(control.worker.runtime, "readiness_reason", None)
+        resource_limits = getattr(control.worker.runtime, "resource_limits_status", None)
         probe = control.worker.probe
         status = (
             "blocked"
@@ -260,9 +263,12 @@ def create_app(
             "quarantined": lease.quarantined,
             "model": asdict(probe) if probe else None,
             "probe_time": control.worker.probe_time,
+            "resource_limits": resource_limits,
             "reason": "cleanup_required"
             if lease.quarantined
-            else ("isolated_runtime_unavailable" if not runtime_ready else None),
+            else (
+                (runtime_reason or "isolated_runtime_unavailable") if not runtime_ready else None
+            ),
         }
 
     @routes.get("/scenarios")

@@ -18,3 +18,5 @@ node_modules/
 .next/
 *.tsbuildinfo
 
+# Exported job replays (scripts/export_replay.py) are reviewed before anything is committed or published.
+replays/

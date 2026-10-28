@@ -6,9 +6,9 @@ timestamps are decoded while scalar types and unknown fields remain strict.
 
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, Self
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 
 
 def _utc_timestamp(value: datetime) -> datetime:
@@ -206,6 +206,40 @@ class OrchestratorJob(Job):
     baseline_execution_id: str | None = None
 
 
+class ResourceLimits(ContractModel):
+    """Aggregate candidate limits read back from the kernel, or an explicit opt-out.
+
+    ``cgroup-v2-scope`` values come from the cgroup v2 files of the transient
+    systemd user scope that contained every candidate backend task. ``verified``
+    is true only when those values matched configuration and the scope's process
+    membership was confirmed. ``disabled`` records an operator opt-out: no
+    aggregate quota applied, so it can report neither values nor verification.
+    Per-process rlimits inside the namespace are separate and not represented.
+    """
+
+    mode: Literal["cgroup-v2-scope", "disabled"]
+    memory_max_bytes: Annotated[int, Field(ge=0)] | None
+    memory_swap_max_bytes: Annotated[int, Field(ge=0)] | None
+    tasks_max: Annotated[int, Field(ge=1)] | None
+    cpu_quota_percent: Annotated[int, Field(ge=1)] | None
+    verified: bool
+
+    @model_validator(mode="after")
+    def require_honest_mode(self) -> Self:
+        """Disabled limits claim nothing; a scope must report every aggregate limit."""
+        values = (
+            self.memory_max_bytes,
+            self.memory_swap_max_bytes,
+            self.tasks_max,
+            self.cpu_quota_percent,
+        )
+        if self.mode == "disabled" and (self.verified or any(v is not None for v in values)):
+            raise ValueError("Disabled aggregate limits cannot report values or verification")
+        if self.mode == "cgroup-v2-scope" and any(value is None for value in values):
+            raise ValueError("A cgroup v2 scope must report every aggregate limit")
+        return self
+
+
 class ExecutionRecord(ContractModel):
     """Immutable execution envelope binding a runner report to its snapshot."""
 
@@ -220,6 +254,8 @@ class ExecutionRecord(ContractModel):
     started_at: Timestamp
     finished_at: Timestamp
     report: ExecutionReport
+    # Absent on records written before aggregate limits existed: unknown, not enforced.
+    resource_limits: ResourceLimits | None = None
 
 
 class ArtifactSummary(ContractModel):

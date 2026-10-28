@@ -1,16 +1,37 @@
 """Independent trusted HTTP oracle; never import a candidate Python module."""
 
+from collections.abc import Awaitable
 from typing import Any
 from uuid import UUID, uuid4
 
 import httpx
 
+from app.runtime import RuntimeUnavailable
 from shared.contracts.models import AssertionResult
+
+# A candidate that hangs, crashes, or returns an unbounded or non-JSON body
+# fails its business check; it must not be misreported as oracle failure.
+CANDIDATE_FAULTS = (httpx.HTTPError, RuntimeUnavailable, TimeoutError)
+
+
+def _json(response: httpx.Response) -> object:
+    """Decode a candidate body, treating malformed JSON as an observed value."""
+    try:
+        value: object = response.json()
+    except ValueError:
+        return None
+    return value
 
 
 async def regression(client: httpx.AsyncClient) -> list[AssertionResult]:
     """Measure the fixed business cases against an isolated backend over HTTP."""
     assertions: list[AssertionResult] = []
+
+    async def check(name: str, expected: str, measurement: Awaitable[None]) -> None:
+        try:
+            await measurement
+        except CANDIDATE_FAULTS as exc:
+            record(name, False, expected, f"request failed: {type(exc).__name__}")
 
     def record(name: str, passed: bool, expected: str, observed: str) -> None:
         assertions.append(
@@ -28,8 +49,6 @@ async def regression(client: httpx.AsyncClient) -> list[AssertionResult]:
         payload: dict[str, Any] = {"items": items}
         if coupon != "__missing__":
             payload["coupon_code"] = coupon
-        result = await client.post("/api/checkout", json=payload, headers=headers)
-        body = result.json()
         prices = {"trail-mug": 1999, "field-notebook": 1500}
         expected_lines = [
             {
@@ -53,6 +72,13 @@ async def regression(client: httpx.AsyncClient) -> list[AssertionResult]:
             "discount": discount,
             "total": subtotal - discount,
         }
+        await check(name, str(expected), created(name, payload, headers, expected))
+
+    async def created(
+        name: str, payload: dict[str, Any], headers: dict[str, str], expected: dict[str, Any]
+    ) -> None:
+        result = await client.post("/api/checkout", json=payload, headers=headers)
+        body = _json(result)
         identity = body.get("id") if isinstance(body, dict) else None
         valid_identity = False
         try:
@@ -68,11 +94,12 @@ async def regression(client: httpx.AsyncClient) -> list[AssertionResult]:
             and all(type(body.get(key)) is int for key in ("subtotal", "discount", "total"))
         )
         orders = await client.get("/api/orders", headers=headers)
-        valid = valid and orders.status_code == 200 and orders.json() == {"orders": [body]}
+        valid = valid and orders.status_code == 200 and _json(orders) == {"orders": [body]}
         if valid_identity:
             readback = await client.get(f"/api/orders/{identity}", headers=headers)
-            valid = valid and readback.status_code == 200 and readback.json() == body
-        record(name, valid, str(expected), f"HTTP {result.status_code}: {str(body)[:1024]}")
+            valid = valid and readback.status_code == 200 and _json(readback) == body
+        observed = body if body is not None else result.text
+        record(name, valid, str(expected), f"HTTP {result.status_code}: {str(observed)[:1024]}")
 
     one = [{"product_id": "trail-mug", "quantity": 1}]
     await success("missing_coupon", one)
@@ -109,7 +136,8 @@ async def regression(client: httpx.AsyncClient) -> list[AssertionResult]:
         ("null", None),
     ):
         invalid.append((f"quantity_{name}", {"items": [{**one[0], "quantity": quantity}]}, 422))
-    for name, payload, status in invalid:
+
+    async def rejected(name: str, payload: dict[str, Any], status: int) -> None:
         headers = {"X-Faultline-Case-Id": str(uuid4())}
         response = await client.post("/api/checkout", json=payload, headers=headers)
         orders = await client.get("/api/orders", headers=headers)
@@ -117,14 +145,21 @@ async def regression(client: httpx.AsyncClient) -> list[AssertionResult]:
             name,
             response.status_code == status
             and orders.status_code == 200
-            and orders.json() == {"orders": []},
+            and _json(orders) == {"orders": []},
             f"HTTP {status} and no order",
             f"HTTP {response.status_code}",
         )
+
+    for name, payload, status in invalid:
+        await check(name, f"HTTP {status} and no order", rejected(name, payload, status))
+
+    async def missing(name: str, endpoint: str) -> None:
+        result = await client.get(endpoint)
+        record(name, result.status_code == 404, "HTTP 404", f"HTTP {result.status_code}")
+
     for name, endpoint in (
         ("unknown_order", "/api/orders/unknown"),
         ("unknown_product_readback", "/api/products/unknown"),
     ):
-        result = await client.get(endpoint)
-        record(name, result.status_code == 404, "HTTP 404", f"HTTP {result.status_code}")
+        await check(name, "HTTP 404", missing(name, endpoint))
     return assertions
