@@ -139,16 +139,11 @@ function Policy({ result }: { result: Record<string, unknown> | null }) {
   const flag = (label: string, value: unknown) => (
     <li data-tone={value === true ? "ok" : "bad"}>{label} {value === true ? "pass" : "fail"}</li>
   );
-  const ast = (result.ast_analysis && typeof result.ast_analysis === "object") ? result.ast_analysis as Record<string, unknown> : null;
-  const guards = Array.isArray(ast?.guards_detected) ? (ast.guards_detected as string[]).join(", ") : null;
-
   return (
     <ul className="inline">
       {flag("Policy", result.is_valid)}
       {flag("Syntax", result.syntax_valid)}
       {flag("AST safety", result.ast_safe)}
-      {ast && flag("Defect guard", ast.defect_guarded)}
-      {guards && <li><code title="Detected AST guard pattern">{guards}</code></li>}
       {typeof result.target_file === "string" && <li><code>{result.target_file}</code></li>}
       {result.diff_recounted === true && <li>hunk headers recounted from the model's diff</li>}
       {typeof result.error_message === "string" && <li data-tone="bad">{result.error_message}</li>}
@@ -242,9 +237,8 @@ export function Artifacts(props: { artifacts: Artifact[]; executions: Execution[
         {artifacts.map((a) => (
           <li key={a.id}>
             <strong>{a.role}</strong>
-            {a.role === "proof_bundle" && <span data-tone="ok" style={{ marginLeft: 6 }}>proof-carrying receipt</span>}
-            {a.role === "minimal_incident_payload" && <span data-tone="ok" style={{ marginLeft: 6 }}>ddmin 1-minimal</span>}
-            {a.role === "proof_bundle_md" && <span data-tone="ok" style={{ marginLeft: 6 }}>PR summary</span>}
+            {a.role === "proof_bundle" && <span className="muted">checksummed evidence bundle</span>}
+            {a.role === "proof_bundle_md" && <span className="muted">review summary</span>}
             <span className="muted">{origin(a)}</span>
             <span className="muted">{a.content_type} · {size(a.size_bytes)}</span>
             <code title={a.sha256}>sha256 {a.sha256.slice(0, 12)}</code>

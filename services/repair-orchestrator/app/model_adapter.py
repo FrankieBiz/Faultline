@@ -166,7 +166,6 @@ class RepairContext:
     failure_traceback: str
     previous_gate: str | None = None
     feedback: AttemptFeedback | None = None
-    minimal_payload: dict[str, Any] | None = None
 
     @property
     def base_sha256(self) -> str:
@@ -278,7 +277,6 @@ def format_prompt(context: RepairContext) -> list[dict[str, str]]:
         "failure_traceback": evidence.decode("utf-8", errors="ignore"),
         "previous_rejected_gate": context.previous_gate,
         "previous_attempt": context.feedback.evidence() if context.feedback else None,
-        "minimal_reproducing_payload": context.minimal_payload,
     }
     return [
         {"role": "system", "content": system},

@@ -1,7 +1,9 @@
-"""Delta-debugging (ddmin) incident minimization for HTTP payloads.
+"""Delta-debugging (ddmin) over the top-level keys of a JSON request payload.
 
-Isolates the 1-minimal reproducing payload that triggers the backend exception
-fingerprint, eliminating prompt noise and reducing LLM repair context.
+A generic, tested library function. It is not part of repair jobs: a useful
+minimization needs a real oracle that replays each subset against the failing
+backend, and the controller does not yet capture or replay request bodies.
+The result is only as meaningful as the oracle supplied by the caller.
 """
 
 from __future__ import annotations

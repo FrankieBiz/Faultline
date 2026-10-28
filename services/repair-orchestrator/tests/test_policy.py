@@ -238,3 +238,34 @@ def test_recount_refuses_ambiguous_relocation() -> None:
     source = "a = 1\nb = 2\na = 1\nb = 2\n"
     diff = f"--- a/{TARGET_FILE}\n+++ b/{TARGET_FILE}\n@@ -9,2 +9,2 @@\n a = 1\n-b = 2\n+b = 3\n"
     assert recount_unified_diff(diff, source) == diff
+
+
+@pytest.mark.parametrize(
+    "handler",
+    [
+        "except:",
+        "except Exception:",
+        "except BaseException as error:",
+        "except (KeyError, Exception):",
+    ],
+)
+def test_catch_all_handlers_are_rejected_before_execution(seeded_source: str, handler: str) -> None:
+    old = "    total = subtotal - discount\n"
+    suppressed = seeded_source.replace(
+        old,
+        f"    try:\n        total = subtotal - discount\n    {handler}\n        total = subtotal\n",
+    )
+    result = PatchPolicy().validate(patch(seeded_source, suppressed), seeded_source)
+    assert not result.is_valid and not result.ast_safe
+    assert result.error_message and "Catch-all" in result.error_message
+
+
+def test_specific_exception_handlers_remain_allowed(seeded_source: str) -> None:
+    old = "    total = subtotal - discount\n"
+    specific = seeded_source.replace(
+        old,
+        "    try:\n        total = subtotal - discount\n"
+        "    except TypeError:\n        total = subtotal\n",
+    )
+    # Policy admits it; the independent oracle is what rejects this wrong repair.
+    assert PatchPolicy().validate(patch(seeded_source, specific), seeded_source).is_valid

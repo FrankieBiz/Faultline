@@ -50,7 +50,12 @@ CSP = (
 )
 
 # Fixed extensions keep hosted evidence inert: nothing exported is ever .html or .svg.
-EXTENSIONS = {"image/png": "png", "application/zip": "zip", "application/json": "json"}
+EXTENSIONS = {
+    "image/png": "png",
+    "application/zip": "zip",
+    "application/json": "json",
+    "text/markdown": "md",
+}
 TEXT_EXTENSIONS = {"diff": "diff", "logs": "log"}
 
 # fetch(path, limit) returns at most limit + 1 bytes; callers decide what an excess means.

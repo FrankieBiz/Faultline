@@ -24,7 +24,7 @@ Updated October 28, 2026 (America/New_York). See [QUALITY_REVIEW.md](QUALITY_REV
 - Inspector with measured results, terminal-state handling, reload recovery, truthful legacy-record labeling, binary artifact downloads, replay cursors, responsive layout, and authored preview separation.
 - Safe setup/start/reconciliation/rehearsal scripts and GitHub verification workflow.
 
-Verification in this workspace: `make check` passed with 220 backend/script tests, 301 orchestrator tests, and 32 runner unit tests, plus lint, strict typing, builds, fixture and corpus provenance. Nine Inspector browser tests and 13 required isolated-runtime and real cgroup tests passed separately; the latter are included in the orchestrator count.
+Verification in this workspace: `make check` passed with 239 backend/script tests, 320 orchestrator tests, and 32 runner unit tests, plus lint, strict typing, builds, fixture and corpus provenance. Nine Inspector browser tests and 13 required isolated-runtime and real cgroup tests passed separately; the latter are included in the orchestrator count.
 
 Five deterministic controller jobs each reproduced the real failure, verified 44 candidate assertions in about five seconds, recorded kernel-verified limits, and confirmed cleanup ([ledger](evidence/2026-10-27-controller-ledger-deterministic.md)). This is workflow/runtime evidence, not a live Meta trial. Evaluation results are in [EVALUATION.md](EVALUATION.md).
 

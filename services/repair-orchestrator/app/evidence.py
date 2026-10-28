@@ -22,8 +22,12 @@ _LIMITS = {
     "report": 64 * 1024,
     "proposal": 64 * 1024,
     "diff": 16 * 1024,
+    "proof_bundle": 128 * 1024,
+    "proof_bundle_md": 128 * 1024,
 }
-_TYPES = frozenset({"image/png", "application/zip", "application/json", "text/plain"})
+_TYPES = frozenset(
+    {"image/png", "application/zip", "application/json", "text/plain", "text/markdown"}
+)
 
 
 class ArtifactError(RuntimeError):

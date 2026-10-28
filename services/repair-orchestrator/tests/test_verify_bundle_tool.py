@@ -1,106 +1,90 @@
-"""Tests for the offline cryptographic proof bundle verifier CLI."""
+"""The offline verifier agrees with the compiler and fails closed on any mismatch."""
 
-import hashlib
 import json
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
+from test_proof_bundle import DIFF, _make_report, _make_sample_job, artifact
+
+from app.proof_bundle import ProofBundleCompiler
+from shared.contracts.models import ExecutionVerdict
 from tools.verify_bundle import verify_bundle
 
-
-def _sample_bundle() -> dict[str, Any]:
-    diff = """--- a/apps/buggyshop-backend/app/routes/checkout.py
-+++ b/apps/buggyshop-backend/app/routes/checkout.py
-@@ -43,2 +43,2 @@
--    discount = cast(int, discounts.get(coupon_code))
-+    discount = cast(int, discounts.get(coupon_code, 0))
-     total = subtotal - discount
-"""
-    diff_sha = hashlib.sha256(diff.encode("utf-8")).hexdigest()
-    pre_digest = {
-        "job_id": "test-job-123",
-        "scenario_id": "scripted_checkout_repair",
-        "diff_sha256": diff_sha,
-        "baseline_verdict": "failed",
-        "verification_verdict": "passed",
-        "artifacts_count": 1,
-    }
-    bundle_digest = hashlib.sha256(
-        json.dumps(pre_digest, sort_keys=True).encode("utf-8")
-    ).hexdigest()
-
-    return {
-        "job_id": "test-job-123",
-        "scenario_id": "scripted_checkout_repair",
-        "timestamp": "2026-10-28T12:00:00Z",
-        "status": "verified",
-        "baseline_fingerprint": (
-            "TypeError: unsupported operand type(s) for -: 'int' and 'NoneType'"
-        ),
-        "patch_diff": diff,
-        "patch_diff_sha256": diff_sha,
-        "ast_analysis": {"syntax_valid": True, "defect_guarded": True},
-        "evidence_manifest": [
-            {
-                "role": "diff",
-                "sha256": diff_sha,
-                "size_bytes": len(diff),
-                "content_type": "text/plain",
-                "description": "Validated single-file patch diff",
-            }
-        ],
-        "verification_verdict": "passed",
-        "regressions_count": 0,
-        "bundle_digest": bundle_digest,
-    }
+TOOL = Path(__file__).parents[3] / "tools/verify-bundle.py"
 
 
-def test_verify_bundle_accepts_valid_bundle() -> None:
-    bundle = _sample_bundle()
-    valid, messages = verify_bundle(bundle)
-    assert valid is True
-    assert any("Patch diff SHA-256 matches" in m for m in messages)
-    assert any("Proof bundle digest matches" in m for m in messages)
+def exported(tmp_path: Path) -> tuple[dict[str, Any], Path]:
+    """Compile a bundle and write its artifacts the way the replay export does."""
+    job = _make_sample_job()
+    contents = {"screenshot": b"png bytes", "trace": b"zip bytes"}
+    items = [artifact(job.id, role, content) for role, content in contents.items()]
+    bundle, _ = ProofBundleCompiler().compile(
+        job=job,
+        baseline_report=_make_report(ExecutionVerdict.FAILED, 1.0),
+        verification_report=_make_report(ExecutionVerdict.PASSED, 1.0),
+        diff=DIFF,
+        artifacts=items,
+    )
+    directory = tmp_path / "artifacts"
+    directory.mkdir()
+    for item, content in zip(items, contents.values(), strict=True):
+        (directory / f"{item.id}.bin").write_bytes(content)
+    return json.loads(bundle.model_dump_json()), directory
 
 
-def test_verify_bundle_detects_tampered_diff() -> None:
-    bundle = _sample_bundle()
-    bundle["patch_diff"] += "\n# Malicious injected code"
-    valid, errors = verify_bundle(bundle)
-    assert valid is False
-    assert any("Patch diff hash mismatch" in e for e in errors)
+def test_compiled_bundle_and_artifacts_are_consistent(tmp_path: Path) -> None:
+    bundle, directory = exported(tmp_path)
+    consistent, messages = verify_bundle(bundle, directory)
+    assert consistent, messages
+    assert any("All 2 listed artifact files match" in message for message in messages)
 
 
-def test_verify_bundle_detects_tampered_digest() -> None:
-    bundle = _sample_bundle()
-    bundle["bundle_digest"] = "badhash12345"
-    valid, errors = verify_bundle(bundle)
-    assert valid is False
-    assert any("Bundle digest mismatch" in e for e in errors)
+def test_edits_and_corruption_are_detected(tmp_path: Path) -> None:
+    bundle, directory = exported(tmp_path)
+    edited = {**bundle, "verification_verdict": "failed"}
+    assert not verify_bundle(edited)[0]
+    corrupted = next(directory.iterdir())
+    corrupted.write_bytes(b"changed")
+    consistent, errors = verify_bundle(bundle, directory)
+    assert not consistent and any("does not match its recorded hash" in e for e in errors)
 
 
-def test_verify_bundle_detects_unverified_status() -> None:
-    bundle = _sample_bundle()
-    bundle["status"] = "unresolved"
-    bundle["regressions_count"] = 2
-    valid, errors = verify_bundle(bundle)
-    assert valid is False
-    assert any("Bundle status is 'unresolved'" in e for e in errors)
-    assert any("Bundle has 2 regressions" in e for e in errors)
+def test_missing_or_ambiguous_artifacts_fail_closed(tmp_path: Path) -> None:
+    bundle, directory = exported(tmp_path)
+    first = sorted(directory.iterdir())[0]
+    first.unlink()
+    consistent, errors = verify_bundle(bundle, directory)
+    assert not consistent and any("not found" in error for error in errors)
+    assert not verify_bundle(bundle, tmp_path / "absent")[0]
 
 
-def test_cli_execution_success(tmp_path: Path) -> None:
-    bundle = _sample_bundle()
-    bundle_file = tmp_path / "proof_bundle.json"
-    bundle_file.write_text(json.dumps(bundle))
+def test_unverified_or_incomplete_bundles_are_rejected(tmp_path: Path) -> None:
+    bundle, _ = exported(tmp_path)
+    assert not verify_bundle({key: value for key, value in bundle.items() if key != "status"})[0]
+    job = _make_sample_job()
+    failed, _ = ProofBundleCompiler().compile(
+        job=job,
+        baseline_report=_make_report(ExecutionVerdict.FAILED, 1.0),
+        verification_report=_make_report(ExecutionVerdict.FAILED, 1.0),
+        diff=DIFF,
+    )
+    consistent, errors = verify_bundle(json.loads(failed.model_dump_json()))
+    assert not consistent and any("does not record a verified candidate" in e for e in errors)
 
-    tool_path = Path(__file__).parents[3] / "tools/verify-bundle.py"
-    res = subprocess.run(
-        [sys.executable, str(tool_path), str(bundle_file)],
+
+def test_cli_reports_a_checksum_not_a_signature(tmp_path: Path) -> None:
+    bundle, directory = exported(tmp_path)
+    path = tmp_path / "bundle.json"
+    path.write_text(json.dumps(bundle))
+    ok = subprocess.run(
+        [sys.executable, str(TOOL), str(path), "--artifacts-dir", str(directory)],
         capture_output=True,
         text=True,
     )
-    assert res.returncode == 0
-    assert "PROOF BUNDLE VERIFIED AND CRYPTOGRAPHICALLY AUTHENTIC" in res.stdout
+    assert ok.returncode == 0, ok.stderr
+    assert "not a signature" in ok.stdout and "AUTHENTIC" not in ok.stdout
+    path.write_text(json.dumps({**bundle, "regressions_count": 1}))
+    bad = subprocess.run([sys.executable, str(TOOL), str(path)], capture_output=True, text=True)
+    assert bad.returncode == 1

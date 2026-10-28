@@ -851,3 +851,8 @@ def test_provider_error_attempt_is_not_presented_as_model_output() -> None:
     assert "No provider response recorded for attempt 1" in banner
     assert "sent to Meta Model API · muse-spark-1.3" in banner
     assert "<strong>Meta Model API" not in banner
+
+
+def test_bundle_summary_markdown_exports_with_md_extension() -> None:
+    artifact = {"id": "a", "role": "proof_bundle_md", "content_type": "text/markdown"}
+    assert replay._extension(artifact) == "md"

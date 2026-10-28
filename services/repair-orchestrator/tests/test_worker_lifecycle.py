@@ -456,3 +456,43 @@ async def test_restart_recovers_interrupted_reset_reservation(
     await harness.worker.reset()
     assert not harness.database.get_lease().quarantined
     assert harness.database.create_job(submission()).state == JobState.QUEUED
+
+
+async def test_verified_job_bundle_matches_its_stored_evidence(harness: Harness) -> None:
+    import json
+
+    from tools.verify_bundle import verify_bundle
+
+    job = await harness.run()
+    assert job.outcome == TerminalOutcome.VERIFIED
+    artifacts = {item.role: item for item in harness.database.list_artifacts(job.id)}
+    assert "minimal_incident_payload" not in artifacts
+    bundle = json.loads(harness.evidence.read(artifacts["proof_bundle"]))
+    directory = harness.root / "exported"
+    directory.mkdir()
+    for item in harness.database.list_artifacts(job.id):
+        if item.id in {entry["id"] for entry in bundle["evidence_manifest"]}:
+            (directory / f"{item.id}.bin").write_bytes(harness.evidence.read(item))
+    consistent, messages = verify_bundle(bundle, directory)
+    assert consistent, messages
+    assert bundle["assertions_total"] == 36 and bundle["regressions_count"] == 0
+    harness.evidence.verify_job(job.id)
+
+
+async def test_bundle_compilation_fault_is_logged_not_silent(
+    harness: Harness, caplog: pytest.LogCaptureFixture
+) -> None:
+    from app.proof_bundle import ProofBundleCompiler
+
+    def broken(*args: object, **kwargs: object) -> None:
+        raise ValueError("test compiler fault")
+
+    original = ProofBundleCompiler.compile
+    ProofBundleCompiler.compile = broken  # type: ignore[method-assign,assignment]
+    try:
+        job = await harness.run()
+    finally:
+        ProofBundleCompiler.compile = original  # type: ignore[method-assign]
+    assert job.outcome == TerminalOutcome.VERIFIED
+    assert "Evidence bundle compilation failed" in caplog.text
+    assert "proof_bundle" not in {item.role for item in harness.database.list_artifacts(job.id)}

@@ -8,38 +8,35 @@ A browser reproduces a checkout crash. Meta proposes a source patch. Independent
 
 ## The problem
 
-A valid coupon can hide a broken checkout path: customers who leave the field empty or submit an unhandled null receive an HTTP 500. Under pager pressure, emergency patches often silence symptoms (e.g. `try...except Exception: pass`) rather than fixing root causes, leading to catastrophic silent failures—such as orders vanishing before database commit while credit cards are charged ([IMPACT_EVIDENCE.md](IMPACT_EVIDENCE.md)).
+A valid coupon can hide a broken checkout path: customers who leave the field empty receive an HTTP 500. A quick patch can make the error disappear while breaking pricing, validation, or order persistence, and a suggested fix alone does not show which happened.
 
-A suggested code fix alone does not tell an engineer whether the real browser journey works, whether discount rounding is sound, or whether order persistence regressed.
+This project makes that repair claim inspectable. The checkout defect is deliberately seeded, and the scope is a controlled prototype. Add the builder's confirmed firsthand experience here before submitting ([IMPACT_EVIDENCE.md](IMPACT_EVIDENCE.md)); do not invent a personal incident, interviews, or customer impact.
 
-Measured on our authored corpus: of six plausible but wrong repairs, a check that the failing request now returns HTTP 201 accepted five. FaultLine accepted none and accepted both correct repairs ([evaluation](EVALUATION.md)). In empirical wall-clock testing, FaultLine reduced Mean Time to Repair (MTTR) from 24.5 minutes to 42.8 seconds (34.3x acceleration) while guaranteeing zero regression leakage.
+Measured on an authored corpus: of six plausible but wrong repairs, a check that the failing request now returns HTTP 201 accepted five. FaultLine accepted none and accepted both correct repairs ([evaluation](EVALUATION.md)).
 
 ## What it does
 
-FaultLine combines real browser reproduction, Zeller delta-debugging (`ddmin`) payload minimization, schema-bound Meta model proposals, semantic AST guard analysis, isolated candidate execution inside Linux Bubblewrap/cgroup v2 sandboxes, independent 27-check HTTP contract assertions, and tamper-evident cryptographic proof bundles.
-
-1. **Defect Capture**: Captures failing browser requests and tracebacks from synthetic Playwright user journeys.
-2. **Delta-Debugging (`ddmin`)**: Automatically isolates the 1-minimal defect trigger (e.g., stripping 11 extraneous fields down to `{"coupon_code": null}`).
-3. **Meta Model Generation**: Queries Meta Llama models with strict JSON schema constraints and explicit business contracts.
-4. **Semantic AST Guard**: Analyzes candidate syntax and guards against silent exception swallowers or unsafe imports before sandbox launch.
-5. **Multi-Gate Sandbox Verification**: Replays synthetic Playwright user interactions and executes an independent 27-check HTTP oracle in an ephemeral Bubblewrap container.
-6. **Cryptographic Proof Bundle**: Compiles SHA-256 evidence digests and PR markdown verifiable offline via `tools/verify_bundle.py`.
+1. **Reproduce:** a real headless Chromium journey hits the seeded HTTP 500, correlated with the backend's own exception log.
+2. **Propose:** the configured provider receives the source, the failure, and the checkout's business contract (never the defect or its fix) and returns a schema-bound single-file diff.
+3. **Gate:** the patch policy enforces exact paths and source hashes, bounded size, valid syntax, approved imports only, no dynamic execution, and no catch-all exception handlers. Miscounted hunk headers are recounted without altering content.
+4. **Verify:** the candidate runs in Linux namespaces inside a cgroup v2 scope whose limits are read back from the kernel. The same browser journey and 27 independent HTTP business checks must pass.
+5. **Retry with findings:** if a gate rejects the first proposal, the model receives the failing checks with expected and observed values, or the exact policy error, for one more attempt.
+6. **Record:** screenshots, traces, logs, reports, and a checksummed evidence bundle that `tools/verify_bundle.py` re-checks offline. A verified candidate is not a production deployment.
 
 ## Meta tooling
 
-The adapter targets Meta models (Meta Model API `muse-spark-1.3`, `Llama-3.3-70B-Instruct`, and local Meta Llama `llama3.2`) with configurable exact model identity, a startup availability probe, strict structured proposal decoding, and bounded untrusted evidence. The prompt states the business contract, not the defect. When an independent gate rejects the first proposal, the model receives bounded findings (failing checks with expected and observed values, or the exact policy error) and gets a guided retry.
+The adapter targets the Meta Model API (`muse-spark-1.3` by default) with exact model identity, a startup availability probe, strict structured proposal decoding, and bounded untrusted evidence. Provider identity is derived from the endpoint host, and an attempt is attributed to a provider only when that provider returned a response. Report the provider/model/tokens from a recorded live job when demonstrating Meta use; `scripts/trial_ledger.py --require-provider meta` records that series.
 
-The Inspector and proof bundles clearly record model provenance, tokens, generation latency, and SHA-256 diff digests.
+The absent-key deterministic provider is explicitly identified. It exercises the workflow but does not demonstrate Meta generation. Do not describe it as a live Meta run.
 
 ## Engineering
 
-- **FastAPI Control Plane**: Transactional SQLite idempotency, singleton execution leases, and structured SSE event streaming.
-- **Delta-Debugging (`ddmin`)**: Algorithmic reduction of noisy HTTP request bodies to minimal defect triggers.
-- **Semantic AST Guard**: Python AST inspection enforcing safe exception handling and preventing arbitrary code execution.
-- **Bubblewrap Kernel Isolation**: Unprivileged Linux namespaces (PID, IPC, UTS, mount) with cgroup v2 limits (512 MiB memory, 64 tasks, 100% CPU, no swap) verified by kernel probes.
-- **Dual-Gate Verification**: Playwright synthetic headless Chromium user journey plus an independent 27-check HTTP business contract oracle.
-- **Cryptographic Proof Bundles**: Offline-verifiable SHA-256 evidence manifests auditable via standalone zero-dependency CLI `tools/verify_bundle.py`.
-- **Full Test Coverage**: 587 automated unit, integration, and sandbox tests passing 100% green.
+- FastAPI control plane with transactional SQLite idempotency, a singleton execution lease, and resumable SSE events.
+- Content-addressed exports from detached Git worktrees pinned to a fixture revision.
+- Restricted candidate execution with aggregate cgroup v2 limits (512 MiB, no swap, 64 tasks, one CPU), verified per launch and proven by an OOM/task-limit probe before readiness. Trusted browser and HTTP verification run outside the candidate.
+- A hash-pinned evaluation corpus and harness, a trial ledger, a static checksummed replay export, and an evidence bundle with an offline consistency checker.
+
+AST checks are policy, not a sandbox. The evidence bundle's digest is a checksum, not a signature. A green suite supports the tested behaviors; it does not prove general production safety or compliance.
 
 ## Evidence to attach before submission
 
@@ -57,10 +54,10 @@ Live Meta trials on the unfamiliar-defect corpus, defects outside the checkout r
 ```bash
 make setup
 make check
-./scripts/demo-chaos.sh      # Interactive chaos & multi-gate verification walkthrough
-./scripts/start-demo.sh      # Start BuggyShop & FaultLine Inspector
+./scripts/demo-chaos.sh      # Measured walkthrough: preflight, repair under the gates, wrong fixes rejected
+./scripts/start-demo.sh      # Start BuggyShop and the FaultLine Inspector
 # Open http://127.0.0.1:4000
-./scripts/rehearse-demo.sh   # Rehearse live candidate repair against seeded fixture
+./scripts/rehearse-demo.sh   # Rehearse a repair job against the seeded fixture
 ```
 
-Requires Linux, Bubblewrap, Python 3.13, and Node.js 24+. See the root README for model configuration. Performance, impact, and score claims must come from documented measurements; no benchmark or judging result is asserted in this draft.
+Requires Linux, Bubblewrap, cgroup v2 with a systemd user session, Python 3.13, and Node.js 24+. See the root README for model configuration. Performance, impact, and score claims must come from documented measurements; no benchmark or judging result is asserted in this draft.

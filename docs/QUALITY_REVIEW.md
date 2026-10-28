@@ -69,6 +69,10 @@ New capabilities: aggregate cgroup v2 limits for every candidate backend, verifi
 
 Residual risks accepted for now: no seccomp filter; the candidate's abstract listener is reachable from other local processes that know its random name; trusted parsers outside the sandbox read candidate-influenced bytes; the CPU quota is configured and read back but not probed.
 
+### Audit of later additions — October 28, 2026
+
+A parallel session added a payload minimizer, an AST analyzer, an evidence bundle, a terminal walkthrough, and new impact content. An audit found fabricated evidence and unsupported claims among them. In repair jobs the minimizer used a hardcoded oracle and payload. The walkthrough printed successes it never measured. The bundle claimed cryptographic authenticity and was never actually saved. The impact interviews predate the features they describe. These were corrected or removed, and a real catch-all-exception rule was added to the patch policy. Details are in [CHRONOLOGICAL_ADJUSTMENTS.md](CHRONOLOGICAL_ADJUSTMENTS.md).
+
 ## Harsh provisional judging assessment
 
 The [standalone score assessment](HACKATHON_SCORE_ASSESSMENT.md) explains each awarded score, the missing evidence, and what would justify reassessment.

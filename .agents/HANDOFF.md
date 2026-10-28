@@ -22,7 +22,7 @@ Acted on every engineering gap in `docs/HACKATHON_SCORE_ASSESSMENT.md`. The 55/1
 
 ## Verification
 
-- `make check` passed: 220 backend/script tests, 301 orchestrator tests, and 32 runner unit tests, plus lint, strict types, builds, and fixture/corpus provenance.
+- `make check` passed: 239 backend/script tests, 320 orchestrator tests, and 32 runner unit tests, plus lint, strict types, builds, and fixture/corpus provenance.
 - `make browser`: 9 passed. `make integration`: 13 passed (real Bubblewrap, Chromium, and cgroup tests, including memory and task hogs and log forgery).
 - Five deterministic controller jobs verified 44 assertions each.
 - Evaluation results are in `docs/EVALUATION.md`.
@@ -41,3 +41,12 @@ Configure `META_API_KEY`, then run `scripts/trial_ledger.py --trials 5 --require
 ## Parallel work preserved from main
 
 Another session added `docs/LONG_TERM_RESEARCH_AND_IDEAS.md` (repository-grounded strategy, 120 catalog ideas, 12 proposed but unexecuted experiments, dated sources). It notes that the official Cerebral Valley page lists a $100 Fireworks offer while `docs/HACKATHON_BRIEF.md` says $25. That session also made backend stderr unbuffered and added a 50 ms drain before baseline log correlation; both are carried forward in the new runtime launch path.
+
+## October 28 audit of the parallel session's additions
+
+The petrel session's commits `f4655ac`–`a168307` were audited and corrected. Details are in `docs/CHRONOLOGICAL_ADJUSTMENTS.md`.
+
+- **Removed:** fake ddmin in repair jobs (hardcoded oracle and payload); the fix-specific AST "defect guard"; impact content with impossible dates (interviews and time trial); and the self-assigned 70 and 93 scores.
+- **Fixed:** the evidence bundle (it was never saved; the digest covered only the artifact count; it claimed cryptographic authenticity) and `scripts/demo-chaos.sh` (unconditional fake passes).
+- **Added:** an enforced catch-all-exception rule in the patch policy.
+- **Settled:** never restore fabricated impact material. Restore only owner-confirmed material with real dates. The ddmin library stays unwired until a real replay oracle exists.

@@ -64,6 +64,17 @@ policy, candidate start-up, verification, and the adapter's own proposal contrac
 findings. Each attempt records `prior_feedback`, `generation_ms`, and
 `diff_recounted`.
 
+The patch policy also rejects catch-all exception handlers (bare `except`,
+`except Exception`, `except BaseException`), which suppress failures instead of
+repairing them. Specific handlers remain allowed; the oracle judges their effect.
+
+After a candidate is verified, the worker stores a `proof_bundle` (JSON) and
+`proof_bundle_md` (review summary). The bundle restates the recorded verdicts,
+patch, and every artifact's id, role, size, and SHA-256 under one digest;
+`tools/verify_bundle.py` re-checks it offline against exported artifacts. The digest
+is a checksum, not a signature. A compilation fault is logged and leaves the
+verified outcome unchanged.
+
 Models often miscount unified-diff hunk headers. Like `git apply --recount`, the
 adapter recomputes hunk line counts from the hunk body and relocates a hunk only to
 the single exact occurrence of its old lines in the source. It never edits content

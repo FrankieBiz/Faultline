@@ -46,7 +46,7 @@ The rehearsal exits unsuccessfully for failed, cancelled, interrupted, timed-out
 1. Reproduce the seeded checkout failure in a fresh real Chromium session.
 2. Correlate the HTTP error with observed server failure evidence.
 3. Ask the configured provider for a schema-bound, single-file unified diff. The prompt states the checkout's business contract, not the defect or its fix.
-4. Reject stale source hashes, wrong paths, malformed hunks, oversized changes, syntax errors, and forbidden imports/capabilities. Limits: 16 KiB diff, 32 KiB source, 100 changed lines. Miscounted hunk headers are recounted from the hunk body, as `git apply --recount` does; content is never altered.
+4. Reject stale source hashes, wrong paths, malformed hunks, oversized changes, syntax errors, and forbidden imports/capabilities. Catch-all exception handlers are rejected. Limits: 16 KiB diff, 32 KiB source, 100 changed lines. Miscounted hunk headers are recounted from the hunk body, as `git apply --recount` does; content is never altered.
 5. Apply the candidate to a fresh detached worktree from the pinned fixture commit. Export application files separately from tests and reference solutions.
 6. Execute the candidate inside the restricted runtime: Linux namespaces plus an aggregate cgroup v2 scope (512 MiB, no swap, 64 tasks, one CPU) whose limits are read back from the kernel. Run the browser journey and 27 independent HTTP business assertions, retaining real screenshots, Playwright traces, request logs, and reports.
 7. If any gate rejects the first attempt, send its findings (failing checks with expected and observed values, or the policy error) back as untrusted evidence for one more attempt.
@@ -68,6 +68,8 @@ These results describe an authored corpus for one checkout route, not arbitrary 
 
 - `scripts/trial_ledger.py` runs repeated controller jobs and records provider, outcomes, attempts, tokens, latency, assertions, and cleanup together. `--require-provider meta` refuses to record anything else as a Meta trial.
 - `scripts/export_replay.py` exports a finished job as a static, read-only, checksummed replay with no scripts or external requests. A reviewed example from a deterministic rehearsal is in [`docs/replay/`](docs/replay/83d1c403-9f6a-4d69-9a46-e39c83ac2471/index.html); its trace archives are omitted because they contain local file paths.
+- Each verified job also stores a checksummed evidence bundle and review summary; `tools/verify_bundle.py` re-checks a bundle and its exported artifacts offline. The digest is a checksum, not a signature.
+- `scripts/demo-chaos.sh` is a terminal walkthrough that prints only what it measures in that run: the containment probe, the registered defect repaired under the gates, and wrong repairs rejected.
 - Recorded evidence from this review is in [`docs/evidence/`](docs/evidence/).
 
 ## Scope and limits
