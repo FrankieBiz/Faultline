@@ -35,3 +35,11 @@ Other existing demo services on 3000/4000/8000/9000 belonged to an earlier sessi
 ## Next evidence needed
 
 Private Meta credentials, repeated live trials, holdout/generalization cases, confirmed firsthand problem evidence/user feedback, final demo recording, and reviewed public replay. No social message, deployment, video publication, or hackathon submission was sent.
+
+## Long-term research notebook — October 27, 2026
+
+Completed an expanded `docs/LONG_TERM_RESEARCH_AND_IDEAS.md` at the owner's request for extensive research and brainstorming. It replaces the earlier short blueprint with repository-grounded strategy, detailed technical proposals, 120 catalog ideas, 12 experiments, phased evidence gates, economics assumptions, and a dated register of 46 primary web sources. Proposed experiments are not implemented or claimed as executed. No extra research models were called.
+
+The current official Cerebral Valley page lists a $100 Fireworks offer, while `docs/HACKATHON_BRIEF.md` says $25. The notebook records the discrepancy without changing protected sources or claiming personal account credits. Existing architecture and scope decisions above remain applicable.
+
+Delivery verification for the research task: document structure/local links/contents anchors and `git diff --check` passed. Fresh `make check` passed with 159 backend/script tests, 198 orchestrator tests, and 32 runner unit tests, plus lint/type/build/provenance and Python distributions. The first check stopped at missing frontend dependencies; locked `npm ci` installs, Chromium availability, and prerequisite frontend/runner builds resolved the environment gap before the successful rerun. No application source was changed for this task.
