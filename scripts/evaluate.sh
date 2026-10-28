@@ -4,10 +4,16 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 if [ -f "$ROOT/.env" ]; then
-  set -a
-  # shellcheck disable=SC1091
-  source "$ROOT/.env"
-  set +a
+  # Read .env defaults without clobbering existing environment overrides
+  while IFS= read -r line || [ -n "$line" ]; do
+    [[ "$line" =~ ^[[:space:]]*# ]] && continue
+    [[ "$line" =~ ^[[:space:]]*$ ]] && continue
+    varname="${line%%=*}"
+    varname="$(echo "$varname" | tr -d '[:space:]')"
+    if [ -n "$varname" ] && [ -z "${!varname+x}" ]; then
+      eval "export $line"
+    fi
+  done < "$ROOT/.env"
 fi
 arguments=("$@")
 case " ${arguments[*]-} " in

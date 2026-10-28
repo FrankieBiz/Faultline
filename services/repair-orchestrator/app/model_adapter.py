@@ -524,7 +524,7 @@ class MetaRepairAdapter:
                     "role": "user",
                     "content": (
                         "Return a PatchProposal JSON object with decision no_patch and empty "
-                        "target_file, base_sha256, and unified_diff. "
+                        'strings for target_file (""), base_sha256 (""), and unified_diff (""). '
                         "Set explanation to exactly this nonce: " + nonce
                     ),
                 }
