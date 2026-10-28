@@ -183,7 +183,7 @@
         When customers buy without a coupon, the server crashes with an HTTP 500 error. FaultLine reproduces the incident in headless Chromium, prompts Meta's Model API under strict AST constraints, and verifies the repair candidate inside isolated Linux namespaces and kernel cgroup limits before issuing a verifiable result.
       </p>
       <div style="display: flex; gap: 12px; flex-wrap: wrap;">
-        <a href="replay/82ac2dcc-e7f9-4ea7-9187-a0c0d79d8ba3/index.html" class="btn btn-primary">Open Full Standalone Replay ↗</a>
+        <a href="replay/3573b32b-09bd-4f14-897d-cf6dccf9b118/index.html" class="btn btn-primary">Open Full Standalone Replay ↗</a>
         <a href="https://github.com/FrankieBiz/Faultline" class="btn btn-secondary">Source Repository ↗</a>
         <a href="https://devpost.com" class="btn btn-secondary">Devpost Entry ↗</a>
       </div>
@@ -239,12 +239,12 @@
         <div class="seam-side bad">
           <div class="status-badge bad">✕ Baseline Reproduced (HTTP 500)</div>
           <div class="mono" style="font-size: 12px; color: var(--ink-2);">Trace: TypeError: unsupported operand type(s) for -: 'int' and 'NoneType'</div>
-          <img src="replay/82ac2dcc-e7f9-4ea7-9187-a0c0d79d8ba3/artifacts/cb520080-8b12-4525-b4f6-a76b861da8a0.png" alt="Baseline Failure Screenshot showing 500 Internal Server Error" class="screenshot">
+          <img src="replay/3573b32b-09bd-4f14-897d-cf6dccf9b118/artifacts/e2d4a4a5-db08-4755-a361-d337f61e7244.png" alt="Baseline Failure Screenshot showing 500 Internal Server Error" class="screenshot">
         </div>
         <div class="seam-side good">
           <div class="status-badge good">✓ Candidate Verified (HTTP 201)</div>
-          <div class="mono" style="font-size: 12px; color: var(--ink-2);">Result: Order created (ord_d8fa2bc), total $39.98, status clean</div>
-          <img src="replay/82ac2dcc-e7f9-4ea7-9187-a0c0d79d8ba3/artifacts/b3235cf9-cdbe-469d-8559-999f6a2c2a8e.png" alt="Candidate Verification Screenshot showing successful Order Confirmation" class="screenshot">
+          <div class="mono" style="font-size: 12px; color: var(--ink-2);">Result: Order created, total $39.98, status clean (44 assertions passed)</div>
+          <img src="replay/3573b32b-09bd-4f14-897d-cf6dccf9b118/artifacts/c6b8a6b5-90d7-4abf-a293-7e9237d7bea9.png" alt="Candidate Verification Screenshot showing successful Order Confirmation" class="screenshot">
         </div>
       </div>
 
