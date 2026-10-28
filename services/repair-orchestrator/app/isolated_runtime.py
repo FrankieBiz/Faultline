@@ -265,6 +265,9 @@ class IsolatedRuntime:
                 "--setenv",
                 "PYTHONDONTWRITEBYTECODE",
                 "1",
+                "--setenv",
+                "PYTHONUNBUFFERED",
+                "1",
                 "--remount-ro",
                 "/dev",
                 "--remount-ro",
@@ -367,6 +370,7 @@ class IsolatedRuntime:
                 *self._sandbox(snapshot.path),
                 "/python/bin/python3.13",
                 "-I",
+                "-u",
                 "/trusted_backend.py",
                 str(listener.fileno()),
                 env={},
@@ -676,7 +680,7 @@ class IsolatedRuntime:
             )
         fingerprint = REGISTRY[report.scenario_id].error_fingerprint
         # Let the independent stderr reader drain logs already emitted with the response.
-        await asyncio.sleep(0)
+        await asyncio.sleep(0.05)
         for line in bytes(owned.backend.stderr).decode("utf-8", errors="replace").splitlines():
             try:
                 event = json.loads(line)
