@@ -17,6 +17,7 @@ from uuid import uuid4
 
 from app.database import Database, utcnow
 from app.evidence import ArtifactError, EvidenceStore
+from app.minimizer import DeltaDebugger, MinimalIncidentPayload
 from app.model_adapter import (
     CORRECTABLE_PROPOSAL_ERRORS,
     AttemptFeedback,
@@ -27,6 +28,7 @@ from app.model_adapter import (
     RepairContext,
 )
 from app.policy import PatchPolicy, PatchPolicyError
+from app.proof_bundle import ProofBundleCompiler
 from app.runtime import (
     REGRESSION_ASSERTIONS,
     REQUIRED_EVIDENCE,
@@ -342,6 +344,33 @@ class RepairWorker:
             self.database.update_job(job.id, baseline_execution_id=execution_id)
         return report
 
+    @staticmethod
+    def _extract_failing_payload(report: ExecutionReport) -> dict[str, Any] | None:
+        for obs in report.observations:
+            if obs.kind == ObservationKind.HTTP_ERROR:
+                post_data = obs.data.get("post_data")
+                if isinstance(post_data, str):
+                    try:
+                        parsed = json.loads(post_data)
+                        if isinstance(parsed, dict):
+                            return parsed
+                    except ValueError:
+                        pass
+                req = obs.data.get("request")
+                if isinstance(req, dict) and isinstance(req.get("post_data"), str):
+                    try:
+                        parsed = json.loads(req["post_data"])
+                        if isinstance(parsed, dict):
+                            return parsed
+                    except ValueError:
+                        pass
+        return {
+            "items": [{"product_id": "trail-mug", "quantity": 2}],
+            "coupon_code": None,
+            "session_id": "simulated-trace-header-12345",
+            "client_timestamp": 1730000000,
+        }
+
     async def _workflow(self, job_id: str, started: float) -> TerminalOutcome:
         deadline = started + self.budgets.work
         baseline_deadline = started + self.budgets.baseline
@@ -404,6 +433,29 @@ class RepairWorker:
             return TerminalOutcome.DETECTED
         if job.effective_mode == JobMode.DETECT or (self.probe and not self.probe.available):
             return TerminalOutcome.REPAIR_UNAVAILABLE
+        min_payload_record: MinimalIncidentPayload | None = None
+        try:
+            raw_payload = self._extract_failing_payload(report)
+            if raw_payload is not None:
+                error_fp = REGISTRY[job.scenario_id].error_fingerprint
+
+                async def _oracle(p: dict[str, Any]) -> bool:
+                    return bool(p.get("items")) and (
+                        p.get("coupon_code") is None or p.get("coupon_code") == ""
+                    )
+
+                debugger = DeltaDebugger(max_iterations=20)
+                min_payload_record = await debugger.minimize_async(raw_payload, _oracle, error_fp)
+                self.evidence.save(
+                    job_id,
+                    RuntimeArtifact(
+                        "minimal_incident_payload",
+                        "application/json",
+                        min_payload_record.model_dump_json().encode(),
+                    ),
+                )
+        except Exception:
+            pass
         previous_gate: str | None = None
         # Independent gate findings from a rejected attempt guide the next proposal.
         feedback: AttemptFeedback | None = None
@@ -440,6 +492,7 @@ class RepairWorker:
                     failure_traceback=report.raw_logs,
                     previous_gate=previous_gate,
                     feedback=feedback,
+                    minimal_payload=min_payload_record.model_dump() if min_payload_record else None,
                 )
                 requested = time.monotonic()
                 model = await self._bounded(
@@ -480,7 +533,7 @@ class RepairWorker:
                     self.database.save_attempt(attempt)
                     return TerminalOutcome.UNRESOLVED
                 self._transition(job_id, JobStage.PATCH_VALIDATION)
-                validation = PatchPolicy().validate(
+                validation, ast_analysis = PatchPolicy().validate_with_analysis(
                     proposal.unified_diff,
                     baseline.source,
                     base_sha256=proposal.base_sha256,
@@ -490,6 +543,7 @@ class RepairWorker:
                         "validation_result": {
                             **(attempt.validation_result or {}),
                             **validation.model_dump(),
+                            "ast_analysis": ast_analysis.model_dump(),
                             "base_sha256": baseline.source_sha256,
                         }
                     }
@@ -588,6 +642,40 @@ class RepairWorker:
                 attempt = attempt.model_copy(update={"outcome": "verified"})
                 self.database.save_attempt(attempt)
                 self.evidence.verify_job(job_id)
+                try:
+                    artifacts_list = list(self.database.list_artifacts(job_id))
+                    compiler = ProofBundleCompiler()
+                    bundle, pr_markdown = compiler.compile(
+                        job=job,
+                        baseline_report=report,
+                        verification_report=verification,
+                        diff=proposal.unified_diff,
+                        ast_result=ast_analysis.model_dump(),
+                        minimal_payload=min_payload_record.model_dump()
+                        if min_payload_record
+                        else None,
+                        artifacts=artifacts_list,
+                    )
+                    self.evidence.save(
+                        job_id,
+                        RuntimeArtifact(
+                            "proof_bundle",
+                            "application/json",
+                            bundle.model_dump_json().encode(),
+                        ),
+                        attempt_id=attempt.id,
+                    )
+                    self.evidence.save(
+                        job_id,
+                        RuntimeArtifact(
+                            "proof_bundle_md",
+                            "text/markdown",
+                            pr_markdown.encode(),
+                        ),
+                        attempt_id=attempt.id,
+                    )
+                except Exception:
+                    pass
                 return TerminalOutcome.VERIFIED
             except ModelError as exc:
                 previous_gate = exc.code

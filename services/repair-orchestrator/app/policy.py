@@ -9,6 +9,7 @@ import hashlib
 import re
 from dataclasses import dataclass
 
+from app.ast_analyzer import ASTAnalysisResult, ASTAnalyzer
 from shared.contracts.models import PatchValidationResult
 
 TARGET_FILE = "apps/buggyshop-backend/app/routes/checkout.py"
@@ -316,6 +317,44 @@ class PatchPolicy:
                 ast_safe=False,
                 error_message=str(exc),
             )
+
+    def validate_with_analysis(
+        self,
+        diff: str,
+        source: str,
+        *,
+        base_sha256: str | None = None,
+    ) -> tuple[PatchValidationResult, ASTAnalysisResult]:
+        """Validate patch policy and compile full semantic AST analysis."""
+        validation = self.validate(diff, source, base_sha256=base_sha256)
+        if not validation.is_valid:
+            failed_analysis = ASTAnalysisResult(
+                syntax_valid=validation.syntax_valid,
+                ast_safe=validation.ast_safe,
+                defect_guarded=False,
+                target_function="checkout",
+                affected_symbols=[],
+                guards_detected=[],
+                complexity_delta=0,
+                error_message=validation.error_message,
+            )
+            return validation, failed_analysis
+
+        try:
+            candidate = parse_unified_diff(diff, source).patched_source
+            analysis = ASTAnalyzer().analyze(source, candidate)
+        except Exception as exc:
+            analysis = ASTAnalysisResult(
+                syntax_valid=True,
+                ast_safe=True,
+                defect_guarded=False,
+                target_function="checkout",
+                affected_symbols=[],
+                guards_detected=[],
+                complexity_delta=0,
+                error_message=f"Analysis exception: {exc}",
+            )
+        return validation, analysis
 
 
 def validate_patch(
