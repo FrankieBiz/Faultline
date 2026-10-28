@@ -1,0 +1,5 @@
+--- a/apps/buggyshop-backend/app/routes/checkout.py
++++ b/apps/buggyshop-backend/app/routes/checkout.py
+@@ -43,1 +43,1 @@
+-    discount = cast(int, discounts.get(coupon_code))
++    discount = cast(int, discounts.get(coupon_code) or 0)
