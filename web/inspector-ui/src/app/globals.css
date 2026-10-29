@@ -67,6 +67,11 @@ h3 { margin: 0 0 12px; font-size: 14px; font-weight: 600; }
 h3 .muted { font-weight: 400; margin-left: 8px; }
 .lede { max-width: 68ch; margin: 16px 0 0; color: var(--ink-2); }
 .job .lede, .preview .lede { margin-top: 0; }
+.impact-strip { display: flex; flex-wrap: wrap; gap: 10px 16px; margin: 18px 0 0; font-size: 13px; }
+.badge-loss { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 6px; background: var(--red-wash); border: 1px solid rgba(248, 81, 73, 0.25); color: var(--red); font-feature-settings: "tnum"; }
+.badge-loss strong { color: var(--ink); }
+.badge-diff { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 6px; background: rgba(56, 139, 253, 0.08); border: 1px solid rgba(56, 139, 253, 0.25); color: #79c0ff; font-feature-settings: "tnum"; }
+.badge-diff strong { color: var(--ink); }
 
 .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 32px; }
 .btn {

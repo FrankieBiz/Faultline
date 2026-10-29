@@ -143,7 +143,7 @@ function Policy({ result }: { result: Record<string, unknown> | null }) {
     <ul className="inline">
       {flag("Policy", result.is_valid)}
       {flag("Syntax", result.syntax_valid)}
-      {flag("AST safety", result.ast_safe)}
+      {flag("AST policy", result.ast_safe)}
       {typeof result.target_file === "string" && <li><code>{result.target_file}</code></li>}
       {result.diff_recounted === true && <li>hunk headers recounted from the model's diff</li>}
       {typeof result.error_message === "string" && <li data-tone="bad">{result.error_message}</li>}

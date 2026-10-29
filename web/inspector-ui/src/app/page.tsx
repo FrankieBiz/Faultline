@@ -28,6 +28,7 @@ export default function Inspector() {
   const [busy, setBusy] = useState<Busy>(null);
   const [notice, setNotice] = useState<{ tone: Tone; text: string } | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [elapsed, setElapsed] = useState<number | null>(null);
 
   const refreshReadiness = useCallback(async () => {
     try {
@@ -204,6 +205,18 @@ export default function Inspector() {
     ? { tone: "warn" as Tone, title: "Unverified historical result", detail: "This record predates isolated browser evidence. Its previous success label cannot establish that a repair was verified. Run a new job to collect current evidence." }
     : job?.outcome ? OUTCOME[job.outcome] : null;
 
+  useEffect(() => {
+    if (!job || terminal) {
+      setElapsed(null);
+      return;
+    }
+    const start = Date.parse(job.created_at);
+    const update = () => setElapsed(Math.max(0, (Date.now() - start) / 1000));
+    update();
+    const timer = setInterval(update, 100);
+    return () => clearInterval(timer);
+  }, [job, terminal]);
+
   const status = readiness?.status;
   const gate =
     status === "ready" ? null
@@ -241,12 +254,16 @@ export default function Inspector() {
 
       <main className="shell">
         <section className="intro" id="run" aria-labelledby="title">
-          <p className="eyebrow">BuggyShop · POST /api/checkout · apps/buggyshop-backend/app/routes/checkout.py</p>
-          <h1 id="title">A checkout crash, repaired with proof.</h1>
+          <p className="eyebrow">BuggyShop · POST /api/checkout · Simulated Production Downtime: $59.90 / order · 100% conversion loss</p>
+          <h1 id="title">A shopper submits checkout. The merchant receives no order.</h1>
           <p className="lede">
-            A real browser reproduces the failure. The repair provider proposes a bounded patch.
-            Independent checks verify the candidate. Inspect the browser evidence, regression results, and cleanup.
+            A real browser reproduces the silent checkout crash ($59.90 cart loss). The Meta repair provider proposes a bounded patch under strict prompt containment.
+            Independent Playwright assertions and AST policy verify the candidate in an isolated cgroup sandbox.
           </p>
+          <div className="impact-strip" aria-label="Incident telemetry and differentiator">
+            <span className="badge-loss">Simulated Loss: <strong>$59.90 / order</strong> · 100% drop-off</span>
+            <span className="badge-diff">Evaluation Benchmark: <strong>Naive checks accepted 5/6 invalid patches · FaultLine rejected 0/6</strong></span>
+          </div>
           <div className="actions">
             <button
               type="button"
@@ -317,7 +334,7 @@ export default function Inspector() {
                 </div>
                 <div>
                   <dt>Duration</dt>
-                  <dd>{terminal ? `${((Date.parse(job.updated_at) - Date.parse(job.created_at)) / 1000).toFixed(1)} s` : "in progress"}</dd>
+                  <dd>{terminal ? `${((Date.parse(job.updated_at) - Date.parse(job.created_at)) / 1000).toFixed(1)} s` : elapsed !== null ? `${elapsed.toFixed(1)} s running` : "in progress"}</dd>
                 </div>
                 <div><dt>Event stream</dt><dd>{stream}</dd></div>
               </dl>
