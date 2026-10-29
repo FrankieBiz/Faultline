@@ -75,12 +75,36 @@ for (const host of ["127.0.0.1:4101", "localhost:4101"]) {
   });
 }
 
+test("proxy accepts an Orca-forwarded same-origin browser request", async () => {
+  globalThis.fetch = async () => Response.json({ status: "ok" });
+  // Orca replaces Host with the loopback upstream while retaining the browser origin.
+  const request = new NextRequest("http://localhost:4101/api/faultline/reset", {
+    method: "POST", headers: {
+      host: "127.0.0.1:4101", origin: "http://judge-demo.orca.localhost:41489",
+      "sec-fetch-site": "same-origin",
+    },
+  });
+  expect((await POST(request, context("reset"))).status).toBe(200);
+});
+
+for (const site of ["same-site", "cross-site", "none", null]) {
+  test(`proxy rejects an Orca origin without same-origin fetch metadata (${site})`, async () => {
+    globalThis.fetch = async () => { throw new Error("must not contact upstream"); };
+    const headers = { host: "127.0.0.1:4101", origin: "http://judge-demo.orca.localhost:41489" };
+    if (site !== null) headers["sec-fetch-site"] = site;
+    const request = new NextRequest("http://localhost:4101/api/faultline/reset", { method: "POST", headers });
+    expect((await POST(request, context("reset"))).status).toBe(403);
+  });
+}
+
 for (const [origin, site] of [
   ["http://attacker.example:4101", "same-origin"],
   ["http://127.0.0.1:4102", "same-origin"],
   ["https://127.0.0.1:4101", "same-origin"],
   ["http://localhost:4101", "same-site"],
   ["http://127.0.0.1:4101", "cross-site"],
+  ["http://judge-demo.orca.localhost.attacker.example:41489", "same-origin"],
+  ["https://judge-demo.orca.localhost:41489", "same-origin"],
   ["null", "same-origin"],
 ]) {
   test(`proxy rejects mismatched browser origin ${origin} (${site})`, async () => {
