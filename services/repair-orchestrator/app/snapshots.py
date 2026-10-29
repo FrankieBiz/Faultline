@@ -65,14 +65,16 @@ class SnapshotManager:
             stderr=asyncio.subprocess.PIPE,
         )
         try:
-            stdout, _ = await asyncio.wait_for(process.communicate(data), timeout=5)
+            stdout, stderr = await asyncio.wait_for(process.communicate(data), timeout=5)
         except BaseException:
             if process.returncode is None:
                 process.kill()
             await process.wait()
             raise
         if process.returncode != 0:
-            raise PatchPolicyError("Git rejected the disposable snapshot operation")
+            err_msg = stderr.decode(errors="replace").strip()
+            detail = f": {err_msg}" if err_msg else ""
+            raise PatchPolicyError(f"Git rejected the disposable snapshot operation{detail}")
         return stdout
 
     async def manifest(self) -> FixtureManifest:
@@ -122,8 +124,10 @@ class SnapshotManager:
             # Recheck immediately before Git applicability and staged mutation.
             if hashlib.sha256(target.read_bytes()).hexdigest() != base_sha256:
                 raise PatchPolicyError("Proposal base hash is stale")
-            await self._git(worktree, "apply", "--check", "--index", data=diff.encode())
-            await self._git(worktree, "apply", "--index", data=diff.encode())
+            await self._git(
+                worktree, "apply", "--unidiff-zero", "--check", "--index", data=diff.encode()
+            )
+            await self._git(worktree, "apply", "--unidiff-zero", "--index", data=diff.encode())
             changed = await self._git(worktree, "diff", "--cached", "--name-only", "-z")
             if changed != TARGET_FILE.encode() + b"\x00":
                 raise PatchPolicyError("Staged candidate changed an unexpected file set")
