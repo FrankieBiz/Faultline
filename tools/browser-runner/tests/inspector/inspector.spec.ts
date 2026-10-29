@@ -48,6 +48,9 @@ test("deterministic mode is visible and authored previews never submit jobs", as
   const calls = await mock(page);
   await page.goto("/");
   await expect(page.getByText(/Deterministic fallback/)).toBeVisible();
+  const preview = page.locator("details.preview");
+  await expect(preview).not.toHaveAttribute("open");
+  await preview.locator("summary").click();
   await page.getByRole("button", { name: /Unregistered Coupon/ }).click();
   await expect(page.getByText(/HTTP 400 · Invalid coupon code/)).toBeVisible();
   expect(calls.posts).toBe(0);
@@ -130,4 +133,70 @@ test("retries show verifier feedback and non-Meta endpoints are never labeled Me
   await expect(page.getByText("cgroup v2 · 512 MiB · 64 tasks · 100% CPU · enforced")).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test("judge guidance explains isolated verification and terminal updates", async ({ page }) => {
+  await mock(page, { detail: detail() });
+  await page.goto("/");
+  await expect(page.getByRole("link", { name: "Open seeded storefront" })).toHaveAttribute("href", `http://127.0.0.1:${process.env.BUGGYSHOP_PORT ?? "3000"}`);
+  await expect(page.getByText(/The candidate is verified in isolation/)).toBeVisible();
+  await expect(page.getByText(/No production deployment occurs/)).toBeVisible();
+  await expect(page.getByText("Complete · job finished", { exact: true })).toBeVisible();
+  await expect(page.getByText("closed", { exact: true })).toHaveCount(0);
+});
+
+test("job history exposes provider and outcome and selects earlier evidence", async ({ page }) => {
+  const earlierId = "00000000-0000-4000-8000-000000000002";
+  const earlier = {
+    ...detail("succeeded", "verified"),
+    job: { ...job("succeeded", "verified"), id: earlierId },
+    attempts: [{ id: "attempt-1", attempt_number: 1, prompt_tokens: 123, completion_tokens: 45,
+      raw_patch: null, parsed_diff: null, outcome: "verified",
+      validation_result: { provider: "meta", model: "muse-spark-1.3" } }],
+  };
+  await mock(page, { detail: detail() });
+  await page.route("**/api/faultline/jobs?*", (route) => route.fulfill({ json: { jobs: [job(), earlier.job] } }));
+  await page.route(`**/api/faultline/jobs/${earlierId}`, (route) => route.fulfill({ json: earlier }));
+  await page.goto("/");
+  await page.getByText("Job history · 2 recent runs", { exact: true }).click();
+  const row = page.locator(".history li").filter({ hasText: earlierId.slice(0, 8) }).filter({ hasText: "Meta Model API" });
+  await expect(row).toContainText("verified");
+  await expect(row).toContainText("muse-spark-1.3");
+  await page.getByRole("button", { name: `Inspect job ${earlierId.slice(0, 8)}` }).last().click();
+  await expect(page.getByRole("heading", { name: "Unverified historical result" })).toBeVisible();
+});
+
+
+test("large evidence lists are collapsed with counts and direct review downloads", async ({ page }) => {
+  const execution = (phase: "baseline" | "verification") => ({
+    phase, runtime_kind: "isolated-browser", attempt_id: null, candidate_snapshot_sha256: "abc123", artifact_ids: [],
+    report: { execution_id: phase, verdict: phase === "baseline" ? "failed" : "passed", duration_ms: 100,
+      observations: [], assertions: Array.from({ length: 44 }, (_, i) => ({ id: `check-${i}`, passed: phase !== "baseline" || i > 0, expected: "201", observed: phase === "baseline" && i === 0 ? "500" : "201" })) },
+  });
+  const baseline = execution("baseline");
+  const verification = execution("verification");
+  await mock(page, { detail: { ...detail("succeeded", "verified"), baseline, executions: [baseline, verification],
+    artifacts: [{ id: "summary", execution_id: null, attempt_id: null, role: "proof_bundle_md", content_type: "text/markdown", size_bytes: 100, sha256: "abc123" }],
+  } });
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Verified repair", exact: true })).toBeVisible();
+  await expect(page.getByText("Baseline · 43 of 44 passed · 1 failed", { exact: true })).toBeVisible();
+  await expect(page.getByText("Verification, attempt ? · 44 of 44 passed", { exact: true })).toBeVisible();
+  await expect(page.locator(".asserts").first()).toBeHidden();
+  await expect(page.locator(".asserts").last()).toBeHidden();
+  await expect(page.getByRole("link", { name: "Download review summary", exact: true })).toBeVisible();
+  await expect(page.locator("#artifacts-h + .evidence-actions + details")).not.toHaveAttribute("open");
+  await expect(page.locator("#events-h + details")).not.toHaveAttribute("open");
+});
+
+test("slow history provider lookup does not delay the latest job", async ({ page }) => {
+  const oldId = "10000000-0000-4000-8000-000000000002";
+  await mock(page, { detail: detail() });
+  await page.route("**/api/faultline/jobs?*", (route) => route.fulfill({ json: { jobs: [job(), { ...job(), id: oldId }] } }));
+  await page.route(`**/api/faultline/jobs/${oldId}`, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await route.fulfill({ json: { ...detail(), job: { ...job(), id: oldId } } });
+  });
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Cancelled", exact: true })).toBeVisible({ timeout: 1000 });
 });

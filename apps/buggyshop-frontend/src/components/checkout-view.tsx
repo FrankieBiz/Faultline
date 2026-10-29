@@ -100,7 +100,8 @@ function CheckoutForm({ lines, catalog, onRetryCatalog, onPlaced }: CheckoutForm
 
   const products = catalog.status === "ready" ? catalog.value : [];
   const preview = previewOrder(lines, products, appliedCoupon);
-  const canPlaceOrder = catalog.status === "ready" && !preview.hasUnavailableLines && !submitting;
+  const couponPending = normalizeCoupon(couponText) !== appliedCoupon;
+  const canPlaceOrder = catalog.status === "ready" && !preview.hasUnavailableLines && !submitting && !couponPending;
 
   function applyCoupon() {
     setAppliedCoupon(normalizeCoupon(couponText));
@@ -130,10 +131,9 @@ function CheckoutForm({ lines, catalog, onRetryCatalog, onPlaced }: CheckoutForm
       email: String(data.get("email") ?? "").trim(),
       address: String(data.get("address") ?? "").trim(),
     };
-    // The coupon field's current text is what gets submitted; the backend
-    // trims and upper-cases it. Blank text means "no coupon".
-    const couponCode = couponText.trim() ? couponText : null;
-    setAppliedCoupon(normalizeCoupon(couponText));
+    // Submit exactly the coupon reviewed in the displayed order summary.
+    // Pending edits must be applied before checkout becomes available.
+    const couponCode = appliedCoupon;
     setFailure(null);
     setSubmitting(true);
 
@@ -213,7 +213,9 @@ function CheckoutForm({ lines, catalog, onRetryCatalog, onPlaced }: CheckoutForm
               </button>
             </div>
             <div id={couponHintId} role="status" className="mt-2 min-h-6 text-sm">
-              <CouponStatus applied={appliedCoupon} onRemove={removeCoupon} />
+              {couponPending
+                ? <p className="font-semibold">Coupon changed. Choose Apply to update the total before placing your order.</p>
+                : <CouponStatus applied={appliedCoupon} onRemove={removeCoupon} />}
             </div>
           </section>
         </fieldset>

@@ -31,10 +31,10 @@ Five deterministic controller jobs each reproduced the real failure, verified 44
 ## Access and remaining work
 
 - Default target model: `muse-spark-1.3`; availability depends on the configured account and startup probe.
-- This review's running stack reports `provider=deterministic`, `model=deterministic-checkout-v1`; no live Meta inference is certified by this review. A non-Meta model (DeepSeek v4-pro, explicitly labeled) was used only to exercise the evaluation harness with real model output.
+- The earlier runtime review used `provider=deterministic`, `model=deterministic-checkout-v1`. The October 28 [retained-replay review](evidence/2026-10-28-meta-replay-review.md) checked a controller-recorded `meta` / `muse-spark-1.3` repair: 44 assertions passed and cleanup succeeded. No fresh Meta call was made by that review; checksums establish consistency, not provider-signed authenticity. A non-Meta model (DeepSeek v4-pro, explicitly labeled) was used only to exercise the evaluation harness with real model output.
 - Earlier account/model/rate-limit claims lacked retained verification evidence. Treat them as historical unverified notes until checked privately through the account/provider.
-- Configure `META_API_KEY` privately in the server environment or ignored `.env` to run a live Meta trial. Never paste credentials into chat or commit them.
-- Still needed for a strong entry, all owner-dependent: repeated live Meta trials and a Meta evaluation run (commands in the [score assessment](HACKATHON_SCORE_ASSESSMENT.md#remediation-since-this-assessment)), a firsthand problem account and intended-user feedback ([IMPACT_EVIDENCE.md](IMPACT_EVIDENCE.md)), a recorded final video, and review/publication of the read-only replay.
+- Configure `META_API_KEY` privately in the server environment or ignored `.env` to run further live Meta trials. Never paste credentials into chat or commit them.
+- Still needed for a strong entry, all owner-dependent: repeated live Meta trials and a Meta evaluation run (commands in the [score assessment](HACKATHON_SCORE_ASSESSMENT.md#remediation-since-this-assessment)), a firsthand problem account and intended-user feedback ([IMPACT_EVIDENCE.md](IMPACT_EVIDENCE.md)), a recorded final video, and review of replay archives before further publication (workstation paths were confirmed in the retained Meta traces).
 - No public deployment, social post, video publication, or hackathon submission has been performed by this review.
 
 The official event pages list November 4, 2026 at 9 PM ET as the submission deadline, subject to change ([Meta](https://dev.meta.ai/events/global-hackathon), [Cerebral Valley](https://events.cerebralvalley.ai/e/meta-ai-developer-hackathon); retrieved October 27, 2026).

@@ -200,8 +200,8 @@ export function Assertions({ runs }: { runs: { label: string; run: Execution }[]
           const list = run.report.assertions;
           const failed = list.filter((a) => !a.passed).length;
           return (
-            <details key={run.report.execution_id} open={run.phase === "verification" || failed > 0}>
-              <summary>{label} · {list.length - failed} of {list.length} passed</summary>
+            <details key={run.report.execution_id}>
+              <summary>{label} · {list.length - failed} of {list.length} passed{failed > 0 && ` · ${failed} failed`}</summary>
               {list.length === 0 ? <p className="muted">No assertions recorded.</p> : (
                 <ul className="asserts">
                   {list.map((a) => (
@@ -233,7 +233,14 @@ export function Artifacts(props: { artifacts: Artifact[]; executions: Execution[
   return (
     <section className="block" aria-labelledby="artifacts-h">
       <h3 id="artifacts-h">Artifacts</h3>
-      <ul className="rows">
+      <p className="evidence-actions">
+        {artifacts.filter((a) => a.role === "proof_bundle_md" || a.role === "proof_bundle").map((a) => (
+          <a key={a.id} className="btn" href={artifactUrl(a.id)} download>{a.role === "proof_bundle_md" ? "Download review summary" : "Download evidence bundle"}</a>
+        ))}
+      </p>
+      <details>
+        <summary>All artifacts · {artifacts.length} files</summary>
+        <ul className="rows">
         {artifacts.map((a) => (
           <li key={a.id}>
             <strong>{a.role}</strong>
@@ -247,7 +254,8 @@ export function Artifacts(props: { artifacts: Artifact[]; executions: Execution[
             </a>
           </li>
         ))}
-      </ul>
+        </ul>
+      </details>
     </section>
   );
 }
@@ -255,7 +263,9 @@ export function Artifacts(props: { artifacts: Artifact[]; executions: Execution[
 export function EventLog({ events, stream }: { events: JobEvent[]; stream: string }) {
   return (
     <section className="block" aria-labelledby="events-h">
-      <h3 id="events-h">Events <span className="muted">{events.length} recorded · stream {stream}</span></h3>
+      <h3 id="events-h">Events <span className="muted">{events.length} recorded · {stream === "closed" ? "complete · job finished" : `updates ${stream}`}</span></h3>
+      <details>
+        <summary>View event log</summary>
       {events.length === 0 ? <p className="muted">No events recorded yet.</p> : (
         <ol className="events" role="log" tabIndex={0} aria-label="Job events">
           {events.map((e) => (
@@ -268,6 +278,7 @@ export function EventLog({ events, stream }: { events: JobEvent[]; stream: strin
           ))}
         </ol>
       )}
+      </details>
     </section>
   );
 }

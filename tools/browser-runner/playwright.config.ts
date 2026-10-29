@@ -28,7 +28,10 @@ export default defineConfig({
     screenshot: "off",
     video: "off",
   },
-  webServer: process.env.FAULTLINE_INSPECTOR_TEST === "1" ? {
+  webServer: process.env.FAULTLINE_STOREFRONT_TEST === "1" ? {
+    command: "node ../../apps/buggyshop-frontend/node_modules/next/dist/bin/next start ../../apps/buggyshop-frontend -p 3100 -H 127.0.0.1",
+    url: "http://127.0.0.1:3100", reuseExistingServer: false, timeout: 30_000,
+  } : process.env.FAULTLINE_INSPECTOR_TEST === "1" ? {
     command: "node ../../web/inspector-ui/node_modules/next/dist/bin/next start ../../web/inspector-ui -p 4100 -H 127.0.0.1",
     url: "http://127.0.0.1:4100", reuseExistingServer: false, timeout: 30_000,
   } : undefined,
@@ -41,6 +44,11 @@ export default defineConfig({
       name: "inspector",
       testDir: "./tests/inspector",
       use: { ...devices["Desktop Chrome"], baseURL: "http://127.0.0.1:4100" },
+    },
+    {
+      name: "storefront",
+      testDir: "./tests/storefront",
+      use: { ...devices["Desktop Chrome"], baseURL: "http://127.0.0.1:3100" },
     },
     {
       name: "chromium-e2e",

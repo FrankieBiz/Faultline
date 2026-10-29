@@ -73,6 +73,10 @@ Residual risks accepted for now: no seccomp filter; the candidate's abstract lis
 
 A parallel session added a payload minimizer, an AST analyzer, an evidence bundle, a terminal walkthrough, and new impact content. An audit found fabricated evidence and unsupported claims among them. In repair jobs the minimizer used a hardcoded oracle and payload. The walkthrough printed successes it never measured. The bundle claimed cryptographic authenticity and was never actually saved. The impact interviews predate the features they describe. These were corrected or removed, and a real catch-all-exception rule was added to the patch policy. Details are in [CHRONOLOGICAL_ADJUSTMENTS.md](CHRONOLOGICAL_ADJUSTMENTS.md).
 
+## Retained Meta evidence review — October 28, 2026
+
+The [replay provenance review](evidence/2026-10-28-meta-replay-review.md) checked a retained controller-recorded `meta` / `muse-spark-1.3` repair: failed baseline, 44 passing candidate assertions, successful cleanup, 16 matching replay checksums, and a consistent evidence bundle. No fresh Meta call was made during this review. This supersedes earlier statements that no recorded Meta repair existed; it does not establish Meta holdout performance or repeated-run reliability. Both retained ZIP traces contain workstation paths and need review before further publication. The historical score below is unchanged.
+
 ## Harsh provisional judging assessment
 
 The [standalone score assessment](HACKATHON_SCORE_ASSESSMENT.md) explains each awarded score, the missing evidence, and what would justify reassessment.

@@ -67,6 +67,7 @@ These results describe an authored corpus for one checkout route, not arbitrary 
 ## Evidence tools
 
 - `scripts/trial_ledger.py` runs repeated controller jobs and records provider, outcomes, attempts, tokens, latency, assertions, and cleanup together. `--require-provider meta` refuses to record anything else as a Meta trial.
+- [Retained Meta repair replay](docs/replay/3573b32b-09bd-4f14-897d-cf6dccf9b118/index.html): controller-recorded `muse-spark-1.3` response, failed baseline, 44 passing candidate assertions, and cleanup. [Provenance review](docs/evidence/2026-10-28-meta-replay-review.md) confirms checksums and identifies workstation paths in its trace archives; review those archives before further publication.
 - `scripts/export_replay.py` exports a finished job as a static, read-only, checksummed replay with no scripts or external requests. A reviewed example from a deterministic rehearsal is in [`docs/replay/`](docs/replay/83d1c403-9f6a-4d69-9a46-e39c83ac2471/index.html); its trace archives are omitted because they contain local file paths.
 - Each verified job also stores a checksummed evidence bundle and review summary; `tools/verify_bundle.py` re-checks a bundle and its exported artifacts offline. The digest is a checksum, not a signature.
 - `scripts/demo-chaos.sh` is a terminal walkthrough that prints only what it measures in that run: the containment probe, the registered defect repaired under the gates, and wrong repairs rejected.
@@ -80,7 +81,7 @@ These results describe an authored corpus for one checkout route, not arbitrary 
 - No continuous production monitoring, Sentry/GitHub integration, rollout, or automatic production deployment.
 - No measured customer adoption, revenue saved, recovery SLA, or externally awarded judging score.
 - Namespaces plus cgroup limits on a shared kernel, not a VM; no seccomp filter. An internal adversarial review is recorded; external review is still outstanding.
-- Local checks, contained browser execution, and live Meta inference are separate verification claims. No live Meta trial has been recorded yet. See [the review](docs/QUALITY_REVIEW.md) for the latest evidence and remaining release work.
+- Local checks, contained browser execution, and live Meta inference are separate verification claims. A retained Meta controller repair passed 44 assertions with successful cleanup; [replay provenance and archive review](docs/evidence/2026-10-28-meta-replay-review.md) describe what was checked. Repeated Meta trials and a Meta corpus evaluation remain outstanding. See [the review](docs/QUALITY_REVIEW.md) for the latest evidence and remaining release work.
 
 ## Repository
 
@@ -94,7 +95,7 @@ These results describe an authored corpus for one checkout route, not arbitrary 
 | [shared](shared) / [fixtures](fixtures) | Canonical contracts, scenario, pinned source provenance, and the evaluation corpus |
 | [scripts](scripts) | Dependency setup, supervised startup, reconciliation, rehearsal, evaluation, trial ledger, replay export |
 
-`make check` runs Python lint/format/type checks and tests, fixture and evaluation-corpus provenance, storefront lint/type/build, runner type/build/unit tests, Inspector type/build, and Python distribution builds. `make browser` runs Inspector browser regressions; `make integration` requires actual isolated Chromium and cgroup checks; `make evaluate` runs the evaluation. See the service documentation for runtime integration verification.
+`make check` runs Python lint/format/type checks and tests, fixture and evaluation-corpus provenance, storefront lint/type/build, runner type/build/unit tests, Inspector type/build, and Python distribution builds. `make browser` runs Inspector and storefront browser regressions; `make integration` requires actual isolated Chromium and cgroup checks; `make evaluate` runs the evaluation. See the service documentation for runtime integration verification.
 
 ## Hackathon materials
 

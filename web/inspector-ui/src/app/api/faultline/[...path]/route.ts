@@ -17,7 +17,12 @@ async function proxy(request: NextRequest, context: Context) {
   // to submit jobs through this local UI, including form POSTs without CORS.
   if (request.method === "POST") {
     const origin = request.headers.get("origin");
-    if ((origin && origin !== request.nextUrl.origin) || request.headers.get("sec-fetch-site") === "cross-site") {
+    // Next's internal URL can use localhost even when the browser requested
+    // 127.0.0.1. Host is the actual requested authority; do not trust forwarded
+    // hosts or accept a different loopback origin, scheme, or port.
+    const authority = request.headers.get("host") ?? request.nextUrl.host;
+    const expectedOrigin = `${request.nextUrl.protocol}//${authority}`;
+    if ((origin && origin !== expectedOrigin) || request.headers.get("sec-fetch-site") === "cross-site") {
       return NextResponse.json({ error: { message: "Same-origin request required." } }, { status: 403 });
     }
   }

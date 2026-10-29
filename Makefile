@@ -18,6 +18,7 @@ integration: frontend runner
 
 browser:
 	cd $(RUNNER) && npm run test:inspector
+	cd $(RUNNER) && npm run test:storefront
 
 frontend:
 	cd $(FRONTEND) && npm run check

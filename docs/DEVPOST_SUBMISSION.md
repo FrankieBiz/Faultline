@@ -10,7 +10,7 @@ A browser reproduces a checkout crash. Meta proposes a source patch. Independent
 
 A valid coupon can hide a broken checkout path: customers who leave the field empty receive an HTTP 500. A quick patch can make the error disappear while breaking pricing, validation, or order persistence, and a suggested fix alone does not show which happened.
 
-This project makes that repair claim inspectable. The checkout defect is deliberately seeded, and the scope is a controlled prototype. Add the builder's confirmed firsthand experience here before submitting ([IMPACT_EVIDENCE.md](IMPACT_EVIDENCE.md)); do not invent a personal incident, interviews, or customer impact.
+This project makes that repair claim inspectable. The checkout defect is deliberately seeded, and the scope is a controlled prototype. Customer impact and intended-user demand have not yet been measured.
 
 Measured on an authored corpus: of six plausible but wrong repairs, a check that the failing request now returns HTTP 201 accepted five. FaultLine accepted none and accepted both correct repairs ([evaluation](EVALUATION.md)).
 
@@ -25,9 +25,9 @@ Measured on an authored corpus: of six plausible but wrong repairs, a check that
 
 ## Meta tooling
 
-The adapter targets the Meta Model API (`muse-spark-1.3` by default) with exact model identity, a startup availability probe, strict structured proposal decoding, and bounded untrusted evidence. Provider identity is derived from the endpoint host, and an attempt is attributed to a provider only when that provider returned a response. Report the provider/model/tokens from a recorded live job when demonstrating Meta use; `scripts/trial_ledger.py --require-provider meta` records that series.
+The adapter targets the Meta Model API (`muse-spark-1.3` by default) with exact model identity, a startup availability probe, strict structured proposal decoding, and bounded untrusted evidence. Provider identity is derived from the endpoint host, and an attempt is attributed to a provider only when that provider returned a response. The [retained controller replay](replay/3573b32b-09bd-4f14-897d-cf6dccf9b118/index.html) records a Meta `muse-spark-1.3` response, a failed baseline, 44 passing candidate assertions, and successful cleanup. Its [provenance review](evidence/2026-10-28-meta-replay-review.md) verifies checksums and the evidence bundle; these are controller records, not provider-signed attestations. Repeated Meta trials and Meta evaluation on the unfamiliar-defect corpus remain outstanding.
 
-The absent-key deterministic provider is explicitly identified. It exercises the workflow but does not demonstrate Meta generation. Do not describe it as a live Meta run.
+The absent-key deterministic provider is explicitly identified. It exercises the workflow but does not demonstrate Meta generation. Its results are kept separate from recorded Meta responses.
 
 ## Engineering
 

@@ -120,8 +120,8 @@ export const REASON: Record<string, string> = {
 };
 
 export class ApiError extends Error {
-  constructor(readonly status: number, readonly code: string) {
-    super(REASON[code] ?? `Request failed: ${code.replaceAll("_", " ")} (HTTP ${status}).`);
+  constructor(readonly status: number, readonly code: string, message?: string) {
+    super(REASON[code] ?? message ?? `Request failed: ${code.replaceAll("_", " ")} (HTTP ${status}).`);
   }
 }
 
@@ -138,7 +138,9 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const code =
     error && typeof error === "object" && "code" in error ? String(error.code)
     : response.status === 502 ? "proxy_unreachable" : `http_${response.status}`;
-  throw new ApiError(response.status, code);
+  const message = error && typeof error === "object" && "message" in error && typeof error.message === "string"
+    ? error.message.slice(0, 500) : undefined;
+  throw new ApiError(response.status, code, message);
 }
 
 /** Identity is derived server-side from the endpoint host; only Meta hosts read as Meta. */

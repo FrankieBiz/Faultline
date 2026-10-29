@@ -716,8 +716,10 @@ class IsolatedRuntime:
     async def release_scope(self, unit: str | None, *, grace: float = 1.0) -> None:
         """Confirm a scope is gone, SIGKILLing only that unit's cgroup if it lingers.
 
-        OOM-killed scopes stay loaded as failed until reset, so absence is
-        confirmed only after reset-failed. Raises (bounded) without discarding
+        OOM-killed scopes stay loaded as failed until reset. An early-cancelled
+        launch can leave an empty active scope, which needs an explicit stop:
+        SIGKILL alone cannot retire the manager unit. Neither case counts as
+        absent until the manager reports not-found. Raises (bounded) without discarding
         the caller's ownership, which keeps the quarantine path available.
         """
         if unit is None:
@@ -735,7 +737,12 @@ class IsolatedRuntime:
                     await self._systemctl("reset-failed", unit)
                 elif not killed and time.monotonic() - started >= grace:
                     killed = True
-                    await self._systemctl("kill", "--signal=SIGKILL", unit)
+                    try:
+                        await self._systemctl("kill", "--signal=SIGKILL", unit)
+                    finally:
+                        # Request the manager transition without waiting inside
+                        # systemctl; this loop still confirms actual absence.
+                        await self._systemctl("stop", "--no-block", unit)
             except RuntimeUnavailable:
                 pass
             if time.monotonic() - started > grace + SCOPE_RELEASE_SECONDS:
