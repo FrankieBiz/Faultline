@@ -3,7 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src https: http://127.0.0.1:* http://localhost:*; base-uri 'none'; form-action 'none'">
+  <!-- Base URL of the live repair service; set by scripts/configure-live-demo.py. Empty means off. -->
+  <meta name="faultline-live-api" content="">
   <meta name="referrer" content="no-referrer">
   <meta name="color-scheme" content="dark">
   <title>FaultLine: verified checkout repair with Meta muse-spark-1.3</title>
@@ -194,6 +196,53 @@
     .limits { margin: 0; padding-left: 18px; max-width: 80ch; color: var(--ink-2); }
     .limits li { padding: 4px 0; }
 
+    /* Run timeline: shared by the recorded playback and live runs */
+    .player { margin: 0 0 32px; padding: 18px 20px 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--well); }
+    .player-bar, .live-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-bottom: 12px; }
+    .player-bar .muted { font-size: 13px; }
+    .clock { min-width: 6ch; font-size: 15px; font-feature-settings: "tnum" 1; color: var(--ink-2); }
+    .timeline { list-style: none; margin: 0; padding: 0; }
+    .timeline li { display: grid; grid-template-columns: 26px minmax(0, 190px) minmax(0, 1fr) 54px; gap: 2px 14px; align-items: baseline; padding: 10px 0; border-top: 1px solid var(--line); }
+    .timeline .mark { width: 22px; height: 22px; border: 1px solid var(--line-strong); border-radius: 50%; font: 11px/20px var(--mono); text-align: center; color: var(--ink-3); align-self: start; }
+    .timeline .title { font-weight: 600; font-size: 14px; }
+    .timeline .what { color: var(--ink-2); font-size: 14px; overflow-wrap: anywhere; }
+    .timeline .t { font: 12px var(--mono); color: var(--ink-3); text-align: right; font-feature-settings: "tnum" 1; }
+    .timeline li[data-state="idle"] .title, .timeline li[data-state="idle"] .what { color: var(--ink-3); }
+    .timeline li[data-state="running"] .mark { border-color: var(--ink); color: var(--ink); animation: pulse 1.1s ease-in-out infinite; }
+    .timeline li[data-state="done"] .mark { border-color: var(--ink-2); color: var(--ink); }
+    .timeline li[data-state="ok"] .mark { border-color: var(--green); color: var(--green); }
+    .timeline li[data-state="bad"] .mark { border-color: var(--red); color: var(--red); }
+    .timeline li[data-state="warn"] .mark { border-color: var(--amber); color: var(--amber); }
+    .timeline li[data-state="ok"] .what { color: var(--ink); }
+    @keyframes pulse { 50% { opacity: 0.3; } }
+    [data-reveal] { transition: opacity 360ms ease; }
+    [data-reveal].pending { opacity: 0.18; }
+    @media (prefers-reduced-motion: reduce) {
+      .timeline li[data-state="running"] .mark { animation: none; }
+      [data-reveal] { transition: none; }
+    }
+
+    /* Live runs */
+    .live-status { margin: 0 0 20px; padding: 12px 16px; border: 1px solid var(--line); border-left: 3px solid var(--ink-3); border-radius: 8px; background: var(--well); color: var(--ink-2); font-size: 14px; }
+    .live-status[data-tone="ok"] { border-left-color: var(--green); }
+    .live-status[data-tone="warn"] { border-left-color: var(--amber); }
+    .live-status p { margin: 0; }
+    .live-status p + p, .live-status .btn { margin-top: 10px; }
+    .live-run .timeline { margin-bottom: 4px; }
+    .option .meta { grid-column: 1 / -1; font-size: 12px; color: var(--ink-3); }
+    .option .title-text { font-size: 13.5px; }
+    .result-head { margin: 22px 0 6px; font-size: 18px; }
+    .result-head.ok { color: var(--green); }
+    .result-head.bad { color: var(--red); }
+    .result-head.warn { color: var(--amber); }
+    .attempt { margin-top: 16px; }
+    .attempt h4 { margin: 0 0 6px; font-size: 14px; font-weight: 600; }
+    .attempt p { margin: 0 0 10px; color: var(--ink-2); font-size: 14px; }
+    .attempt .diff { margin: 0; }
+    .linkline { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; font-size: 13px; color: var(--ink-3); }
+    .linkline .copy { position: static; }
+    h3.sub { margin: 40px 0 12px; font-size: 16px; }
+
     footer { padding: 40px 0 64px; border-top: 1px solid var(--line); color: var(--ink-3); font-size: 13px; }
     footer p { margin: 0 0 8px; max-width: 90ch; }
 
@@ -202,6 +251,9 @@
       .seam-line { height: 2px; background: linear-gradient(90deg, var(--red), var(--green)); }
       .explorer, .two { grid-template-columns: 1fr; }
       .facts, .scoreline { grid-template-columns: repeat(2, 1fr); }
+      .timeline li { grid-template-columns: 26px minmax(0, 1fr) 48px; }
+      .timeline .what { grid-column: 2 / -1; }
+      .timeline .t { grid-row: 1; grid-column: 3; }
       .picker { display: grid; gap: 0; }
     }
     @media (max-width: 520px) {
@@ -220,6 +272,7 @@
       <a class="wordmark" href="#main"><span class="glyph" aria-hidden="true"></span>FaultLine</a>
       <nav aria-label="Sections">
         <a href="#repair">Meta repair</a>
+        <a href="#live">Break it</a>
         <a href="#gates">Try the gates</a>
         <a href="#criteria">For judges</a>
         <a href="#run">Run it</a>
@@ -239,17 +292,17 @@
         When an AI writes a hotfix, the error going away is not the same as the fix being right. FaultLine reproduces a real checkout crash in Chromium, asks Meta's <code>muse-spark-1.3</code> for a one-file patch, and accepts it only after it passes a browser journey and 27 business checks inside an isolated, resource-limited runtime. Every number below comes from a recorded run, linked to its raw evidence.
       </p>
       <div class="actions">
-        <a class="btn primary" href="replay/3573b32b-09bd-4f14-897d-cf6dccf9b118/index.html">Open the Meta repair replay</a>
-        <a class="btn" href="#gates">Try to fool the gates</a>
+        <button class="btn primary" type="button" data-play-recorded>Play the recorded Meta repair</button>
+        <a class="btn" href="#live">Break it yourself</a>
         <a class="btn" href="https://github.com/FrankieBiz/Faultline">Source on GitHub</a>
       </div>
 
       <div class="path">
         <h2>Short on time? Three minutes, in this order</h2>
         <ol>
-          <li><a href="#repair">See the recorded Meta repair</a>: the failing checkout, the one-line patch, and the passing checkout.</li>
+          <li><a href="#repair" data-play-recorded>Press play on the recorded Meta repair</a>: 13 seconds at its real timing, from the crashing checkout to 44 passing checks.</li>
+          <li><a href="#live">Break it yourself</a>: plant one of ten bugs and watch the model repair it live under the same gates.</li>
           <li><a href="#gates">Pick a wrong patch</a> and see why a "did it return 201?" check lets it through while FaultLine does not.</li>
-          <li><a href="replay/3573b32b-09bd-4f14-897d-cf6dccf9b118/index.html">Open the replay</a> to read the raw record: all 44 assertions, logs, screenshots, and checksums. No install needed.</li>
         </ol>
       </div>
     </div>
@@ -260,8 +313,18 @@
         A customer buys two Trail Mugs and leaves the coupon field empty. The store crashes. The model was given the checkout's business rules and the failure evidence, never the name of the bug or its fix.
       </p>
 
+      <div class="player">
+        <div class="player-bar">
+          <button class="btn primary" type="button" id="play-recorded">Play the recorded run</button>
+          <span class="clock num" id="recorded-clock">13.0 s</span>
+          <span class="muted">Replay of job <code>3573b32b</code> at its recorded timing. The <a href="replay/3573b32b-09bd-4f14-897d-cf6dccf9b118/index.html">raw record</a> has every assertion, log, and checksum.</span>
+        </div>
+        <ol class="timeline" id="recorded-timeline"></ol>
+        <p class="sr-only" id="recorded-announce" aria-live="polite"></p>
+      </div>
+
       <div class="seam">
-        <div class="side bad">
+        <div class="side bad" data-reveal="baseline">
           <h3>Before <span class="status">HTTP 500</span></h3>
           <p>Fresh Chromium session against the seeded store. The server raised <code>TypeError</code> at <code>checkout.py</code> line 44; 12 of 18 baseline assertions failed.</p>
           <a class="shot" href="replay/3573b32b-09bd-4f14-897d-cf6dccf9b118/artifacts/e2d4a4a5-db08-4755-a361-d337f61e7244.png">
@@ -270,7 +333,7 @@
           <p class="shot-caption">Baseline screenshot captured by the runner. Open for full size.</p>
         </div>
         <div class="seam-line" aria-hidden="true"></div>
-        <div class="side good">
+        <div class="side good" data-reveal="verify">
           <h3>After <span class="status">HTTP 201</span></h3>
           <p>Same journey against the patched candidate in an isolated runtime. Order stored and read back; all 44 assertions passed.</p>
           <a class="shot" href="replay/3573b32b-09bd-4f14-897d-cf6dccf9b118/artifacts/c6b8a6b5-90d7-4abf-a293-7e9237d7bea9.png">
@@ -280,7 +343,7 @@
         </div>
       </div>
 
-      <figure class="diff">
+      <figure class="diff" data-reveal="propose">
         <figcaption class="diff-head">
           <span>Patch returned by <code>muse-spark-1.3</code>, first attempt</span>
           <code>apps/buggyshop-backend/app/routes/checkout.py</code>
@@ -303,6 +366,42 @@
       <p class="provenance">
         Job <code>3573b32b</code>, recorded by the controller on October 28, 2026 at 22:43 UTC. All 16 files in the replay match its <a href="replay/3573b32b-09bd-4f14-897d-cf6dccf9b118/SHA256SUMS">SHA256SUMS</a>; a checksum shows the files are consistent with each other, not that a provider signed them. A <a href="replay/82ac2dcc-e7f9-4ea7-9187-a0c0d79d8ba3/index.html">second Meta job</a> shows the retry path: Git refused to apply the first proposal (a zero-context hunk), the rejection was sent back to the model, and its second attempt was verified. See the <a href="https://github.com/FrankieBiz/Faultline/blob/main/docs/evidence/2026-10-28-meta-replay-review.md">provenance review</a>.
       </p>
+    </section>
+
+    <section id="live" class="block" aria-labelledby="live-title">
+      <h2 id="live-title">Break it yourself</h2>
+      <p class="intro">
+        Pick one of ten bugs planted in the same checkout code. The live service starts a fresh isolated backend with your bug, runs the 27 business checks, sends the failures to the model, and re-runs every check on its patch. The model is never told which bug you picked. Every live run is added to a public tally.
+      </p>
+      <div class="live-status" id="live-status" role="status">Checking the live service&hellip;</div>
+      <div class="explorer">
+        <fieldset class="picker" id="defect-picker">
+          <legend class="sr-only">Bug to plant</legend>
+        </fieldset>
+        <article class="detail live-run" id="live-detail">
+          <div class="live-actions">
+            <button class="btn primary" type="button" id="live-run" disabled>Plant this bug and repair it</button>
+            <span class="clock num" id="live-clock"></span>
+            <span class="muted" id="live-note"></span>
+          </div>
+          <ol class="timeline" id="live-timeline"></ol>
+          <p class="sr-only" id="live-announce" aria-live="polite"></p>
+          <div id="live-result"></div>
+        </article>
+      </div>
+
+      <h3 class="sub">Recorded results on these ten bugs</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Provider</th><th scope="col">Runs</th><th scope="col">Verified</th><th scope="col">What it shows</th></tr></thead>
+          <tbody>
+            <tr><td>Deterministic fallback, no model call</td><td class="n">10</td><td class="n">1</td><td><p>Only the registered defect is repaired. The harness does not invent repairs.</p></td></tr>
+            <tr><td>DeepSeek <code>deepseek-v4-pro</code>, not Meta</td><td class="n">20</td><td class="n">18</td><td><p>Two trials. In both, the gates rejected the model's wrong patch for the namespace defect; one retry succeeded after a specific rejection message.</p></td></tr>
+            <tr><td>Meta <code>muse-spark-1.3</code></td><td class="n" id="ledger-meta-runs">live</td><td class="n" id="ledger-meta-verified">&ndash;</td><td><p id="ledger-meta-note">Counted from live runs on this page once the service is on. No recorded Meta corpus run yet.</p></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="provenance">Method, per-case results, and caveats: <a href="https://github.com/FrankieBiz/Faultline/blob/main/docs/EVALUATION.md">EVALUATION.md</a>. This is an authored corpus for one route, not a benchmark of arbitrary applications.</p>
     </section>
 
     <section id="pipeline" class="block" aria-labelledby="pipeline-title">
@@ -342,24 +441,6 @@
       <p class="provenance">Recorded October 28, 2026 under the deterministic and DeepSeek evaluation runs with identical results. Raw record: <a href="https://github.com/FrankieBiz/Faultline/blob/main/docs/evidence/2026-10-28-evaluation-deterministic.json">evaluation JSON</a>. Patches: <a href="https://github.com/FrankieBiz/Faultline/tree/main/fixtures/evaluation/adversarial">fixtures/evaluation/adversarial</a>.</p>
     </section>
 
-    <section id="unfamiliar" class="block" aria-labelledby="unfamiliar-title">
-      <h2 id="unfamiliar-title">Defects the model was never told about</h2>
-      <p class="intro">
-        Nine more single-defect variants of the checkout route (rounding, normalization, pricing, validation, persistence) test whether the loop repairs bugs it has not seen. A Meta run of this corpus has not been recorded yet. To exercise the loop on real model output in the meantime, a non-Meta model was used and is labeled as such everywhere.
-      </p>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th scope="col">Provider</th><th scope="col">Runs</th><th scope="col">Verified</th><th scope="col">What it shows</th></tr></thead>
-          <tbody>
-            <tr><td>Deterministic fallback, no model call</td><td class="n">10</td><td class="n">1</td><td><p>Only the registered defect is repaired. The harness does not invent repairs.</p></td></tr>
-            <tr><td>DeepSeek <code>deepseek-v4-pro</code>, not Meta</td><td class="n">20</td><td class="n">18</td><td><p>Two trials. In both, the gates rejected the model's wrong patch for the namespace defect; one retry succeeded after a specific rejection message.</p></td></tr>
-            <tr><td>Meta <code>muse-spark-1.3</code></td><td class="n">not run</td><td class="n">&ndash;</td><td><p>Needs a configured <code>META_API_KEY</code>; one command, listed in the evaluation notes.</p></td></tr>
-          </tbody>
-        </table>
-      </div>
-      <p class="provenance">Method, per-case results, and caveats: <a href="https://github.com/FrankieBiz/Faultline/blob/main/docs/EVALUATION.md">EVALUATION.md</a>. This is an authored corpus for one route, not a benchmark of arbitrary applications.</p>
-    </section>
-
     <section id="criteria" class="block" aria-labelledby="criteria-title">
       <h2 id="criteria-title">Where to look, by judging criterion</h2>
       <p class="intro">No self-assigned scores. This maps each published criterion to the evidence that bears on it, including what is still missing.</p>
@@ -375,7 +456,7 @@
             <tr>
               <td>Use of Meta AI tooling<br><span class="muted">25%</span></td>
               <td><p><code>muse-spark-1.3</code> writes the repair from the business contract and failure evidence, under a strict proposal schema, and gets the gates' findings back for a second attempt. Provider labels come from the endpoint host and are recorded only when that provider answered.</p><p class="muted">Not yet shown: repeated Meta trials or a Meta run of the unfamiliar-defect corpus.</p></td>
-              <td><a href="replay/3573b32b-09bd-4f14-897d-cf6dccf9b118/index.html">One-attempt replay</a><br><a href="replay/82ac2dcc-e7f9-4ea7-9187-a0c0d79d8ba3/index.html">Two-attempt replay</a></td>
+              <td><a href="replay/3573b32b-09bd-4f14-897d-cf6dccf9b118/index.html">One-attempt replay</a><br><a href="replay/82ac2dcc-e7f9-4ea7-9187-a0c0d79d8ba3/index.html">Two-attempt replay</a><br><a href="#live">Live tally</a></td>
             </tr>
             <tr>
               <td>Technical depth<br><span class="muted">20%</span></td>
@@ -384,8 +465,8 @@
             </tr>
             <tr>
               <td>Demo<br><span class="muted">25%</span></td>
-              <td><p>Static replays that open in any browser, and a local Inspector that runs the whole job live: reproduce, propose, gate, verify, download evidence.</p></td>
-              <td><a href="#run">Run it locally</a><br><a href="replay/83d1c403-9f6a-4d69-9a46-e39c83ac2471/index.html">Deterministic replay</a></td>
+              <td><p>The recorded Meta repair plays back at its real timing; "Break it yourself" runs a live repair of a bug you pick when the service is on; static replays open in any browser; and a local Inspector runs the whole job: reproduce, propose, gate, verify, download evidence.</p></td>
+              <td><a href="#repair" data-play-recorded>Play the recording</a><br><a href="#live">Break it yourself</a><br><a href="#run">Run it locally</a></td>
             </tr>
           </tbody>
         </table>
@@ -439,6 +520,7 @@ FAULTLINE_INSPECTOR_URL=http://127.0.0.1:4400 ./scripts/rehearse-demo.sh</code><
         <li>A verified result is a candidate with evidence. Nothing is deployed, merged, or routed to production traffic.</li>
         <li>Namespaces and cgroup limits on a shared kernel, not a VM, and no seccomp filter. Passing the suite is evidence for the tested behavior, not proof that arbitrary code is safe.</li>
         <li>One retained Meta repair and one Meta retry are recorded; repeated Meta trials and a Meta corpus run are still outstanding.</li>
+        <li>The live service is one small, rate-limited server that may be switched off outside judging. When it is off, the page says so and plays the recording instead.</li>
         <li>The replay's two Playwright trace archives include file paths from the build workstation.</li>
       </ul>
     </section>
@@ -550,14 +632,15 @@ FAULTLINE_INSPECTOR_URL=http://127.0.0.1:4400 ./scripts/rehearse-demo.sh</code><
 
     const TARGET = "apps/buggyshop-backend/app/routes/checkout.py";
 
-    function diffBlock(text) {
+    function diffBlock(text, caption = "Candidate diff") {
       const pre = el("pre", { class: "code" });
-      for (const line of text.split("\n")) {
-        const cls = line.startsWith("@@") ? "hunk" : line.startsWith("+") ? "add" : line.startsWith("-") ? "del" : "ctx";
+      for (const line of text.replace(/\n$/, "").split("\n")) {
+        const header = line.startsWith("--- ") || line.startsWith("+++ ") || line.startsWith("@@");
+        const cls = header ? "hunk" : line.startsWith("+") ? "add" : line.startsWith("-") ? "del" : "ctx";
         pre.append(el("span", { class: cls }, line));
       }
       return el("figure", { class: "diff" },
-        el("figcaption", { class: "diff-head" }, el("span", {}, "Candidate diff"), el("code", {}, TARGET)),
+        el("figcaption", { class: "diff-head" }, el("span", {}, caption), el("code", {}, TARGET)),
         pre);
     }
 
@@ -616,17 +699,484 @@ FAULTLINE_INSPECTOR_URL=http://127.0.0.1:4400 ./scripts/rehearse-demo.sh</code><
       if (fromHash) document.getElementById("gates").scrollIntoView();
     }
 
-    for (const button of document.querySelectorAll(".copy")) {
+    function wireCopy(button) {
       button.addEventListener("click", async () => {
+        const label = button.textContent;
         try {
           await navigator.clipboard.writeText(button.dataset.copy);
           button.textContent = "Copied";
         } catch {
           button.textContent = "Select and copy";
         }
-        setTimeout(() => { button.textContent = "Copy"; }, 1800);
+        setTimeout(() => { button.textContent = label; }, 1800);
       });
     }
+    document.querySelectorAll(".copy").forEach(wireCopy);
+
+    // ---- Run timeline, shared by the recorded playback and live runs ----
+    const STEPS = [
+      ["baseline", "Reproduce the failure"],
+      ["propose", "Ask the model for a patch"],
+      ["policy", "Check the patch itself"],
+      ["verify", "Verify in isolation"],
+      ["done", "Result"]
+    ];
+    const MARKS = { ok: "✓", bad: "✕", warn: "!" };
+
+    function createTimeline(list, announcer) {
+      const rows = {};
+      STEPS.forEach(([key, title], index) => {
+        const row = {
+          n: String(index + 1),
+          mark: el("span", { class: "mark", "aria-hidden": "true" }, String(index + 1)),
+          what: el("span", { class: "what" }),
+          t: el("span", { class: "t" })
+        };
+        row.li = el("li", { "data-state": "idle" }, row.mark, el("span", { class: "title" }, title), row.what, row.t);
+        rows[key] = row;
+        list.append(row.li);
+      });
+      return {
+        set(key, state, text, ms) {
+          const row = rows[key];
+          row.li.dataset.state = state;
+          row.mark.textContent = MARKS[state] || row.n;
+          row.what.textContent = text || "";
+          row.t.textContent = ms == null ? "" : (ms / 1000).toFixed(1) + " s";
+          if (announcer && text && state !== "idle") {
+            announcer.textContent = STEPS.find(([k]) => k === key)[1] + ": " + text;
+          }
+        },
+        reset() { for (const [key] of STEPS) this.set(key, "idle", "", null); }
+      };
+    }
+
+    const seconds = (ms) => (ms / 1000).toFixed(1) + " s";
+    const reveal = (stage, shown) => {
+      for (const node of document.querySelectorAll(`[data-reveal="${stage}"]`)) node.classList.toggle("pending", !shown);
+    };
+
+    // ---- Recorded Meta repair: job 3573b32b event times, relative to admission ----
+    const RECORDED = [
+      [940, "baseline", "running", "A fresh Chromium session adds two Trail Mugs and checks out with no coupon."],
+      [2615, "baseline", "bad", "HTTP 500 with TypeError at checkout.py line 44; 12 of 18 checks fail.", "baseline"],
+      [2615, "propose", "running", "Sending the source, the checkout contract, and the failure evidence to muse-spark-1.3."],
+      [9521, "propose", "done", "muse-spark-1.3 (Meta) returned a one-line patch in 6.9 s using 3,254 tokens.", "propose"],
+      [9521, "policy", "running", "Checking path, source hash, size, syntax, imports, and exception handlers."],
+      [9536, "policy", "ok", "Every patch rule passes."],
+      [9536, "verify", "running", "Starting the patched candidate in a namespaced, resource-limited runtime."],
+      [10739, "verify", "running", "Running the browser journey and 27 HTTP checks against the candidate."],
+      [12838, "verify", "ok", "44 of 44 checks pass, including the browser checkout.", "verify"],
+      [12838, "done", "running", "Cleaning up owned resources before recording the verdict."],
+      [13039, "done", "ok", "Cleanup confirmed. Verified."]
+    ];
+    const RECORDED_END = 13039;
+    const recordedTimeline = createTimeline(document.getElementById("recorded-timeline"), document.getElementById("recorded-announce"));
+    const recordedClock = document.getElementById("recorded-clock");
+    const playButton = document.getElementById("play-recorded");
+    let playback = 0;
+
+    function showRecordedFinal() {
+      for (const [key] of STEPS) {
+        const last = RECORDED.filter((item) => item[1] === key).at(-1);
+        recordedTimeline.set(key, last[2], last[3], last[0]);
+      }
+    }
+
+    function playRecorded() {
+      cancelAnimationFrame(playback);
+      recordedTimeline.reset();
+      for (const stage of ["baseline", "propose", "verify"]) reveal(stage, false);
+      playButton.textContent = "Restart";
+      const start = performance.now();
+      let next = 0;
+      const frame = (now) => {
+        const elapsed = Math.min(now - start, RECORDED_END);
+        while (next < RECORDED.length && RECORDED[next][0] <= elapsed) {
+          const [at, key, state, text, unveil] = RECORDED[next++];
+          recordedTimeline.set(key, state, text, state === "running" ? null : at);
+          if (unveil) reveal(unveil, true);
+        }
+        recordedClock.textContent = seconds(elapsed);
+        if (next < RECORDED.length) playback = requestAnimationFrame(frame);
+        else playButton.textContent = "Play again";
+      };
+      playback = requestAnimationFrame(frame);
+    }
+
+    playButton.addEventListener("click", playRecorded);
+    for (const trigger of document.querySelectorAll("[data-play-recorded]")) {
+      trigger.addEventListener("click", (event) => {
+        event.preventDefault();
+        const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+        document.getElementById("repair").scrollIntoView({ behavior: reduce ? "auto" : "smooth" });
+        playRecorded();
+      });
+    }
+    showRecordedFinal();
+
+    // ---- Live runs ----
+    const DEFECTS = [
+      ["seeded_missing_coupon", "A missing coupon subtracts None", "null handling", 6, "The registered demo bug"],
+      ["fifteen_float_rounding", "FIFTEEN uses float rounding", "rounding", 1, "It should round down to the cent"],
+      ["coupon_case_sensitive", "Coupon codes are not upper-cased", "input normalization", 1, ""],
+      ["coupon_whitespace_untrimmed", "Coupon codes are not trimmed", "input normalization", 2, ""],
+      ["line_total_ignores_quantity", "Line totals ignore quantity", "pricing", 3, ""],
+      ["discount_sign_inverted", "The discount is added to the total", "pricing", 4, ""],
+      ["discount_first_line_only", "The discount applies to the first line only", "pricing", 1, ""],
+      ["unknown_coupon_accepted", "Unknown coupons are silently accepted", "validation", 1, ""],
+      ["missing_coupon_key_error", "A missing coupon raises KeyError", "null handling", 6, ""],
+      ["order_wrong_namespace", "Orders are stored for the wrong customer", "persistence", 10, ""]
+    ];
+    const OUTCOMES = {
+      verified: ["ok", "Verified: the bug is repaired and all 27 checks pass."],
+      verification_failed: ["bad", "Not verified: the patch still failed checks after the retry."],
+      patch_policy_rejected: ["bad", "Not verified: the gates rejected the patch."],
+      candidate_rejected: ["bad", "Not verified: the patched candidate could not be started."],
+      no_patch: ["warn", "The model declined to propose a patch."],
+      model_error: ["warn", "No patch: the model provider returned an error."],
+      baseline_passed: ["warn", "Nothing to repair: every check already passed."],
+      timeout: ["warn", "Stopped: the run went over its time limit."]
+    };
+    const ATTEMPT_OUTCOMES = {
+      verified: "verified",
+      verification_failed: "checks still failed",
+      patch_policy_rejected: "rejected by the patch rules",
+      candidate_rejected: "the candidate could not start",
+      no_patch: "declined to patch"
+    };
+
+    function liveBase() {
+      const parse = (value, allowRemote) => {
+        try {
+          const url = new URL(value);
+          const local = ["http:", "https:"].includes(url.protocol) && ["127.0.0.1", "localhost"].includes(url.hostname);
+          return local || (allowRemote && url.protocol === "https:") ? url.origin : "";
+        } catch {
+          return "";
+        }
+      };
+      // A shared link may point the page only at a local service, for testing. The public
+      // service comes from the committed meta tag, so nobody can link this page to another server.
+      const override = new URLSearchParams(location.search).get("live");
+      if (override) return parse(override, false);
+      return parse(document.querySelector('meta[name="faultline-live-api"]').content.trim(), true);
+    }
+
+    const live = {
+      base: liveBase(),
+      status: null,
+      ledger: null,
+      runId: null,
+      seen: 0,
+      started: 0,
+      timer: 0,
+      clock: 0,
+      timeline: createTimeline(document.getElementById("live-timeline"), document.getElementById("live-announce"))
+    };
+    const liveStatus = document.getElementById("live-status");
+    const liveRun = document.getElementById("live-run");
+    const liveNote = document.getElementById("live-note");
+    const liveClock = document.getElementById("live-clock");
+    const liveResult = document.getElementById("live-result");
+
+    async function api(path, options = {}) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+      try {
+        const response = await fetch(live.base + path, { ...options, signal: controller.signal, credentials: "omit" });
+        const body = await response.json().catch(() => ({}));
+        return { ok: response.ok, status: response.status, body };
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+
+    function providerName(provider, classification) {
+      if (classification === "meta_model" || provider === "meta") return "Meta";
+      if (provider === "deterministic") return "deterministic fallback, no model call";
+      if (provider === "local") return "local model, not Meta";
+      return "not Meta";
+    }
+
+    function checkList(ids) {
+      const names = ids.map((id) => id.replace("regression.", ""));
+      return names.slice(0, 3).join(", ") + (names.length > 3 ? ` and ${names.length - 3} more` : "");
+    }
+
+    function describe(event) {
+      const data = event.data || {};
+      const key = `${event.stage}:${event.status}`;
+      if (key === "baseline:running") return ["running", "Planting the bug in a fresh isolated backend and running 27 checks."];
+      if (event.stage === "baseline") {
+        const failing = data.failing || [];
+        return failing.length
+          ? ["bad", `${failing.length} of ${data.total || 27} checks fail: ${checkList(failing)}.`]
+          : ["warn", "No check failed, so there is nothing to repair."];
+      }
+      if (key === "propose:running") {
+        return ["running", (event.attempt || 1) > 1
+          ? `Attempt ${event.attempt}: sending the gates' findings back to the model.`
+          : "Sending the source, the failing checks, and the backend log to the model."];
+      }
+      if (key === "propose:error") return ["warn", `Provider error: ${data.code || event.message}.`];
+      if (event.stage === "propose") {
+        if (data.decision === "no_patch") return ["warn", `${data.model} declined to propose a patch.`];
+        const tokens = (data.prompt_tokens || 0) + (data.completion_tokens || 0);
+        const usage = tokens ? `, ${tokens.toLocaleString("en-US")} tokens` : "";
+        return ["done", `${data.model} (${providerName(data.provider, live.status && live.status.classification)}) answered in ${seconds(data.generation_ms || 0)}${usage}.`];
+      }
+      if (key === "policy:running") return ["running", "Checking path, source hash, size, syntax, imports, and exception handlers."];
+      if (key === "policy:passed") return ["ok", "Every patch rule passes."];
+      if (event.stage === "policy") return ["bad", `Rejected: ${data.error || event.message}.`];
+      if (key === "verify:running") return ["running", "Applying the patch to a fresh copy and re-running all 27 checks."];
+      if (key === "verify:passed") return ["ok", `All ${data.total || 27} checks pass.`];
+      if (key === "verify:rejected") return ["bad", `Candidate rejected: ${data.rejection || event.message}.`];
+      if (event.stage === "verify") {
+        const failing = data.failing || [];
+        return ["bad", `${failing.length} of ${data.total || 27} checks still fail: ${checkList(failing)}.`];
+      }
+      if (event.stage === "done") {
+        const [tone, text] = OUTCOMES[data.outcome] || ["warn", `Finished: ${data.outcome || event.message}.`];
+        return [tone, text];
+      }
+      return ["done", event.message || ""];
+    }
+
+    function applyEvent(event) {
+      if (event.stage === "propose" && event.status === "running" && (event.attempt || 1) > 1) {
+        live.timeline.set("policy", "idle", "", null);
+        live.timeline.set("verify", "idle", "", null);
+      }
+      const [state, text] = describe(event);
+      live.timeline.set(event.stage, state, text, state === "running" ? null : event.t_ms);
+    }
+
+    function setStatus(tone, ...paragraphs) {
+      liveStatus.dataset.tone = tone;
+      liveStatus.replaceChildren(...paragraphs);
+    }
+
+    function fallbackButton() {
+      const button = el("button", { class: "btn", type: "button" }, "Play the recorded Meta run instead");
+      button.addEventListener("click", () => {
+        document.getElementById("repair").scrollIntoView();
+        playRecorded();
+      });
+      return button;
+    }
+
+    function selectedDefect() {
+      const checked = document.querySelector('input[name="defect"]:checked');
+      return checked ? checked.value : null;
+    }
+
+    function buildDefects() {
+      const picker = document.getElementById("defect-picker");
+      const ledger = (live.ledger && live.ledger.by_defect) || {};
+      const current = selectedDefect() || "coupon_whitespace_untrimmed";
+      picker.querySelectorAll(".option").forEach((node) => node.remove());
+      for (const [id, title, kind, failing, note] of DEFECTS) {
+        const input = el("input", { type: "radio", name: "defect", value: id, id: "defect-" + id });
+        if (id === current) input.checked = true;
+        const record = ledger[id];
+        const meta = [kind, `${failing} of 27 checks fail`];
+        if (note) meta.push(note);
+        if (record) meta.push(`${record.runs} live ${record.runs === 1 ? "run" : "runs"}, ${record.verified} verified`);
+        picker.append(el("label", { class: "option", for: "defect-" + id },
+          input, el("span", { class: "title-text" }, title), el("span", { class: "meta" }, meta.join(". ") + ".")));
+      }
+    }
+
+    function renderLedgerRow() {
+      const runs = document.getElementById("ledger-meta-runs");
+      const verified = document.getElementById("ledger-meta-verified");
+      const note = document.getElementById("ledger-meta-note");
+      const meta = live.ledger && live.ledger.by_classification && live.ledger.by_classification.meta_model;
+      if (!meta) return;
+      runs.textContent = String(meta.runs);
+      verified.textContent = String(meta.verified);
+      note.textContent = "Live runs from this page, recorded by the service and labeled by the provider that answered.";
+    }
+
+    function readyStatus() {
+      const status = live.status;
+      const ledger = live.ledger;
+      const who = `${status.model} (${providerName(status.provider, status.classification)})`;
+      const tally = ledger && ledger.runs_total ? ` ${ledger.runs_total} live ${ledger.runs_total === 1 ? "run" : "runs"} so far, ${ledger.verified} verified.` : "";
+      const lines = [el("p", {}, `Live service on. Repairs come from ${who}.${tally}`)];
+      if (status.classification !== "meta_model") {
+        lines.push(el("p", {}, "This provider is not Meta, so these runs are not Meta results."));
+      }
+      setStatus("ok", ...lines);
+      liveNote.textContent = `${status.limits.daily_remaining} runs left today; up to ${status.limits.per_client_per_hour} per visitor per hour.`;
+      liveRun.disabled = Boolean(live.runId) || status.limits.daily_remaining <= 0;
+    }
+
+    async function refreshLive() {
+      if (!live.base) {
+        setStatus("warn",
+          el("p", {}, "The live service is switched off right now, so runs can't be started from this page. The list shows what you could plant; the recorded Meta run plays at its real timing."),
+          fallbackButton());
+        liveRun.disabled = true;
+        buildDefects();
+        return;
+      }
+      try {
+        const [status, ledger] = await Promise.all([api("/api/live/status"), api("/api/live/ledger")]);
+        live.status = status.ok ? status.body : null;
+        live.ledger = ledger.ok ? ledger.body : null;
+      } catch {
+        live.status = null;
+      }
+      buildDefects();
+      renderLedgerRow();
+      if (!live.status) {
+        setStatus("warn", el("p", {}, "The live service didn't respond. It may be restarting or switched off for the night."), fallbackButton());
+        liveRun.disabled = true;
+      } else if (!live.status.available) {
+        setStatus("warn", el("p", {}, `The live service is up but not accepting runs (${live.status.reason || "unavailable"}). Nothing runs until its sandbox and model checks pass.`), fallbackButton());
+        liveRun.disabled = true;
+      } else {
+        readyStatus();
+      }
+    }
+
+    function tick() {
+      liveClock.textContent = live.started ? seconds(Date.now() - live.started) : "";
+    }
+
+    function renderResult(run) {
+      const [tone, text] = OUTCOMES[run.outcome] || ["warn", run.state === "failed" ? "The run failed before finishing." : `Finished: ${run.outcome}.`];
+      const parts = [el("h3", { class: "result-head " + tone }, text)];
+      for (const attempt of run.attempts || []) {
+        const who = attempt.model ? `${attempt.model} (${providerName(attempt.provider)})` : "no model response";
+        const result = ATTEMPT_OUTCOMES[attempt.outcome] || `provider error (${attempt.outcome})`;
+        const head = `Attempt ${attempt.attempt_number}: ${who}, ${result}`;
+        const block = el("div", { class: "attempt" }, el("h4", {}, head));
+        if (attempt.explanation) block.append(el("p", {}, "Model's explanation: " + attempt.explanation));
+        if (attempt.policy && attempt.policy.error) block.append(el("p", {}, "Gate finding: " + attempt.policy.error));
+        if (attempt.failing_after && attempt.failing_after.length) block.append(el("p", {}, "Still failing: " + checkList(attempt.failing_after) + "."));
+        if (attempt.diff) block.append(diffBlock(attempt.diff, `Patch from attempt ${attempt.attempt_number}`));
+        parts.push(block);
+      }
+      const link = location.origin + location.pathname + location.search + "#run=" + run.id;
+      const copy = el("button", { class: "copy", type: "button", "data-copy": link }, "Copy link to this run");
+      wireCopy(copy);
+      parts.push(el("p", { class: "linkline" }, `Run ${run.id.slice(0, 8)}, recorded by the live service.`, copy));
+      liveResult.replaceChildren(...parts);
+    }
+
+    function showRun(run) {
+      live.timeline.reset();
+      for (const event of run.events || []) applyEvent(event);
+      live.seen = (run.events || []).length;
+    }
+
+    async function poll() {
+      let response;
+      try {
+        response = await api(`/api/live/runs/${encodeURIComponent(live.runId)}`);
+      } catch {
+        live.timer = setTimeout(poll, 2000);
+        return;
+      }
+      if (!response.ok) {
+        setStatus("warn", el("p", {}, "This run is no longer available from the live service."), fallbackButton());
+        stopRun();
+        return;
+      }
+      const run = response.body;
+      const events = run.events || [];
+      for (const event of events.slice(live.seen)) applyEvent(event);
+      live.seen = events.length;
+      if (run.state === "queued") {
+        liveNote.textContent = run.position > 0 ? `Waiting in line: ${run.position} ahead of you.` : "Starting next.";
+      } else if (run.state === "running") {
+        if (!live.clock) {
+          live.started = Date.now() - (events.length ? events.at(-1).t_ms : 0);
+          live.clock = setInterval(tick, 100);
+        }
+        liveNote.textContent = "Running live. Each step appears as the service records it.";
+      }
+      if (run.state === "finished" || run.state === "failed") {
+        renderResult(run);
+        stopRun();
+        await refreshLive();
+        return;
+      }
+      live.timer = setTimeout(poll, 1000);
+    }
+
+    function stopRun() {
+      clearTimeout(live.timer);
+      clearInterval(live.clock);
+      live.clock = 0;
+      live.runId = null;
+      liveRun.disabled = !(live.status && live.status.available);
+    }
+
+    liveRun.addEventListener("click", async () => {
+      const defect = selectedDefect();
+      if (!defect || live.runId) return;
+      liveRun.disabled = true;
+      liveResult.replaceChildren();
+      live.timeline.reset();
+      live.seen = 0;
+      live.started = 0;
+      liveClock.textContent = "";
+      liveNote.textContent = "Sending your choice to the live service.";
+      let response;
+      try {
+        response = await api("/api/live/runs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ defect_id: defect })
+        });
+      } catch {
+        liveNote.textContent = "The live service didn't respond. Try again in a moment.";
+        liveRun.disabled = false;
+        return;
+      }
+      if (!response.ok) {
+        const error = (response.body && response.body.error) || {};
+        const wait = error.retry_after_seconds ? ` Try again in about ${Math.ceil(error.retry_after_seconds / 60)} min.` : "";
+        liveNote.textContent = (error.message || `The service refused the run (HTTP ${response.status}).`) + wait;
+        liveRun.disabled = response.status >= 500;
+        if (response.status >= 500) await refreshLive();
+        else liveRun.disabled = false;
+        return;
+      }
+      live.runId = response.body.run_id;
+      history.replaceState(null, "", "#run=" + live.runId);
+      poll();
+    });
+
+    async function openLinkedRun() {
+      const match = location.hash.match(/^#run=([0-9a-f-]{8,64})$/i);
+      if (!match || !live.base) return;
+      document.getElementById("live").scrollIntoView();
+      try {
+        const response = await api(`/api/live/runs/${encodeURIComponent(match[1])}`);
+        if (!response.ok) return;
+        const run = response.body;
+        const input = document.getElementById("defect-" + run.defect_id);
+        if (input) input.checked = true;
+        if (run.state === "finished" || run.state === "failed") {
+          showRun(run);
+          renderResult(run);
+        } else {
+          live.runId = run.id;
+          liveRun.disabled = true;
+          poll();
+        }
+      } catch {
+        // The status line already explains an unreachable service.
+      }
+    }
+
+    live.timeline.reset();
+    refreshLive().then(openLinkedRun);
 
     buildPicker();
   </script>

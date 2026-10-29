@@ -222,10 +222,36 @@ async def evaluate_holdout(
     incident: dict[str, Any],
     *,
     attempts: int = 2,
+    on_event: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     """Reproduce one unfamiliar defect and let the provider repair it under the gates."""
+    event_started = time.monotonic()
+
+    def emit(
+        stage: str, status: str, number: int | None, message: str, data: dict[str, Any]
+    ) -> None:
+        if on_event is not None:
+            on_event(
+                {
+                    "t_ms": round((time.monotonic() - event_started) * 1000),
+                    "stage": stage,
+                    "status": status,
+                    "attempt": number,
+                    "message": message,
+                    "data": data,
+                }
+            )
+
+    emit("baseline", "running", None, "Measuring the selected defect.", {})
     baseline = await measure(launcher, exporter, source, incident)
     failing = [item.id for item in baseline.failing]
+    emit(
+        "baseline",
+        "failed" if failing else "passed",
+        None,
+        "Baseline checks completed.",
+        {"failing": failing, "total": len(baseline.checks)},
+    )
     result: dict[str, Any] = {
         "id": case["id"],
         "defect_class": case["defect_class"],
@@ -249,6 +275,7 @@ async def evaluate_holdout(
         result["attempts"].append(record)
         context = RepairContext(source, evidence, previous_gate, feedback)
         started = time.monotonic()
+        emit("propose", "running", number, "Requesting a repair proposal.", {})
         try:
             async with asyncio.timeout(adapter.settings.timeout + GENERATION_GRACE):
                 response = await adapter.propose_patch(context)
@@ -256,6 +283,7 @@ async def evaluate_holdout(
             code = exc.code if isinstance(exc, ModelError) else "provider_timeout"
             retryable = exc.retryable if isinstance(exc, ModelError) else True
             record.update(outcome=code, generation_ms=round((time.monotonic() - started) * 1000))
+            emit("propose", "error", number, "Proposal request failed.", {"code": code})
             outcome, previous_gate = "model_error", code
             feedback = AttemptFeedback(code) if code in CORRECTABLE_PROPOSAL_ERRORS else None
             if not retryable:
@@ -275,6 +303,23 @@ async def evaluate_holdout(
             diff_recounted=response.original_diff is not None,
             model_diff=response.original_diff,
         )
+        emit(
+            "propose",
+            "passed",
+            number,
+            "Repair proposal received.",
+            {
+                key: record[key]
+                for key in (
+                    "provider",
+                    "model",
+                    "generation_ms",
+                    "prompt_tokens",
+                    "completion_tokens",
+                    "decision",
+                )
+            },
+        )
         if proposal.decision == "no_patch":
             record["outcome"] = outcome = "no_patch"
             break
@@ -282,6 +327,18 @@ async def evaluate_holdout(
             proposal.unified_diff, source, base_sha256=proposal.base_sha256
         )
         record["policy"] = {"is_valid": validation.is_valid, "error": validation.error_message}
+        admitted = validation.is_valid and proposal.base_sha256 == base_sha256
+        emit(
+            "policy",
+            "passed" if admitted else "rejected",
+            number,
+            "Patch policy passed." if admitted else "Patch policy rejected the proposal.",
+            {
+                "error": validation.error_message
+                if admitted
+                else validation.error_message or "Source hash does not match."
+            },
+        )
         if not validation.is_valid or proposal.base_sha256 != base_sha256:
             record["outcome"] = outcome = previous_gate = "patch_policy_rejected"
             feedback = AttemptFeedback(
@@ -291,16 +348,25 @@ async def evaluate_holdout(
             )
             continue
         candidate = parse_unified_diff(proposal.unified_diff, source).patched_source
+        emit("verify", "running", number, "Checking the isolated candidate.", {})
         try:
             verified = await measure(launcher, exporter, candidate, incident)
         except CandidateRejected as exc:
             record["outcome"] = outcome = previous_gate = "candidate_rejected"
             record["rejection"] = str(exc)
+            emit("verify", "rejected", number, "Candidate could not run.", {"rejection": str(exc)})
             feedback = AttemptFeedback(
                 previous_gate, rejected_diff=proposal.unified_diff, policy_error=str(exc)
             )
             continue
         record["failing_after"] = [item.id for item in verified.failing]
+        emit(
+            "verify",
+            "failed" if verified.failing else "passed",
+            number,
+            "Candidate checks completed.",
+            {"failing": record["failing_after"], "total": len(verified.checks)},
+        )
         if not verified.failing:
             record["outcome"] = outcome = "verified"
             break

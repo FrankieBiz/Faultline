@@ -27,7 +27,7 @@ runtime = IsolatedRuntime()
 try:
     asyncio.run(runtime.backend_preflight())
 except RuntimeUnavailable as exc:
-    print(json.dumps({"ready": False, "reason": str(exc), **runtime.resource_limits_status}))
+    print(json.dumps({**runtime.resource_limits_status, "ready": False, "reason": str(exc)}))
 else:
     print(json.dumps({"ready": True, **runtime.resource_limits_status}))
 PY

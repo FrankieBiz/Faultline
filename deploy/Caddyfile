@@ -1,0 +1,56 @@
+# FaultLine live repair service: public HTTPS front for 127.0.0.1:9600.
+#
+# Install as root on the VM (deploy/README.md, step 6): copy this file to
+# /etc/caddy/Caddyfile and set FAULTLINE_LIVE_HOST in a caddy.service drop-in.
+# The host is read from Caddy's environment when this file is parsed, for
+# example 203-0-113-10.sslip.io or live.example.com. If it is unset, the file
+# does not validate and Caddy refuses to start.
+#
+# Caddy obtains and renews the certificate itself and redirects HTTP to HTTPS.
+# TCP ports 80 and 443 must reach this machine.
+{
+	servers {
+		# Plain HTTP/1.1 and HTTP/2 over TCP; no HTTP/3, so UDP 443 can stay closed.
+		protocols h1 h2
+		timeouts {
+			read_header 10s
+			read_body 10s
+			write 30s
+			idle 60s
+		}
+		# trusted_proxies is deliberately unset: nothing sits in front of Caddy,
+		# so it ignores any client-supplied X-Forwarded-For and sends the
+		# upstream exactly one hop, the connecting address. The service runs
+		# with LIVE_DEMO_TRUST_PROXY=1 and takes that last hop as the client.
+	}
+}
+
+{$FAULTLINE_LIVE_HOST} {
+	# The only request body is {"defect_id": "..."}; anything larger gets 413.
+	request_body {
+		max_size 4KB
+	}
+
+	handle /api/live/* {
+		reverse_proxy 127.0.0.1:9600 {
+			transport http {
+				dial_timeout 3s
+				response_header_timeout 30s
+			}
+		}
+	}
+
+	# Everything else, including /, is not served.
+	handle {
+		respond 404
+	}
+
+	header {
+		-Server
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+	}
+
+	# No access log: the service stores no client addresses, and neither does
+	# this proxy. Errors still reach the journal (journalctl -u caddy).
+}

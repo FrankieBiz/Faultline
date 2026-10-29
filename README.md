@@ -6,7 +6,12 @@ FaultLine is a controlled source-repair prototype for the Meta Global AI Develop
 
 The result is a **verified candidate with downloadable evidence**. FaultLine does not deploy to production, route live traffic, or claim compliance certification.
 
-**Judges: start at the [FaultLine judge page](https://frankiebiz.github.io/Faultline/).** No install is needed. It shows the recorded `muse-spark-1.3` repair side by side, lets you browse the recorded results of eleven candidate patches under a naive check and under FaultLine's gates, and links to [replays](https://frankiebiz.github.io/Faultline/replay/3573b32b-09bd-4f14-897d-cf6dccf9b118/) that open in any browser.
+**Judges: start at the [FaultLine judge page](https://frankiebiz.github.io/Faultline/).** No install is needed:
+
+- **Play the recorded Meta repair.** The retained `muse-spark-1.3` job plays back at its real 13-second timing, from the crashing checkout to 44 passing checks.
+- **Break it yourself.** Plant one of ten bugs and watch the model repair it live in the isolated runtime, under the same gates. The model is never told which bug you picked. When the live service is off, the page says so and offers the recording instead.
+- **Try to fool the gates.** Browse eleven recorded candidate patches under a naive "did it return 201?" check and under FaultLine.
+- **Read the raw record.** [Replays](https://frankiebiz.github.io/Faultline/replay/3573b32b-09bd-4f14-897d-cf6dccf9b118/) open in any browser.
 
 ![Inspector after a local run: the failed baseline, the five recorded steps, and 44 of 44 candidate checks passing, with the patch source labeled as the deterministic fallback and not a Meta trial](docs/assets/inspector.png)
 
@@ -75,6 +80,10 @@ The controller demo covers one registered defect. To test more than that fixture
 
 These results describe an authored corpus for one checkout route, not arbitrary applications.
 
+## Live repair service
+
+`scripts/start-live-demo.sh` serves the judge page's "Break it yourself" panel. A visitor can choose only one of the ten corpus defects; no code or text is accepted. Each run uses the evaluation loop: a fresh isolated backend with the chosen defect, the 27 business checks, a model proposal under the patch policy, re-measurement, and one retry with the gates' findings. It runs one job at a time, with per-visitor and daily limits. Production requires a Meta provider (`LIVE_DEMO_REQUIRE_PROVIDER=meta`). Every finished run is appended to a public ledger, labeled by the provider that answered. [`deploy/README.md`](deploy/README.md) covers hosting it on a small Linux VM, and `scripts/configure-live-demo.py` points the judge page at it.
+
 ## Evidence tools
 
 - `scripts/trial_ledger.py` runs repeated controller jobs and records provider, outcomes, attempts, tokens, latency, assertions, and cleanup together. `--require-provider meta` refuses to record anything else as a Meta trial.
@@ -104,7 +113,8 @@ These results describe an authored corpus for one checkout route, not arbitrary 
 | [tools/browser-runner](tools/browser-runner) | Trusted Playwright journey, assertions, and evidence |
 | [web/inspector-ui](web/inspector-ui) | Readiness, job results, diffs, and evidence inspection |
 | [shared](shared) / [fixtures](fixtures) | Canonical contracts, scenario, pinned source provenance, and the evaluation corpus |
-| [scripts](scripts) | Dependency setup, supervised startup, reconciliation, rehearsal, evaluation, trial ledger, replay export |
+| [scripts](scripts) | Dependency setup, supervised startup, reconciliation, rehearsal, evaluation, trial ledger, replay export, live repair service |
+| [deploy](deploy) | Runbook and service files for hosting the live repair service |
 
 `make check` runs Python lint/format/type checks and tests, fixture and evaluation-corpus provenance, storefront lint/type/build, runner type/build/unit tests, Inspector type/build, and Python distribution builds. `make browser` runs Inspector and storefront browser regressions; `make integration` requires actual isolated Chromium and cgroup checks; `make evaluate` runs the evaluation. See the service documentation for runtime integration verification.
 

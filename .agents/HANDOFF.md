@@ -1,6 +1,16 @@
 # Agent handoff state
 
-Updated October 28, 2026 (late evening). Latest: branch `FrankieBiz/judge-review-demo-polish` (worktree `jaeger`), pushed to `main`. The sections after this one describe the earlier `brittlestar` session and still hold.
+Updated October 29, 2026. Latest: branch `FrankieBiz/judge-review-demo-polish` (worktree `jaeger`), pushed to `main`. The sections after this one describe the earlier `brittlestar` session and still hold.
+
+## October 29: interactive judge experience (jaeger)
+
+Plan and API contract: `.agents/PLAN-live-demo.md`. Backend written by Codex `gpt-6.1-sol`, reviewed and extended by the coordinator.
+
+- **Judge page.** "Play the recorded Meta repair" animates job `3573b32b` at its recorded timing, with a five-step timeline and before/after reveals. "Break it yourself" (`#live`) plants one of the ten corpus defects through the live service and streams events, the diff, the verdict, and a public tally. Deep links use `#run=<id>`. The service URL comes only from `<meta name="faultline-live-api">`, which is empty, so the panel is off and offers the recording. `?live=` accepts loopback URLs only, so nobody can link the official page to another server.
+- **Live service.** `services/repair-orchestrator/app/live_demo.py` and `scripts/start-live-demo.sh` wrap `evaluate_holdout` (new optional `on_event` hook). One FIFO worker; per-visitor hourly, queue, and daily limits; salted in-memory client hashes; persisted `runs/*.json` and `ledger.jsonl`; output allowlisted and redacted. Production settings: `LIVE_DEMO_REQUIRE_PROVIDER=meta` (refuses any other provider), `LIVE_DEMO_EXIT_ON_FAILURE=1` (self-restart after an infrastructure failure, and every 5 minutes while starting unavailable), `LIVE_DEMO_TRUST_PROXY=1` behind Caddy.
+- **Deploy kit.** `deploy/README.md` (Fedora 44 VM runbook, verified locally with the real unit, Caddy, and restarts, not yet on a cloud VM), `deploy/faultline-live.service`, `deploy/Caddyfile`, `deploy/bootstrap.sh`, `scripts/configure-live-demo.py` (+ `tests/test_configure_live_demo.py`).
+- **Verified locally.** A real DeepSeek-backed live run from the judge page planted `coupon_case_sensitive`, and the patch passed the gates and 27/27 checks in 42 s, labeled "not Meta". Mocked UI states: offline, unavailable, rate-limited, queue, retry, and deep link.
+- **Owner steps to go live:** create the VM, run `deploy/README.md`, put `META_API_KEY` in `~/.config/faultline/live.env`, run `scripts/configure-live-demo.py https://<host>`, and push. Keep it up through judging (Nov 4–8). Before deleting the VM, run `--clear` and push.
 
 ## October 28 judge review (jaeger)
 

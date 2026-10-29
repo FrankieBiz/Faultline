@@ -35,8 +35,8 @@ test:
 	$(ORCHESTRATOR_UV) pytest $(ORCHESTRATOR)/tests
 
 lint:
-	$(UV) ruff check --config $(BACKEND)/pyproject.toml $(BACKEND) shared fixtures tests
-	$(UV) ruff format --check --config $(BACKEND)/pyproject.toml $(BACKEND) shared fixtures tests
+	$(UV) ruff check --config $(BACKEND)/pyproject.toml $(BACKEND) shared fixtures tests scripts
+	$(UV) ruff format --check --config $(BACKEND)/pyproject.toml $(BACKEND) shared fixtures tests scripts
 	$(ORCHESTRATOR_UV) ruff check --config $(ORCHESTRATOR)/pyproject.toml $(ORCHESTRATOR)
 	$(ORCHESTRATOR_UV) ruff format --check --config $(ORCHESTRATOR)/pyproject.toml $(ORCHESTRATOR)
 
