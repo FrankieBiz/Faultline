@@ -1,10 +1,10 @@
 # FaultLine impact evidence
 
-Updated October 27, 2026. This page separates what has been measured from what only the builder and intended users can supply. The [score assessment](HACKATHON_SCORE_ASSESSMENT.md) withheld impact points for missing firsthand relevance, demand validation, measured benefit, and breadth.
+Updated October 28, 2026. This page separates what has been measured from what only the builder and intended users can supply. The [score assessment](HACKATHON_SCORE_ASSESSMENT.md) withheld impact points for missing firsthand relevance, demand validation, measured benefit, and breadth.
 
 ## Measured: what verification catches
 
-The [evaluation](EVALUATION.md) replays eight plausible repairs of the registered checkout defect. Each is judged by FaultLine's gates and, for comparison, by a naive symptom check: replay the failing request the storefront actually sends and accept HTTP 201.
+The [evaluation](EVALUATION.md) judges eleven authored repairs of the registered checkout defect: two correct, six plausible but wrong, and three that violate the patch policy. Each is judged by FaultLine's gates and, for comparison, by a naive symptom check: replay the failing request the storefront actually sends and accept HTTP 201. Out-of-policy patches are rejected before either check runs.
 
 | Patch class | Count | Symptom check accepted | FaultLine accepted |
 | --- | ---: | ---: | ---: |
@@ -16,7 +16,7 @@ Five of the six wrong patches make the reported 500 disappear. They still zero e
 
 This is a measured property of an authored corpus, not a sample of real-world model output or a production defect rate. It supports a narrow claim: a "the error went away" check is not evidence of a correct repair, and FaultLine's checks distinguish the two on these cases.
 
-The [unfamiliar-defect suite](EVALUATION.md#unfamiliar-defects) adds nine single-defect variants beyond the registered scenario. It measures whether a configured provider can repair defects it was not told about, under the same gates.
+The [unfamiliar-defect suite](EVALUATION.md#unfamiliar-defects) adds nine single-defect variants beyond the registered scenario. It measures whether a configured provider can repair defects it was not told about, under the same gates. So far it has been run only with the deterministic fallback and a labeled non-Meta model.
 
 ## Not yet supplied: firsthand relevance
 

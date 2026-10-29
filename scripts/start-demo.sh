@@ -26,12 +26,19 @@ import sys
 ports = [int(value) for value in sys.argv[1:]]
 if len(set(ports)) != 4 or any(not 1 <= port <= 65535 for port in ports):
     raise SystemExit('Demo ports must be distinct integers between 1 and 65535.')
-for port in ports:
+names = ['BUGGYSHOP_API_PORT', 'FAULTLINE_PORT', 'BUGGYSHOP_PORT', 'INSPECTOR_PORT']
+occupied = []
+for name, port in zip(names, ports):
     with socket.socket() as probe:
         try:
             probe.bind(('127.0.0.1', port))
         except OSError:
-            raise SystemExit(f'Port {port} is occupied. Stop its owner or use another workspace.') from None
+            occupied.append(f'{port} ({name})')
+if occupied:
+    raise SystemExit(
+        'Occupied: ' + ', '.join(occupied) + '. Stop their owners, or choose free ports, for example:\n'
+        '  BUGGYSHOP_API_PORT=8400 FAULTLINE_PORT=9400 BUGGYSHOP_PORT=3400 INSPECTOR_PORT=4400 ./scripts/start-demo.sh'
+    )
 PY
 for project in apps/buggyshop-frontend tools/browser-runner web/inspector-ui; do
   if [ ! -d "$project/node_modules" ]; then
@@ -87,4 +94,7 @@ for url in "http://127.0.0.1:$BACKEND_PORT/healthz" "http://127.0.0.1:$CONTROL_P
 done
 printf '\nFaultLine is running at http://127.0.0.1:%s\nStorefront: http://127.0.0.1:%s\n' "$UI_PORT" "$STORE_PORT"
 echo 'Readiness is shown in the Inspector. Ctrl+C stops this session; evidence is retained.'
+if [ "$UI_PORT" != 4000 ]; then
+  printf 'Rehearse against this stack with: FAULTLINE_INSPECTOR_URL=http://127.0.0.1:%s ./scripts/rehearse-demo.sh\n' "$UI_PORT"
+fi
 wait -n "${children[@]}"

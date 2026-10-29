@@ -1,6 +1,6 @@
 # FaultLine launch materials
 
-Drafts only. Publish after a live Meta repair, public-demo hardening, and a recorded video are verified. Do not expose the local control plane directly.
+Drafts only. A [retained Meta repair](evidence/2026-10-28-meta-replay-review.md) exists, and GitHub Pages serves the static replays at <https://frankiebiz.github.io/Faultline/> (checked October 28, 2026). Post only after the recorded video and the release requirements below are verified. Do not expose the local control plane directly.
 
 ## The shareable demonstration
 
@@ -32,9 +32,9 @@ First comment should explain the seeded scope, exact edit boundary, Linux proces
 
 - A readable video showing a live Meta attempt and matching retained evidence.
 - A confirmed firsthand problem statement from the builder and feedback from intended users.
-- Repeated trials with successes, rejections, and failures reported together.
+- Repeated Meta trials with successes, rejections, and failures reported together. *(Single retained Meta jobs exist; no trial series yet.)*
 - A second actual defect or holdout case, rather than more simulated scenarios. *(Holdout corpus and harness exist; a Meta run is pending.)*
-- A deployed public experience with an explicit read-only/replay mode or separately reviewed access and resource controls. *(A static replay export exists; review and publication are pending.)*
+- A deployed public experience with an explicit read-only/replay mode or separately reviewed access and resource controls. *(Static replays are published on GitHub Pages. The Meta replay's two trace archives contain workstation paths and await the owner's decision. The site's landing page must make only claims backed by recorded evidence.)*
 - Verified submission and social links, a source link, and accessible captions.
 
 No distribution, engagement count, or viral outcome is promised. These materials are prepared for owner review; no posts or submissions are sent automatically.

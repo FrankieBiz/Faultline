@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import AuthoredPreview from "@/components/AuthoredPreview";
-import { Artifacts, Assertions, Attempts, EventLog, Seam, Track } from "@/components/Evidence";
+import { Artifacts, Assertions, Attempts, EventLog, Pipeline, STEP_LABELS, Seam, currentStep } from "@/components/Evidence";
 import {
-  ApiError, OUTCOME, REASON, STAGE_LABEL, TERMINAL, api, limitsName, limitsStatusLabel, providerLabel, providerName,
+  ApiError, OUTCOME, REASON, TERMINAL, api, limitsName, limitsStatusLabel, providerLabel, providerName, providerNote,
   type Job, type JobDetail, type JobEvent, type Readiness, type Tone,
 } from "@/lib/faultline-api";
 
@@ -15,10 +15,20 @@ type Stream = "idle" | "live" | "reconnecting" | "closed";
 type Busy = "submit" | "cancel" | "reset" | null;
 
 const errorText = (e: unknown) => (e instanceof ApiError ? e.message : "Unexpected client error.");
-const newKey = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+// The controller requires a UUID. randomUUID exists only in secure contexts (not plain http on a LAN IP),
+// so build an RFC 4122 v4 UUID from getRandomValues, which is available everywhere.
+const newKey = () => {
+  if (typeof globalThis.crypto.randomUUID === "function") return globalThis.crypto.randomUUID();
+  const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+};
 
 export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) {
   const resultRef = useRef<HTMLElement>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
   const scrollToResult = useRef(false);
   const [readiness, setReadiness] = useState<Readiness | null>(null);
   const [readinessError, setReadinessError] = useState<string | null>(null);
@@ -105,6 +115,8 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
     let cursor = 0;
     let retries = 0;
+    let polling = false;
+    let lastStage: string | null = null;
 
     const stop = () => {
       stopped = true;
@@ -124,6 +136,14 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
           cursor = Math.max(cursor, event.sequence);
           retries = 0;
           mergeEvents([event]);
+          // A new stage means a new recorded result; read it now instead of waiting for the next poll.
+          if (event.stage !== lastStage) {
+            lastStage = event.stage;
+            if (!polling && !stopped) {
+              clearTimeout(pollTimer);
+              pollTimer = setTimeout(poll, 50);
+            }
+          }
         } catch {}
       });
       source.onerror = () => {
@@ -135,6 +155,7 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
     };
 
     const poll = async () => {
+      polling = true;
       try {
         const next = await api<JobDetail>(path);
         if (stopped) return;
@@ -153,8 +174,10 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
       } catch (e) {
         if (stopped) return;
         setSyncError(errorText(e));
+      } finally {
+        polling = false;
       }
-      pollTimer = setTimeout(poll, POLL_MS);
+      if (!stopped) pollTimer = setTimeout(poll, POLL_MS);
     };
 
     void poll();
@@ -164,6 +187,8 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
   useEffect(() => {
     if (detail && scrollToResult.current && resultRef.current) {
       resultRef.current.scrollIntoView({ behavior: "auto", block: "start" });
+      // The run button is disabled while a job runs; keep keyboard and screen-reader focus on the result.
+      headingRef.current?.focus({ preventScroll: true });
       scrollToResult.current = false;
     }
   }, [detail]);
@@ -242,6 +267,13 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
     ? { tone: "warn" as Tone, title: "Unverified result", detail: "This record does not establish a failed isolated baseline, passing candidate, and successful cleanup. Run a new job to collect current evidence." }
     : job?.outcome ? OUTCOME[job.outcome] : null;
 
+  // Provider identity for this job comes from the recorded response, never from current readiness.
+  const sourced = detail?.attempts.findLast((a) => typeof a.validation_result?.provider === "string" && typeof a.validation_result?.model === "string");
+  const jobProvider = sourced ? String(sourced.validation_result?.provider) : null;
+  const jobSource = sourced ? providerName(String(sourced.validation_result?.provider), String(sourced.validation_result?.model)) : null;
+  const readinessNote = readiness?.model ? providerNote(readiness.model.provider) : null;
+  const readinessSourceTone: Tone = !readiness?.model ? "idle" : readiness.model.provider === "meta" && readiness.model.available ? "idle" : "warn";
+
   const status = readiness?.status;
   const gate =
     status === "ready" ? null
@@ -278,18 +310,23 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
               </button>}
               {status === "detect_only" && !running && <button type="button" className="btn" onClick={() => start("detect")} disabled={busy !== null}>Run detection only</button>}
             </div>
-            <p className="provider-line">{readiness?.model?.provider === "deterministic" && readiness.model.available
-              ? "Demo mode: preset fix (Deterministic fallback); no model call."
-              : readiness ? providerLabel(readiness.model) : "Checking repair provider…"}</p>
+            <p className="source-line" data-tone={readinessSourceTone}>
+              <span className="source-key">Patch source</span>
+              <span>{readiness ? providerLabel(readiness.model) : readinessError ? "Unknown until the orchestrator responds" : "Checking repair provider…"}</span>
+              {readinessNote && <span className="source-note">{readinessNote}</span>}
+            </p>
             {gate && <p id="gate" className="gate" role="status">{gate}</p>}
+            {(readinessError || status === "blocked") && (
+              <button type="button" className="btn quiet retry" onClick={refreshReadiness} disabled={busy !== null}>Check again</button>
+            )}
             {notice && <p className="notice" data-tone={notice.tone} role="alert">{notice.text}</p>}
           </div>
           <aside className="how-it-works" aria-label="What happens during the demo">
             <h2>What happens</h2>
             <ol>
-              <li><span>1</span><div><strong>See the failure</strong><p>A browser tries the broken checkout.</p></div></li>
-              <li><span>2</span><div><strong>Propose a fix</strong><p>A change is prepared for the checkout.</p></div></li>
-              <li><span>3</span><div><strong>Check the result</strong><p>Independent tests check the candidate and related checkout behavior.</p></div></li>
+              <li><span>1</span><div><strong>Reproduce the failure</strong><p>A fresh, isolated browser places the order without a coupon and records the crash.</p></div></li>
+              <li><span>2</span><div><strong>Propose and gate a patch</strong><p>The repair provider returns a one-file diff. Policy gates reject unsafe or malformed changes before anything runs.</p></div></li>
+              <li><span>3</span><div><strong>Verify the candidate</strong><p>The patched copy reruns the checkout plus pricing and coupon checks. Evidence is kept for download.</p></div></li>
             </ol>
           </aside>
         </section>
@@ -302,17 +339,26 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
           <section className="job" ref={resultRef} aria-labelledby="job-h">
             <div className="result-heading">
               <p className="result-kicker">{pastRun ? "Past run" : running ? "Live demo" : "Run result"}</p>
-              <h2 id="job-h" aria-live="polite">{outcome?.title ?? `Running: ${STAGE_LABEL[job.stage]}`}</h2>
+              <h2 id="job-h" ref={headingRef} tabIndex={-1} aria-live="polite">{outcome?.title ?? `Running: ${STEP_LABELS[currentStep(job, events)]}`}</h2>
               <p className="lede">{verified
                 ? `The original checkout failed. The proposed fix passed ${verification?.report.assertions.filter((a) => a.passed).length} of ${verification?.report.assertions.length} checks, including checkout and pricing.`
                 : outcome?.detail ?? "FaultLine is working through the checkout. This page updates automatically."}</p>
+              {jobSource && jobProvider && (
+                <p className="source-line" data-tone={jobProvider === "meta" ? "idle" : "warn"}>
+                  <span className="source-key">Patch source</span>
+                  <span>{jobSource}</span>
+                  {providerNote(jobProvider) && <span className="source-note">{providerNote(jobProvider)}</span>}
+                </p>
+              )}
               {job.repair_block_reason && <p className="muted">Repair blocked: <code>{job.repair_block_reason}</code></p>}
               {job.error_details && <p className="muted">Error detail: <code>{JSON.stringify(job.error_details).slice(0, 240)}</code></p>}
               {syncError && <p className="notice" role="status">Updates interrupted: {syncError} Retrying.</p>}
             </div>
-            {running && <Track job={job} events={events} />}
+            <Pipeline detail={detail} events={events} verification={verification} verified={verified} />
             <Seam baseline={detail.baseline} verification={verification} verified={verified}
+              step={running ? currentStep(job, events) : null}
               attemptNumber={verifiedAttempt?.attempt_number ?? null} artifacts={detail.artifacts} />
+            <Attempts attempts={detail.attempts} terminal={terminal} />
             <Artifacts artifacts={detail.artifacts} executions={detail.executions} attempts={detail.attempts} />
             <details className="technical-details">
               <summary>Explore the full run details</summary>
@@ -326,8 +372,6 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
               {[detail.baseline, verification].filter((run) => run !== null).map((run) => (
                 <p className="muted" key={run.report.execution_id}>{run.phase === "baseline" ? "Before" : "Candidate"}: {run.runtime_kind === "isolated-browser" ? "Isolated browser" : "Unverified runtime"} · {limitsName(run.resource_limits)} · {Math.round(run.report.duration_ms)} ms · snapshot <code>{run.candidate_snapshot_sha256.slice(0, 12)}</code></p>
               ))}
-              {!running && <Track job={job} events={events} />}
-              <Attempts attempts={detail.attempts} terminal={terminal} />
               <Assertions runs={[
                 ...(detail.baseline ? [{ label: "Baseline", run: detail.baseline }] : []),
                 ...(verification ? [{ label: `Verification, attempt ${verifiedAttempt?.attempt_number ?? "?"}`, run: verification }] : []),
@@ -345,11 +389,11 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
         </details>
 
         <details className="history block">
-          <summary>Past runs · {history.length} recent runs</summary>
+          <summary>Past runs · {history.length} recent {history.length === 1 ? "run" : "runs"}</summary>
           {historyError && <p role="status">{historyError}</p>}
           {history.length === 0 ? <p className="muted">No past runs yet.</p> : <ul className="rows">
             {history.map((entry) => <li key={entry.id}>
-              <button type="button" className="btn quiet" disabled={running || entry.id === jobId} onClick={() => follow(entry.id, true)} aria-label={`Inspect job ${entry.id.slice(0, 8)}`}>
+              <button type="button" className="btn quiet" disabled={running || entry.id === jobId} onClick={() => { scrollToResult.current = true; follow(entry.id, true); }} aria-label={`Inspect job ${entry.id.slice(0, 8)}`}>
                 {entry.id.slice(0, 8)}{entry.id === jobId ? " · selected" : ""}
               </button>
               <time dateTime={entry.created_at}>{new Date(entry.created_at).toLocaleString()}</time>

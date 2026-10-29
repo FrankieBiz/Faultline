@@ -52,6 +52,7 @@ Exit codes: `0` passed, `1` assertion failed, `2` runner/infrastructure error, `
 
 - `npm run check`: typecheck, build, and pure unit tests (`--project=unit`, no browser).
 - `npm run test:e2e`: live run against `BUGGYSHOP_BASE_URL` (default `http://127.0.0.1:3000`). Set `FAULTLINE_EXPECTED_OUTCOME=assertion_failed` to confirm the seeded defect reproduces, and `FAULTLINE_COUPON` to enter a coupon.
+- `npm run test:inspector` and `npm run test:storefront` (both run by `make browser`): browser regressions against production builds of the Inspector (port 4100) and storefront (port 3100), which Playwright starts.
 
 ## Contract status
 

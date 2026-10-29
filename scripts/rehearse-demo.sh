@@ -20,17 +20,21 @@ key=$(uv run --project apps/buggyshop-backend --python 3.13 --locked python -c '
 created=$(request -X POST "$API/jobs" -H 'Content-Type: application/json' -d "{\"scenario_id\":\"scripted_checkout_repair\",\"mode\":\"repair\",\"idempotency_key\":\"$key\"}")
 job_id=$(jq -er '.job_id' <<<"$created")
 started=$SECONDS
+last=''
 while (( SECONDS - started < 190 )); do
   detail=$(request "$API/jobs/$job_id")
   state=$(jq -r '.job.state' <<<"$detail")
-  jq -r '"\(.job.state) / \(.job.stage) / \(.job.outcome // "pending")"' <<<"$detail"
+  progress=$(jq -r '"\(.job.state) / \(.job.stage) / \(.job.outcome // "pending")"' <<<"$detail")
+  if [ "$progress" != "$last" ]; then echo "$progress"; last=$progress; fi
   case "$state" in
     succeeded|failed|cancelled|interrupted)
       if ! jq -e '.job.state == "succeeded" and .job.outcome == "verified" and .job.cleanup_status == "succeeded" and (.baseline.report.verdict == "failed") and ([.executions[] | select(.phase == "verification") | .report | select(.verdict == "passed" and (.assertions | length > 0) and (.assertions | all(.passed)))] | length > 0)' >/dev/null <<<"$detail"; then
         echo "Rehearsal failed; inspect job $job_id in the Inspector." >&2
         exit 1
       fi
-      jq '{job: .job.id, outcome: .job.outcome, cleanup: .job.cleanup_status, provider: .attempts[-1].validation_result.provider, model: .attempts[-1].validation_result.model, diff: .attempts[-1].parsed_diff, assertions: [.executions[] | select(.phase == "verification") | .report.assertions | length]}' <<<"$detail"
+      jq '{job: .job.id, outcome: .job.outcome, cleanup: .job.cleanup_status, provider: .attempts[-1].validation_result.provider, model: .attempts[-1].validation_result.model, attempts: (.attempts | length), assertions: [.executions[] | select(.phase == "verification") | .report.assertions | length]}' <<<"$detail"
+      echo 'Verified candidate diff:'
+      jq -r '.attempts[-1].parsed_diff' <<<"$detail"
       echo "Candidate verified in $((SECONDS - started))s. The production fixture remains seeded."
       exit 0
       ;;

@@ -30,7 +30,7 @@ The controller uses monotonic budgets: baseline/preparation 20 seconds, generati
 
 Reports contain actual observed verdicts and assertions. Artifacts are hashed, bounded, registered, and served as private inert downloads. SSE events support replay cursors. Cancellation and controller restart have distinct terminal states. A job only earns `outcome=verified` when verification and cleanup both succeed.
 
-The deterministic provider is an explicitly identified local workflow check. Hosted Meta evidence must include the recorded provider/model, actual generation usage if supplied, baseline, candidate verification, and cleanup. Unknown token counts remain unknown.
+The deterministic provider is an explicitly identified local workflow check. Hosted Meta evidence must include the recorded provider/model, actual generation usage if supplied, baseline, candidate verification, and cleanup. Unknown token counts remain unknown. The retained Meta controller repairs meet that standard; see their [provenance review](evidence/2026-10-28-meta-replay-review.md). Each bundle digest is a checksum, not a signature.
 
 ## Scope
 

@@ -8,7 +8,8 @@ FRONTEND := apps/buggyshop-frontend
 RUNNER := tools/browser-runner
 INSPECTOR := web/inspector-ui
 
-check: lint typecheck test provenance frontend runner inspector build
+# Tests follow the storefront and runner builds; isolated-runtime tests need both.
+check: lint typecheck provenance frontend runner inspector test build
 
 setup:
 	./scripts/setup.sh

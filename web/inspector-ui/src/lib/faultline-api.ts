@@ -76,7 +76,7 @@ export interface Execution {
     execution_id: string;
     verdict: "passed" | "failed" | "error" | "timed_out";
     duration_ms: number;
-    observations: { id: string; kind: string; message: string }[];
+    observations: { id: string; kind: string; message: string; source?: string; data?: Record<string, unknown> | null }[];
     assertions: { id: string; passed: boolean; expected: string; observed: string }[];
   };
 }
@@ -150,6 +150,13 @@ export function providerName(provider: string, model: string): string {
   if (provider === "local") return `Local model endpoint · ${model} · not a Meta-hosted call`;
   if (provider === "openai-compatible") return `OpenAI-compatible endpoint · ${model} · not a Meta-hosted call`;
   return `${provider} · ${model}`;
+}
+
+/** Plain-language caveat shown next to any provider that is not the Meta Model API. */
+export function providerNote(provider: string): string | null {
+  if (provider === "deterministic") return "Preset fix for local verification; not a Meta model trial.";
+  if (provider === "meta") return null;
+  return "Not a Meta model trial.";
 }
 
 export function providerLabel(probe: Probe | null): string {

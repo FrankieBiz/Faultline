@@ -1,8 +1,23 @@
 # Agent handoff state
 
-Updated October 28, 2026. Branch: `FrankieBiz/fix-hackathon-assessment-issues` (worktree `brittlestar`), merged to `main`.
+Updated October 28, 2026 (late evening). Latest: branch `FrankieBiz/judge-review-demo-polish` (worktree `jaeger`), pushed to `main`. The sections after this one describe the earlier `brittlestar` session and still hold.
 
-## Objective and completed changes
+## October 28 judge review (jaeger)
+
+A judge-perspective review of every public surface, then fixes.
+
+- **Public judge page rebuilt.** `docs/index.html` is live at https://frankiebiz.github.io/Faultline/ (Pages builds from `main:/docs`, so pushing to `main` publishes it). The previous version had self-assigned "Pinnacle" rubric scores, a "$4.8M" loss figure, wrong token and latency numbers, invented assertion IDs and order ID, invented corpus diffs, and "cryptographic" wording. The new page uses only recorded data: the Meta replay `3573b32b` (1,569 + 1,685 tokens, 6,863 ms, 44/44, 13.0 s), real corpus diffs and results from `fixtures/evaluation/` and `docs/evidence/2026-10-28-evaluation-deterministic.json`, a per-criterion evidence map with no scores, and an honest limits section. Its patch explorer is plain inline JS (CSP allows inline only). If corpus or replay data changes, update the `PATCHES` array and the facts block by hand.
+- **Inspector.** The result now shows a five-step recorded pipeline, a "Patch source" line (deterministic is labeled "not a Meta model trial"), and the diff open by default. Disclosure chevrons, live stage sync, past-run focus, and a "Check again" recovery were added. The proxy now rejects any Host other than 127.0.0.1, localhost, or `*.orca.localhost` (DNS rebinding). The idempotency-key fallback is now a real UUID v4.
+- **Controller robustness.** Trusted failures are logged, and `error_details.reason` carries the fixed reason code. Chromium and profile preflight timeouts withhold readiness instead of crashing startup. Reconcile and reset use a 45 s `preflight` budget. Oversized hunk numbers are policy rejections, not `ValueError`. An absolute `PLAYWRIGHT_BROWSERS_PATH` is honored.
+- **Judge friction.** `start-demo.sh` lists every occupied port with a working alternate-port example and prints the matching `FAULTLINE_INSPECTOR_URL` rehearsal command. `rehearse-demo.sh` prints only state changes and the raw diff. `make check` builds before testing, so isolated-runtime tests run instead of skipping. The README links the judge page and rendered replays, requires a full clone (the fixture is pinned in history), and notes that the Fedora Playwright warning is harmless. Root `a.md` moved to `docs/evidence/2026-10-28-judge-walkthrough-audit.md`.
+- **Docs.** All claims were audited against evidence; 116 links resolve. The Devpost draft was rewritten with owner TODOs. The brief now lists Fireworks at $100 (official page rechecked October 28). `docs/assets/inspector.png` was re-captured from the new UI with a real deterministic run.
+- **Not done.** `.env.example` could not be created because a permission rule denies `.env*` writes; the variables are documented in `services/repair-orchestrator/README.md`.
+
+Verification on the final tree: `make check` exit 0 (239 backend, 323 orchestrator with 0 skipped, 81 runner unit, lint, strict types, builds, provenance). `make browser`: 18 Inspector and 1 storefront passed. `make integration`: 13 passed. A live deterministic run through the Inspector UI and `rehearse-demo.sh` both verified 44/44 with cleanup.
+
+Owner-only items remain: video, firsthand account, user conversations, repeated Meta trials and a Meta corpus run (`META_API_KEY`), and whether the replay's published trace archives (workstation paths) stay public. The `petrel` and `sander` worktree databases hold unretained Meta jobs. Those after the isolated-runtime commit could be exported and reviewed as a real trial series; none is cited yet.
+
+## Objective and completed changes (brittlestar)
 
 Acted on every engineering gap in `docs/HACKATHON_SCORE_ASSESSMENT.md`. The 55/100 record is unchanged; its new "Remediation since this assessment" section maps each withheld reason to the action and evidence. No new score was self-assigned.
 

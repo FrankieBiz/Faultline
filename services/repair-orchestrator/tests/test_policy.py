@@ -224,6 +224,8 @@ def test_recount_restores_blank_context_and_drops_trailing_blank_lines(
         # A malformed header or non-diff body line is left for the parser to reject.
         lambda diff: diff.replace("@@ -40,7 +40,7 @@", "@@ forty @@"),
         lambda diff: diff.replace("     total = subtotal", "*    total = subtotal"),
+        # A line number too long for int() is rejected as malformed, not raised.
+        lambda diff: diff.replace("@@ -40,7 +40,7 @@", f"@@ -{'9' * 5000},7 +40,7 @@"),
     ],
 )
 def test_recount_never_alters_content_or_invents_matches(

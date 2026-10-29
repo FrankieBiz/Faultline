@@ -23,20 +23,35 @@ function isOrcaPreviewOrigin(origin: string, authority: string, site: string | n
   }
 }
 
+// The Inspector is a loopback tool. Accepting any other Host would let a
+// DNS-rebound page (for example evil.example resolving to 127.0.0.1) pass the
+// same-origin check below and use the controller credential.
+function isLocalHost(authority: string): boolean {
+  try {
+    const { hostname } = new URL(`http://${authority}`);
+    return hostname === "127.0.0.1" || hostname === "localhost" || hostname.endsWith(".orca.localhost");
+  } catch {
+    return false;
+  }
+}
+
 async function proxy(request: NextRequest, context: Context) {
   const { path } = await context.params;
   const target = path.join("/");
   if (!(request.method === "GET" ? READ_PATH : WRITE_PATH).test(target)) {
     return NextResponse.json({ error: { message: "Unknown controller route." } }, { status: 404 });
   }
+  // Next's internal URL can use localhost even when the browser requested
+  // 127.0.0.1. Host is the actual requested authority; do not trust forwarded hosts.
+  const authority = request.headers.get("host") ?? request.nextUrl.host;
+  if (!isLocalHost(authority)) {
+    return NextResponse.json({ error: { message: "Open the Inspector through 127.0.0.1 or localhost." } }, { status: 403 });
+  }
   // The controller credential stays server-side. Cross-site pages cannot use it
   // to submit jobs through this local UI, including form POSTs without CORS.
   if (request.method === "POST") {
     const origin = request.headers.get("origin");
-    // Next's internal URL can use localhost even when the browser requested
-    // 127.0.0.1. Host is the actual requested authority; do not trust forwarded
-    // hosts or accept a different loopback origin, scheme, or port.
-    const authority = request.headers.get("host") ?? request.nextUrl.host;
+    // Do not accept a different loopback origin, scheme, or port.
     const expectedOrigin = `${request.nextUrl.protocol}//${authority}`;
     const site = request.headers.get("sec-fetch-site");
     if ((origin && origin !== expectedOrigin && !isOrcaPreviewOrigin(origin, authority, site)) || site === "cross-site") {

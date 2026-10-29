@@ -6,13 +6,15 @@ FaultLine is a controlled source-repair prototype for the Meta Global AI Develop
 
 The result is a **verified candidate with downloadable evidence**. FaultLine does not deploy to production, route live traffic, or claim compliance certification.
 
-![Actual Inspector showing a failed baseline and 44 passing candidate assertions in explicitly labeled deterministic mode](docs/assets/inspector.png)
+**Judges: start at the [FaultLine judge page](https://frankiebiz.github.io/Faultline/).** No install is needed. It shows the recorded `muse-spark-1.3` repair side by side, lets you browse the recorded results of eleven candidate patches under a naive check and under FaultLine's gates, and links to [replays](https://frankiebiz.github.io/Faultline/replay/3573b32b-09bd-4f14-897d-cf6dccf9b118/) that open in any browser.
+
+![Inspector after a local run: the failed baseline, the five recorded steps, and 44 of 44 candidate checks passing, with the patch source labeled as the deterministic fallback and not a Meta trial](docs/assets/inspector.png)
 
 Recorded local workflow evidence; this screenshot does not represent a live Meta trial.
 
 ## Run it
 
-Requires Linux with working unprivileged user namespaces and Bubblewrap (`bwrap`), cgroup v2 with a systemd user session (run from a desktop terminal or user service, not a bare SSH login), Git, Python 3.13 via `uv`, and Node.js 24+. On Fedora, if Bubblewrap is missing: `sudo dnf install bubblewrap`. The controller fails closed when its execution requirements, including enforced aggregate resource limits, are unavailable.
+Requires Linux with working unprivileged user namespaces and Bubblewrap (`bwrap`), cgroup v2 with a systemd user session (run from a desktop terminal or user service, not a bare SSH login), Git, Python 3.13 via `uv`, and Node.js 24+. On Fedora, if Bubblewrap is missing: `sudo dnf install bubblewrap`. The controller fails closed when its execution requirements, including enforced aggregate resource limits, are unavailable. Use a full `git clone`, not `--depth 1` or a ZIP download: the seeded fixture is pinned to a commit in this repository's history.
 
 ```bash
 make setup
@@ -20,7 +22,16 @@ make check
 ./scripts/start-demo.sh
 ```
 
-Open [the Inspector](http://127.0.0.1:4000). Alternate ports can be set with `BUGGYSHOP_API_PORT`, `FAULTLINE_PORT`, `BUGGYSHOP_PORT`, and `INSPECTOR_PORT`. The launcher binds services to loopback, generates a session control credential if needed, and retains job history. It reports occupied ports instead of killing their owners. Ctrl+C stops its owned processes.
+Open [the Inspector](http://127.0.0.1:4000) and choose **Run the demo**. The launcher binds services to loopback, generates a session control credential if needed, and retains job history. It reports occupied ports instead of killing their owners. Ctrl+C stops its owned processes.
+
+If any default port is taken, choose others and point the rehearsal at the matching Inspector:
+
+```bash
+BUGGYSHOP_API_PORT=8400 FAULTLINE_PORT=9400 BUGGYSHOP_PORT=3400 INSPECTOR_PORT=4400 ./scripts/start-demo.sh
+FAULTLINE_INSPECTOR_URL=http://127.0.0.1:4400 ./scripts/rehearse-demo.sh
+```
+
+On Fedora, `make setup` prints Playwright's "OS is not officially supported" warning and downloads its Ubuntu fallback Chromium build. The fallback works; the warning is harmless.
 
 | Service | URL |
 | --- | --- |
@@ -67,8 +78,8 @@ These results describe an authored corpus for one checkout route, not arbitrary 
 ## Evidence tools
 
 - `scripts/trial_ledger.py` runs repeated controller jobs and records provider, outcomes, attempts, tokens, latency, assertions, and cleanup together. `--require-provider meta` refuses to record anything else as a Meta trial.
-- [Retained Meta repair replay](docs/replay/3573b32b-09bd-4f14-897d-cf6dccf9b118/index.html): controller-recorded `muse-spark-1.3` response, failed baseline, 44 passing candidate assertions, and cleanup. [Provenance review](docs/evidence/2026-10-28-meta-replay-review.md) confirms checksums and identifies workstation paths in its trace archives; review those archives before further publication.
-- `scripts/export_replay.py` exports a finished job as a static, read-only, checksummed replay with no scripts or external requests. A reviewed example from a deterministic rehearsal is in [`docs/replay/`](docs/replay/83d1c403-9f6a-4d69-9a46-e39c83ac2471/index.html); its trace archives are omitted because they contain local file paths.
+- [Retained Meta repair replay](https://frankiebiz.github.io/Faultline/replay/3573b32b-09bd-4f14-897d-cf6dccf9b118/) ([files](docs/replay/3573b32b-09bd-4f14-897d-cf6dccf9b118)): controller-recorded `muse-spark-1.3` response, failed baseline, 44 passing candidate assertions, and cleanup. [Provenance review](docs/evidence/2026-10-28-meta-replay-review.md) confirms checksums and identifies workstation paths in its trace archives. A [second Meta replay](https://frankiebiz.github.io/Faultline/replay/82ac2dcc-e7f9-4ea7-9187-a0c0d79d8ba3/) records a rejected first proposal and a verified retry.
+- `scripts/export_replay.py` exports a finished job as a static, read-only, checksummed replay with no scripts or external requests. A [reviewed example from a deterministic rehearsal](https://frankiebiz.github.io/Faultline/replay/83d1c403-9f6a-4d69-9a46-e39c83ac2471/) is in [`docs/replay/`](docs/replay/83d1c403-9f6a-4d69-9a46-e39c83ac2471); its trace archives are omitted because they contain local file paths.
 - Each verified job also stores a checksummed evidence bundle and review summary; `tools/verify_bundle.py` re-checks a bundle and its exported artifacts offline. The digest is a checksum, not a signature.
 - `scripts/demo-chaos.sh` is a terminal walkthrough that prints only what it measures in that run: the containment probe, the registered defect repaired under the gates, and wrong repairs rejected.
 - Recorded evidence from this review is in [`docs/evidence/`](docs/evidence/).

@@ -15,7 +15,7 @@ TARGET_FILE = "apps/buggyshop-backend/app/routes/checkout.py"
 MAX_DIFF_BYTES = 16 * 1024
 MAX_SOURCE_BYTES = 32 * 1024
 MAX_CHANGED_LINES = 100
-_HUNK = re.compile(r"@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(?: [^\r\n]*)?\n?\Z")
+_HUNK = re.compile(r"@@ -(\d{1,9})(?:,(\d{1,9}))? \+(\d{1,9})(?:,(\d{1,9}))? @@(?: [^\r\n]*)?\n?\Z")
 _INDEX = re.compile(r"index [0-9a-f]{7,64}\.\.[0-9a-f]{7,64}(?: 100644)?\n?\Z")
 _IMPORTS = {
     "typing": frozenset({"cast"}),
@@ -192,7 +192,7 @@ def parse_unified_diff(diff: str, source: str) -> ParsedPatch:
     return ParsedPatch(TARGET_FILE, tuple(hunks), candidate)
 
 
-_LOOSE_HUNK = re.compile(r"@@ -(\d+)(?:,\d+)? \+\d+(?:,\d+)? @@( [^\r\n]*)?\n?\Z")
+_LOOSE_HUNK = re.compile(r"@@ -(\d{1,9})(?:,\d{1,9})? \+\d{1,9}(?:,\d{1,9})? @@( [^\r\n]*)?\n?\Z")
 
 
 def recount_unified_diff(diff: str, source: str) -> str:

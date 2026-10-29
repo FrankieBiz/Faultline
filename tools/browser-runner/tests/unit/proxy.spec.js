@@ -116,6 +116,31 @@ for (const [origin, site] of [
   });
 }
 
+// DNS rebinding: a page on evil.example rebound to 127.0.0.1 is "same-origin" with
+// itself, so only the Host allowlist keeps the controller credential out of reach.
+for (const host of [
+  "evil.example:4101", "127.0.0.1.evil.example:4101", "localhost.evil.example", "orca.localhost.evil.example",
+  "127.0.0.1:4101@evil.example", "evil.example",
+]) {
+  for (const [method, path] of [["GET", ["jobs"]], ["GET", ["artifacts", id]], ["GET", ["jobs", id, "events"]], ["POST", ["reset"]], ["POST", ["jobs"]]]) {
+    test(`proxy rejects non-loopback Host ${host} for ${method} ${path.join("/")}`, async () => {
+      globalThis.fetch = async () => { throw new Error("must not contact upstream"); };
+      const headers = { host, ...(method === "POST" ? { origin: `http://${host}`, "sec-fetch-site": "same-origin" } : {}) };
+      const request = new NextRequest(`http://localhost:4101/api/faultline/${path.join("/")}`, { method, headers });
+      const response = await (method === "GET" ? GET : POST)(request, context(...path));
+      expect(response.status).toBe(403);
+    });
+  }
+}
+
+for (const host of ["127.0.0.1:4101", "localhost:4101", "judge-demo.orca.localhost:41489"]) {
+  test(`proxy serves reads for loopback Host ${host}`, async () => {
+    globalThis.fetch = async () => Response.json({ jobs: [] });
+    const request = new NextRequest("http://localhost:4101/api/faultline/jobs", { headers: { host } });
+    expect((await GET(request, context("jobs"))).status).toBe(200);
+  });
+}
+
 test("client displays actionable message-only proxy errors", async () => {
   globalThis.fetch = async () => Response.json({ error: { message: "Set FAULTLINE_CONTROL_TOKEN on the Inspector server." } }, { status: 503 });
   await expect(api("jobs")).rejects.toThrow("Set FAULTLINE_CONTROL_TOKEN on the Inspector server.");

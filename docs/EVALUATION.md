@@ -63,7 +63,7 @@ The symptom check accepted 5 of 6 wrong patches. FaultLine accepted none, accept
 | --- | --- | ---: | ---: | ---: | ---: | --- |
 | Deterministic fallback (no model call) | `deterministic_fallback_no_model_call` | 10 | 1 | 1 | 0 | [summary](evidence/2026-10-28-evaluation-deterministic.md) |
 | DeepSeek `deepseek-v4-pro` (not Meta), two trials | `openai_compatible_model_not_meta_hosted` | 20 | 18 | 17 | 1 | [summary](evidence/2026-10-28-evaluation-deepseek-v4-pro.md) |
-| Meta `muse-spark-1.3` | — | not run | — | — | — | requires `META_API_KEY` |
+| Meta `muse-spark-1.3` | — | not run | — | — | — | requires `META_API_KEY`; retained [single controller jobs](evidence/2026-10-28-meta-replay-review.md) are not a corpus run |
 
 The deterministic fallback knows only the registered defect. It reports `unsupported_fallback_source` for the other nine, as designed. Its row shows that the harness does not invent repairs.
 
@@ -72,11 +72,11 @@ DeepSeek repaired eight of the nine unfamiliar defects in both trials, and the r
 - **The gates rejected wrong model output.** In both trials, `order_wrong_namespace` first hit the 120-second provider timeout, and the second proposal still failed all ten successful-checkout checks. Neither patch was counted as a repair.
 - **Specific feedback enabled a repair.** In trial 2, the first proposal for `coupon_case_sensitive` miscopied the 64-character source hash. The adapter rejected it as `proposal_base_mismatch`, and the retry, told exactly that, was verified.
 - **Recounting mattered.** In 6 of the 18 verified runs, the model's diff declared wrong hunk line counts. Recounting fixed the metadata without touching content, and the strict policy then accepted the diff. Each record keeps the model's original diff.
-- **Usage.** The run made 23 model calls using 126,860 tokens, with a median generation time of 40.6 seconds. That exceeds the controller's 45-second per-attempt budget often enough that this model would need a longer budget for controller jobs.
+- **Usage.** The run made 23 model calls using 126,860 tokens, with a median generation time of 40.6 seconds. Ten of the 23 calls took longer than the controller's 45-second generation budget, so this model would need a longer budget for controller jobs.
 
 Two earlier complete development runs used intermediate code: one before hunk recounting, and one before proposal errors had specific codes. They verified 7 of 10 and 8 of 10. They are not reported as results because the code differed, and with this little data the differences between runs do not establish cause.
 
-**Why a non-Meta model appears here.** No Meta credential was configured during this review. A real model was needed to show that the harness, feedback loop, and gates behave correctly on live model output. The project's agent instructions permit DeepSeek for evaluation passes, and it was called with `META_REASONING_EFFORT=none`, `META_RESPONSE_FORMAT=json_object`, and `META_TIMEOUT_SECONDS=120`. Every record identifies it as `openai-compatible`. None of these results are Meta results or count toward the Meta tooling criterion.
+**Why a non-Meta model appears here.** No Meta credential was configured during this review. The retained Meta controller jobs were recorded later on October 28, and the corpus has not yet been run with Meta. A real model was needed to show that the harness, feedback loop, and gates behave correctly on live model output. The project's agent instructions permit DeepSeek for evaluation passes, and it was called with `META_REASONING_EFFORT=none`, `META_RESPONSE_FORMAT=json_object`, and `META_TIMEOUT_SECONDS=120`. Every record identifies it as `openai-compatible`. None of these results are Meta results or count toward the Meta tooling criterion.
 
 ## Reproduce
 

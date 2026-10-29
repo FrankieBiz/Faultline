@@ -242,8 +242,8 @@ A runtime implementation must:
   admission; reset retains all reports and artifacts.
 
 Snapshots are real detached worktrees from the fixture's pinned seed commit.
-Git performs `apply --check --index` and `apply --index`; exports come from the
-staged index. Only backend application Python files enter candidate snapshots.
+Git performs `apply --unidiff-zero --check --index` and `apply --unidiff-zero --index`;
+exports come from the staged index. Only backend application Python files enter candidate snapshots.
 The controller parses candidate ASTs; candidate imports run only in the restricted namespace.
 AST checks are bounded policy, not process isolation.
 
