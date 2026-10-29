@@ -1,5 +1,5 @@
 import {
-  STAGES, STAGE_LABEL, TERMINAL, limitsName, providerName,
+  STAGE_LABEL, TERMINAL, providerName,
   type Artifact, type Attempt, type Execution, type Job, type JobEvent, type Tone,
 } from "@/lib/faultline-api";
 
@@ -21,18 +21,20 @@ function failureSignal(x: Execution): string {
 
 export function Track({ job, events }: { job: Job; events: JobEvent[] }) {
   const terminal = TERMINAL.has(job.state);
+  const stages = [
+    { label: "Reproduce the failure", values: ["preparing", "baseline"] },
+    { label: "Propose a fix", values: ["diagnosing", "patch_validation", "activating"] },
+    { label: "Test the candidate", values: ["verification", "cleanup", "completed"] },
+  ];
   const reached = new Set<string>(events.map((e) => e.stage)).add(job.stage);
+  const current = stages.findIndex((stage) => stage.values.includes(job.stage));
   return (
-    <ol className="track" aria-label="Job stages">
-      {STAGES.map((stage) => {
-        const state =
-          !terminal && stage === job.stage ? "current" : reached.has(stage) ? "reached" : terminal ? "skipped" : "pending";
-        return (
-          <li key={stage} data-state={state} aria-current={state === "current" ? "step" : undefined}>
-            {STAGE_LABEL[stage]}
-            <span className="sr-only"> ({state === "skipped" ? "not reached" : state})</span>
-          </li>
-        );
+    <ol className="track" aria-label="Demo progress">
+      {stages.map((stage, index) => {
+        const state = !terminal && index === current ? "current" : stage.values.some((value) => reached.has(value)) ? "reached" : terminal ? "skipped" : "pending";
+        return <li key={stage.label} data-state={state} aria-current={state === "current" ? "step" : undefined}>
+          {stage.label}<span className="sr-only"> ({state === "skipped" ? "not reached" : state})</span>
+        </li>;
       })}
     </ol>
   );
@@ -48,14 +50,9 @@ function Side(props: { label: string; run: Execution | null; tone: Tone; empty: 
       {run ? (
         <>
           <p className="verdict">{VERDICT[run.report.verdict]}</p>
-          <p className="signal">
-            {run.report.verdict === "passed" ? `${passed} of ${assertions.length} assertions passed` : failureSignal(run)}
-          </p>
-          <p className="meta">
-            {run.runtime_kind === "isolated-browser" ? "Isolated browser" : "Unverified runtime"} ·{" "}
-            {limitsName(run.resource_limits)} ·{" "}
-            {Math.round(run.report.duration_ms)} ms · snapshot {run.candidate_snapshot_sha256.slice(0, 12)}
-          </p>
+          {run.report.verdict === "passed" ? <p className="signal">{passed} of {assertions.length} checks passed</p> : (
+            <details className="failure-detail"><summary>See what happened</summary><p className="signal">{failureSignal(run)}</p></details>
+          )}
           {shot && (
             // Shown only when the runner registered a screenshot; hidden if the bytes do not decode.
             // eslint-disable-next-line @next/next/no-img-element
@@ -87,10 +84,10 @@ export function Seam(props: {
   const afterTone: Tone = verified ? "ok" : !verification ? "idle" : verification.report.verdict === "passed" ? "warn" : "bad";
   return (
     <div className="seam" data-verified={verified}>
-      <Side label="Before · baseline run" run={baseline} tone={baseTone} empty="The baseline has not run yet." shot={shot(baseline)} />
+      <Side label="Before · broken checkout" run={baseline} tone={baseTone} empty="The baseline has not run yet." shot={shot(baseline)} />
       <div className="seam-rule" aria-hidden="true" />
       <Side
-        label={`After · verification${attemptNumber ? `, attempt ${attemptNumber}` : ""}`}
+        label={`After · tested fix${attemptNumber && attemptNumber > 1 ? `, attempt ${attemptNumber}` : ""}`}
         run={verification}
         tone={afterTone}
         empty="No patched candidate has been verified for this job."
@@ -232,7 +229,7 @@ export function Artifacts(props: { artifacts: Artifact[]; executions: Execution[
   };
   return (
     <section className="block" aria-labelledby="artifacts-h">
-      <h3 id="artifacts-h">Artifacts</h3>
+      <h3 id="artifacts-h">Evidence</h3>
       <p className="evidence-actions">
         {artifacts.filter((a) => a.role === "proof_bundle_md" || a.role === "proof_bundle").map((a) => (
           <a key={a.id} className="btn" href={artifactUrl(a.id)} download>{a.role === "proof_bundle_md" ? "Download review summary" : "Download evidence bundle"}</a>

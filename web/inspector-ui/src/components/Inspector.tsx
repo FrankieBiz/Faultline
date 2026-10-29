@@ -1,10 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import AuthoredPreview from "@/components/AuthoredPreview";
 import { Artifacts, Assertions, Attempts, EventLog, Seam, Track } from "@/components/Evidence";
 import {
-  ApiError, OUTCOME, REASON, STAGE_LABEL, TERMINAL, api, limitsStatusLabel, providerLabel, providerName,
+  ApiError, OUTCOME, REASON, STAGE_LABEL, TERMINAL, api, limitsName, limitsStatusLabel, providerLabel, providerName,
   type Job, type JobDetail, type JobEvent, type Readiness, type Tone,
 } from "@/lib/faultline-api";
 
@@ -18,8 +18,11 @@ const errorText = (e: unknown) => (e instanceof ApiError ? e.message : "Unexpect
 const newKey = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
 export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) {
+  const resultRef = useRef<HTMLElement>(null);
+  const scrollToResult = useRef(false);
   const [readiness, setReadiness] = useState<Readiness | null>(null);
   const [readinessError, setReadinessError] = useState<string | null>(null);
+  const [pastRun, setPastRun] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
   const [detail, setDetail] = useState<JobDetail | null>(null);
   const [events, setEvents] = useState<JobEvent[]>([]);
@@ -50,7 +53,8 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
     });
   }, []);
 
-  const follow = useCallback((id: string) => {
+  const follow = useCallback((id: string, past = false) => {
+    setPastRun(past);
     setDetail(null);
     setEvents([]);
     setStream("idle");
@@ -85,7 +89,7 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
     let live = true;
     void refreshReadiness();
     refreshHistory()
-      .then((jobs) => { if (live && jobs[0]) follow(jobs[0].id); })
+      .then((jobs) => { if (live && jobs[0] && !TERMINAL.has(jobs[0].state)) follow(jobs[0].id); })
       .catch((e) => { if (live) setNotice({ tone: "bad", text: errorText(e) }); })
       .finally(() => { if (live) setLoaded(true); });
     return () => { live = false; };
@@ -157,6 +161,13 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
     return stop;
   }, [jobId, mergeEvents, refreshReadiness, refreshHistory]);
 
+  useEffect(() => {
+    if (detail && scrollToResult.current && resultRef.current) {
+      resultRef.current.scrollIntoView({ behavior: "auto", block: "start" });
+      scrollToResult.current = false;
+    }
+  }, [detail]);
+
   const start = async (mode: "repair" | "detect") => {
     setBusy("submit");
     setNotice(null);
@@ -166,6 +177,7 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ scenario_id: SCENARIO_ID, idempotency_key: newKey(), mode }),
       });
+      scrollToResult.current = true;
       follow(accepted.job_id);
       if (mode === "repair" && accepted.effective_mode === "detect") {
         setNotice({
@@ -224,10 +236,10 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
   const verification = verifications.findLast((x) => x.attempt_id === latest?.id) ?? verifications.at(-1) ?? null;
   const verifiedAttempt = detail?.attempts.find((a) => a.id === verification?.attempt_id) ?? null;
   const evidenceVerified = verification?.runtime_kind === "isolated-browser" && detail?.baseline?.runtime_kind === "isolated-browser";
-  const verified = evidenceVerified && job?.state === "succeeded" && job.cleanup_status === "succeeded" && job.outcome === "verified" && verification?.report.verdict === "passed";
-  const legacy = job?.outcome === "verified" && !evidenceVerified;
+  const verified = evidenceVerified && detail?.baseline?.report.verdict === "failed" && job?.state === "succeeded" && job.cleanup_status === "succeeded" && job.outcome === "verified" && verification?.report.verdict === "passed";
+  const legacy = job?.outcome === "verified" && !verified;
   const outcome = legacy
-    ? { tone: "warn" as Tone, title: "Unverified historical result", detail: "This record predates isolated browser evidence. Its previous success label cannot establish that a repair was verified. Run a new job to collect current evidence." }
+    ? { tone: "warn" as Tone, title: "Unverified result", detail: "This record does not establish a failed isolated baseline, passing candidate, and successful cleanup. Run a new job to collect current evidence." }
     : job?.outcome ? OUTCOME[job.outcome] : null;
 
   const status = readiness?.status;
@@ -244,169 +256,118 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
       <header className="top">
         <div className="shell top-row">
           <span className="wordmark"><span aria-hidden="true" className="glyph" />FaultLine</span>
-          <dl className="strip" aria-label="Orchestrator readiness">
-            <div>
-              <dt>Orchestrator</dt>
-              <dd data-tone={status === "ready" ? "ok" : status === "detect_only" ? "warn" : readiness || readinessError ? "bad" : "idle"}>
-                {status?.replace("_", " ") ?? (readinessError ? "unavailable" : "checking")}
-              </dd>
-            </div>
-            <div>
-              <dt>Provider</dt>
-              <dd>{readiness ? providerLabel(readiness.model) : "unknown"}</dd>
-            </div>
-            <div>
-              <dt>Containment</dt>
-              <dd data-tone={readiness?.resource_limits?.enforcement_preflight === "passed" ? "ok" : readiness?.resource_limits ? "warn" : "idle"}>
-                {readiness ? limitsStatusLabel(readiness.resource_limits) : "unknown"}
-              </dd>
-            </div>
-          </dl>
+          <span className="readiness" data-tone={status === "ready" ? "ok" : status === "detect_only" ? "warn" : "idle"}>
+            {status === "ready" ? "Ready to run" : status === "detect_only" ? "Detection available" : status === "blocked" || readinessError ? "Needs attention" : "Checking setup…"}
+          </span>
         </div>
       </header>
 
       <main className="shell">
         <section className="intro" id="run" aria-labelledby="title">
-          <p className="eyebrow">BuggyShop · POST /api/checkout · apps/buggyshop-backend/app/routes/checkout.py</p>
-          <h1 id="title">A checkout crash, repaired with proof.</h1>
-          <p className="lede">
-            A real browser reproduces the failure. The repair provider proposes a bounded patch.
-            Independent checks verify the candidate. Inspect the browser evidence, regression results, and cleanup.
-          </p>
-          <ol className="journey" aria-label="Judge walkthrough">
-            <li><a href={storefrontUrl} target="_blank" rel="noreferrer">Open seeded storefront</a>: add a Trail Mug and checkout without a coupon to see the failure.</li>
-            <li>Run live repair here. The controller independently reproduces the failure and tests a patched candidate.</li>
-            <li>Compare the before/after evidence and download the review summary or complete job record.</li>
-          </ol>
-          <p className="scope">The candidate is verified in isolation. The storefront stays seeded for repeatable demonstrations. No production deployment occurs.</p>
-          <div className="actions">
-            <button
-              type="button"
-              className="btn primary"
-              onClick={() => start("repair")}
-              disabled={status !== "ready" || running || busy !== null}
-              aria-describedby={gate ? "gate" : undefined}
-            >
-              {busy === "submit" ? "Submitting…" : running ? "Job running…" : "Run live repair"}
-            </button>
-            {running && job && (
-              <button type="button" className="btn" onClick={cancel} disabled={busy !== null || job.cancel_requested}>
-                {job.cancel_requested ? "Cancellation requested" : "Cancel job"}
+          <div className="intro-copy">
+            <p className="intro-kicker">An interactive repair demonstration</p>
+            <h1 id="title">Watch FaultLine fix a broken checkout.</h1>
+            <p className="intro-description">A customer can’t place an order without a coupon. Watch FaultLine reproduce the crash, propose a fix, and test it against the checkout rules.</p>
+            <div className="actions">
+              <button type="button" className="btn primary run-button" onClick={() => start("repair")}
+                disabled={status !== "ready" || running || busy !== null} aria-describedby={gate ? "gate" : undefined}>
+                {busy === "submit" ? "Starting…" : running ? "Repair in progress…" : job ? "Run it again" : "Run the demo"}
               </button>
-            )}
-            {status === "detect_only" && !running && (
-              <button type="button" className="btn" onClick={() => start("detect")} disabled={busy !== null}>
-                Run detection only
-              </button>
-            )}
-            <button
-              type="button"
-              className={readiness?.quarantined ? "btn" : "btn quiet"}
-              onClick={reset}
-              disabled={running || busy !== null || !readiness}
-            >
-              {busy === "reset" ? "Resetting…" : "Reset environment"}
-            </button>
-            <button type="button" className="btn quiet" onClick={refreshReadiness} disabled={busy !== null}>
-              Refresh readiness
-            </button>
+              {running && job && <button type="button" className="btn" onClick={cancel} disabled={busy !== null || job.cancel_requested}>
+                {job.cancel_requested ? "Stopping…" : "Stop run"}
+              </button>}
+              {status === "detect_only" && !running && <button type="button" className="btn" onClick={() => start("detect")} disabled={busy !== null}>Run detection only</button>}
+            </div>
+            <p className="provider-line">{readiness?.model?.provider === "deterministic" && readiness.model.available
+              ? "Demo mode: preset fix (Deterministic fallback); no model call."
+              : readiness ? providerLabel(readiness.model) : "Checking repair provider…"}</p>
+            {gate && <p id="gate" className="gate" role="status">{gate}</p>}
+            {notice && <p className="notice" data-tone={notice.tone} role="alert">{notice.text}</p>}
           </div>
-          {gate && <p id="gate" className="gate" role="status">{gate}</p>}
-          {notice && <p className="notice" data-tone={notice.tone} role="alert">{notice.text}</p>}
+          <aside className="how-it-works" aria-label="What happens during the demo">
+            <h2>What happens</h2>
+            <ol>
+              <li><span>1</span><div><strong>See the failure</strong><p>A browser tries the broken checkout.</p></div></li>
+              <li><span>2</span><div><strong>Propose a fix</strong><p>A change is prepared for the checkout.</p></div></li>
+              <li><span>3</span><div><strong>Check the result</strong><p>Independent tests check the candidate and related checkout behavior.</p></div></li>
+            </ol>
+          </aside>
         </section>
+        <p className="scope">This is a seeded demo. The candidate is tested in isolation; the storefront stays broken so you can repeat it. Nothing is deployed to production.</p>
 
-        <details className="history block">
-          <summary>Job history · {history.length} recent runs</summary>
-          {historyError && <p role="status">{historyError}</p>}
-          {history.length === 0 ? <p className="muted">No history available.</p> : (
-            <ul className="rows">
-              {history.map((entry) => (
-                <li key={entry.id}>
-                  <button type="button" className="btn quiet" disabled={running || entry.id === jobId}
-                    onClick={() => follow(entry.id)} aria-label={`Inspect job ${entry.id.slice(0, 8)}`}>
-                    {entry.id.slice(0, 8)}{entry.id === jobId ? " · selected" : ""}
-                  </button>
-                  <time dateTime={entry.created_at}>{new Date(entry.created_at).toLocaleString()}</time>
-                  <span>{entry.outcome?.replaceAll("_", " ") ?? entry.state}</span>
-                  <span className="muted">{historyProviders[entry.id] ?? "Reading provider record…"}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-          <button type="button" className="btn quiet" onClick={refreshHistory}>Refresh history</button>
-        </details>
-
-        {!loaded ? (
-          <p className="empty">Loading the latest job…</p>
-        ) : !jobId ? (
-          <p className="empty">
-            No jobs recorded yet.{" "}
-            {status === "ready" ? "Run a live repair to create the first evidence record." : "Runs stay disabled until the orchestrator reports ready."}
-          </p>
-        ) : !job || !detail ? (
-          <p className="empty" role="status">{syncError ?? `Loading job ${jobId.slice(0, 8)}…`}</p>
-        ) : (
-          <section className="job" aria-labelledby="job-h">
-            <div className="job-head">
-              <div>
-                <p className="eyebrow">
-                  Job <span title={job.id}>{job.id.slice(0, 8)}</span> · {job.requested_mode}
-                  {job.effective_mode !== job.requested_mode && ` → ${job.effective_mode}`} · started{" "}
-                  {new Date(job.created_at).toLocaleString()}
-                </p>
-                <h2 id="job-h" aria-live="polite">{outcome?.title ?? `Running · ${STAGE_LABEL[job.stage]}`}</h2>
-                <p className="lede">{outcome?.detail ?? "Events stream from the orchestrator as each stage completes."}</p>
-                {job.repair_block_reason && <p className="muted">Repair blocked: <code>{job.repair_block_reason}</code></p>}
-                {job.error_details && (
-                  <p className="muted">Error detail: <code>{JSON.stringify(job.error_details).slice(0, 240)}</code></p>
-                )}
-                {syncError && <p className="notice" role="status">Sync interrupted: {syncError} Retrying.</p>}
-              </div>
+        {!loaded ? <p className="empty" role="status">Checking for an active run…</p>
+        : !jobId ? null
+        : !job || !detail ? <p className="empty" role="status">{syncError ?? "Starting the demo…"}</p>
+        : (
+          <section className="job" ref={resultRef} aria-labelledby="job-h">
+            <div className="result-heading">
+              <p className="result-kicker">{pastRun ? "Past run" : running ? "Live demo" : "Run result"}</p>
+              <h2 id="job-h" aria-live="polite">{outcome?.title ?? `Running: ${STAGE_LABEL[job.stage]}`}</h2>
+              <p className="lede">{verified
+                ? `The original checkout failed. The proposed fix passed ${verification?.report.assertions.filter((a) => a.passed).length} of ${verification?.report.assertions.length} checks, including checkout and pricing.`
+                : outcome?.detail ?? "FaultLine is working through the checkout. This page updates automatically."}</p>
+              {job.repair_block_reason && <p className="muted">Repair blocked: <code>{job.repair_block_reason}</code></p>}
+              {job.error_details && <p className="muted">Error detail: <code>{JSON.stringify(job.error_details).slice(0, 240)}</code></p>}
+              {syncError && <p className="notice" role="status">Updates interrupted: {syncError} Retrying.</p>}
+            </div>
+            {running && <Track job={job} events={events} />}
+            <Seam baseline={detail.baseline} verification={verification} verified={verified}
+              attemptNumber={verifiedAttempt?.attempt_number ?? null} artifacts={detail.artifacts} />
+            <Artifacts artifacts={detail.artifacts} executions={detail.executions} attempts={detail.attempts} />
+            <details className="technical-details">
+              <summary>Explore the full run details</summary>
               <dl className="facts">
+                <div><dt>Run</dt><dd title={job.id}>{job.id.slice(0, 8)}</dd></div>
                 <div><dt>State</dt><dd>{job.state}</dd></div>
-                <div>
-                  <dt>Cleanup</dt>
-                  <dd data-tone={job.cleanup_status === "failed" ? "bad" : undefined}>{job.cleanup_status.replace("_", " ")}</dd>
-                </div>
-                <div>
-                  <dt>Duration</dt>
-                  <dd>{terminal ? `${((Date.parse(job.updated_at) - Date.parse(job.created_at)) / 1000).toFixed(1)} s` : "in progress"}</dd>
-                </div>
+                <div><dt>Cleanup</dt><dd data-tone={job.cleanup_status === "failed" ? "bad" : undefined}>{job.cleanup_status.replace("_", " ")}</dd></div>
+                <div><dt>Duration</dt><dd>{terminal ? `${((Date.parse(job.updated_at) - Date.parse(job.created_at)) / 1000).toFixed(1)} s` : "in progress"}</dd></div>
                 <div><dt>Live updates</dt><dd>{stream === "closed" ? "Complete · job finished" : stream}</dd></div>
               </dl>
-            </div>
-
-            <Track job={job} events={events} />
-            <Seam
-              baseline={detail.baseline}
-              verification={verification}
-              verified={verified}
-              attemptNumber={verifiedAttempt?.attempt_number ?? null}
-              artifacts={detail.artifacts}
-            />
-            <Attempts attempts={detail.attempts} terminal={terminal} />
-            <Assertions
-              runs={[
+              {[detail.baseline, verification].filter((run) => run !== null).map((run) => (
+                <p className="muted" key={run.report.execution_id}>{run.phase === "baseline" ? "Before" : "Candidate"}: {run.runtime_kind === "isolated-browser" ? "Isolated browser" : "Unverified runtime"} · {limitsName(run.resource_limits)} · {Math.round(run.report.duration_ms)} ms · snapshot <code>{run.candidate_snapshot_sha256.slice(0, 12)}</code></p>
+              ))}
+              {!running && <Track job={job} events={events} />}
+              <Attempts attempts={detail.attempts} terminal={terminal} />
+              <Assertions runs={[
                 ...(detail.baseline ? [{ label: "Baseline", run: detail.baseline }] : []),
                 ...(verification ? [{ label: `Verification, attempt ${verifiedAttempt?.attempt_number ?? "?"}`, run: verification }] : []),
-              ]}
-            />
-            <Artifacts artifacts={detail.artifacts} executions={detail.executions} attempts={detail.attempts} />
-            <EventLog events={events} stream={stream} />
-            <p className="record">
-              <button type="button" className="btn quiet" onClick={downloadRecord}>Download job record (JSON)</button>
-              <span className="muted">The exact orchestrator response for this job, unedited.</span>
-            </p>
+              ]} />
+              <EventLog events={events} stream={stream} />
+              <p className="record"><button type="button" className="btn quiet" onClick={downloadRecord}>Download job record (JSON)</button><span className="muted">The exact orchestrator response for this job, unedited.</span></p>
+            </details>
           </section>
         )}
 
+        <details className="manual-walkthrough">
+          <summary>Want to try the broken checkout yourself?</summary>
+          <p>Open the store, add a Trail Mug, and enter a name, email, and address. Place the order without a coupon to see the failure; no payment is required. Then return here and run the demo.</p>
+          <a className="btn" href={storefrontUrl} target="_blank" rel="noreferrer">Open seeded storefront</a>
+        </details>
+
+        <details className="history block">
+          <summary>Past runs · {history.length} recent runs</summary>
+          {historyError && <p role="status">{historyError}</p>}
+          {history.length === 0 ? <p className="muted">No past runs yet.</p> : <ul className="rows">
+            {history.map((entry) => <li key={entry.id}>
+              <button type="button" className="btn quiet" disabled={running || entry.id === jobId} onClick={() => follow(entry.id, true)} aria-label={`Inspect job ${entry.id.slice(0, 8)}`}>
+                {entry.id.slice(0, 8)}{entry.id === jobId ? " · selected" : ""}
+              </button>
+              <time dateTime={entry.created_at}>{new Date(entry.created_at).toLocaleString()}</time>
+              <span>{entry.outcome?.replaceAll("_", " ") ?? entry.state}</span>
+              <span className="muted">{historyProviders[entry.id] ?? "Reading provider record…"}</span>
+            </li>)}
+          </ul>}
+          <button type="button" className="btn quiet" onClick={refreshHistory}>Refresh history</button>
+        </details>
+        <details className="setup-details">
+          <summary>Setup and recovery</summary>
+          <p>Containment: {readiness ? limitsStatusLabel(readiness.resource_limits) : "unknown"}</p>
+          <button type="button" className="btn" onClick={reset} disabled={running || busy !== null || !readiness}>{busy === "reset" ? "Resetting…" : "Reset environment"}</button>{" "}
+          <button type="button" className="btn quiet" onClick={refreshReadiness} disabled={busy !== null}>Refresh readiness</button>
+        </details>
         <AuthoredPreview />
       </main>
-
-      <footer className="shell foot">
-        <span>FaultLine · Meta Global AI Developer Hackathon 2026 · Francis Bisignano</span>
-        <a href="https://github.com/FrankieBiz/Faultline">Source</a>
-      </footer>
+      <footer className="shell foot"><span>FaultLine · Meta Global AI Developer Hackathon 2026 · Francis Bisignano</span><a href="https://github.com/FrankieBiz/Faultline">Source</a></footer>
     </>
   );
 }

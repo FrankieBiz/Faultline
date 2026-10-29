@@ -22,7 +22,7 @@ async function mock(page: Page, options: { readiness?: object; detail?: object; 
     const url = new URL(request.url());
     const path = url.pathname.replace("/api/faultline/", "");
     if (path === "readiness") return route.fulfill({ json: options.readiness ?? ready });
-    if (path === "jobs" && request.method() === "GET") return route.fulfill({ json: { jobs: options.detail ? [job()] : [] } });
+    if (path === "jobs" && request.method() === "GET") return route.fulfill({ json: { jobs: options.detail ? [(options.detail as { job: ReturnType<typeof job> }).job] : [] } });
     if (path === "reset") return route.fulfill(options.resetFails ? { status: 503, json: { error: { code: "reset_failed" } } } : { json: { status: "ok" } });
     if (path === "jobs" && request.method() === "POST") {
       calls.posts++;
@@ -35,12 +35,17 @@ async function mock(page: Page, options: { readiness?: object; detail?: object; 
   return calls;
 }
 
+async function inspectPastRun(page: Page) {
+  await page.getByText(/Past runs ·/).click();
+  await page.getByRole("button", { name: `Inspect job ${id.slice(0, 8)}` }).first().click();
+}
+
 test("blocked execution is actionable and never claims a repair", async ({ page }) => {
   await mock(page, { readiness: { ...ready, status: "blocked", runtime_ready: false, reason: "isolated_runtime_unavailable" } });
   await page.goto("/");
-  await expect(page.getByRole("button", { name: "Run live repair" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Run the demo" })).toBeDisabled();
   await expect(page.getByText(/No isolated runtime is configured/)).toBeVisible();
-  await expect(page.getByText("No jobs recorded yet.", { exact: false })).toBeVisible();
+  await expect(page.getByText("No past runs yet.")).toHaveCount(1);
   await expect(page.getByRole("heading", { name: "Verified repair", exact: true })).toHaveCount(0);
 });
 
@@ -60,8 +65,9 @@ for (const state of ["cancelled", "interrupted"]) {
   test(`${state} is terminal and stops polling`, async ({ page }) => {
     const calls = await mock(page, { detail: detail(state) });
     await page.goto("/");
+    await inspectPastRun(page);
     await expect(page.getByRole("heading", { name: state === "cancelled" ? "Cancelled" : "Interrupted", exact: true })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Run live repair" })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Run it again" })).toBeEnabled();
     const count = calls.detail;
     await page.waitForTimeout(1700);
     expect(calls.detail).toBe(count);
@@ -71,6 +77,7 @@ for (const state of ["cancelled", "interrupted"]) {
 test("reset errors stay visible and do not report success", async ({ page }) => {
   await mock(page, { resetFails: true });
   await page.goto("/");
+  await page.getByText("Setup and recovery").click();
   await page.getByRole("button", { name: "Reset environment" }).click();
   await expect(page.getByRole("alert").filter({ hasText: "Reset could not reconcile" })).toBeVisible();
   await expect(page.getByText("Environment reset.", { exact: false })).toHaveCount(0);
@@ -79,7 +86,8 @@ test("reset errors stay visible and do not report success", async ({ page }) => 
 test("legacy verified labels are explicitly untrusted", async ({ page }) => {
   await mock(page, { detail: detail("succeeded", "verified") });
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Unverified historical result" })).toBeVisible();
+  await inspectPastRun(page);
+  await expect(page.getByRole("heading", { name: "Unverified result" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Verified repair", exact: true })).toHaveCount(0);
 });
 
@@ -90,7 +98,7 @@ test("reloading reattaches to an unfinished job and observes its terminal state"
   await page.goto("/");
   await expect(page.getByRole("heading", { name: /Running/ })).toBeVisible();
   await page.reload();
-  await expect(page.getByRole("button", { name: "Cancel job" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Stop run" })).toBeVisible();
   completed = true;
   await expect(page.getByRole("heading", { name: "Interrupted", exact: true })).toBeVisible();
 });
@@ -100,7 +108,7 @@ test("mobile preview fits and keyboard controls have a visible focus", async ({ 
   await page.emulateMedia({ reducedMotion: "reduce" });
   await mock(page);
   await page.goto("/");
-  await expect(page.getByRole("button", { name: "Run live repair" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Run the demo" })).toBeEnabled();
   await page.keyboard.press("Tab");
   await expect(page.getByRole("link", { name: "Skip to repair controls" })).toBeFocused();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -125,11 +133,14 @@ test("retries show verifier feedback and non-Meta endpoints are never labeled Me
   await page.goto("/");
   await expect(page.getByText(/Local model endpoint · qwen2\.5-coder:14b · not a Meta-hosted call/).first()).toBeVisible();
   await expect(page.getByText("Meta Model API")).toHaveCount(0);
+  await inspectPastRun(page);
+  await page.getByText("Explore the full run details").click();
   const feedback = page.locator(".feedback");
   await expect(feedback).toContainText("Gate feedback from attempt 1");
   await expect(feedback).toContainText("2 failing checks sent back as evidence");
   await expect(feedback.getByText("regression.whitespace_coupon")).toBeVisible();
   await expect(page.getByText("generated in 4.2 s").first()).toBeVisible();
+  await page.getByText("Setup and recovery").click();
   await expect(page.getByText("cgroup v2 · 512 MiB · 64 tasks · 100% CPU · enforced")).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -138,9 +149,12 @@ test("retries show verifier feedback and non-Meta endpoints are never labeled Me
 test("judge guidance explains isolated verification and terminal updates", async ({ page }) => {
   await mock(page, { detail: detail() });
   await page.goto("/");
+  await page.getByText("Want to try the broken checkout yourself?").click();
   await expect(page.getByRole("link", { name: "Open seeded storefront" })).toHaveAttribute("href", `http://127.0.0.1:${process.env.BUGGYSHOP_PORT ?? "3000"}`);
-  await expect(page.getByText(/The candidate is verified in isolation/)).toBeVisible();
-  await expect(page.getByText(/No production deployment occurs/)).toBeVisible();
+  await expect(page.getByText(/candidate is tested in isolation/)).toBeVisible();
+  await expect(page.getByText(/Nothing is deployed to production/)).toBeVisible();
+  await inspectPastRun(page);
+  await page.getByText("Explore the full run details").click();
   await expect(page.getByText("Complete · job finished", { exact: true })).toBeVisible();
   await expect(page.getByText("closed", { exact: true })).toHaveCount(0);
 });
@@ -158,12 +172,12 @@ test("job history exposes provider and outcome and selects earlier evidence", as
   await page.route("**/api/faultline/jobs?*", (route) => route.fulfill({ json: { jobs: [job(), earlier.job] } }));
   await page.route(`**/api/faultline/jobs/${earlierId}`, (route) => route.fulfill({ json: earlier }));
   await page.goto("/");
-  await page.getByText("Job history · 2 recent runs", { exact: true }).click();
+  await page.getByText("Past runs · 2 recent runs", { exact: true }).click();
   const row = page.locator(".history li").filter({ hasText: earlierId.slice(0, 8) }).filter({ hasText: "Meta Model API" });
   await expect(row).toContainText("verified");
   await expect(row).toContainText("muse-spark-1.3");
   await page.getByRole("button", { name: `Inspect job ${earlierId.slice(0, 8)}` }).last().click();
-  await expect(page.getByRole("heading", { name: "Unverified historical result" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Unverified result" })).toBeVisible();
 });
 
 
@@ -179,7 +193,9 @@ test("large evidence lists are collapsed with counts and direct review downloads
     artifacts: [{ id: "summary", execution_id: null, attempt_id: null, role: "proof_bundle_md", content_type: "text/markdown", size_bytes: 100, sha256: "abc123" }],
   } });
   await page.goto("/");
+  await inspectPastRun(page);
   await expect(page.getByRole("heading", { name: "Verified repair", exact: true })).toBeVisible();
+  await page.getByText("Explore the full run details").click();
   await expect(page.getByText("Baseline · 43 of 44 passed · 1 failed", { exact: true })).toBeVisible();
   await expect(page.getByText("Verification, attempt ? · 44 of 44 passed", { exact: true })).toBeVisible();
   await expect(page.locator(".asserts").first()).toBeHidden();
@@ -198,5 +214,20 @@ test("slow history provider lookup does not delay the latest job", async ({ page
     await route.fulfill({ json: { ...detail(), job: { ...job(), id: oldId } } });
   });
   await page.goto("/");
+  await inspectPastRun(page);
   await expect(page.getByRole("heading", { name: "Cancelled", exact: true })).toBeVisible({ timeout: 1000 });
+});
+
+
+test("fresh visit gives one clear action and immediately shows its result", async ({ page }) => {
+  const calls = await mock(page, { detail: detail("succeeded", "verified") });
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Watch FaultLine fix a broken checkout." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Unverified result" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Run the demo" })).toBeEnabled();
+  await expect(page.locator(".manual-walkthrough")).not.toHaveAttribute("open");
+  await page.getByRole("button", { name: "Run the demo" }).click();
+  await expect(page.getByRole("heading", { name: "Unverified result" })).toBeVisible();
+  expect(calls.posts).toBe(1);
+  await expect(page.getByRole("button", { name: "Run it again" })).toBeEnabled();
 });
