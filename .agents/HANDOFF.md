@@ -1,5 +1,26 @@
 # Agent handoff state
 
+## October 30: ReproSpec engine (codex-universal-repro)
+
+- Added `services/repair-orchestrator/app/repro.py`: strict versioned ReproSpec,
+  eight step primitives, the platform spec's status/JSON assertion matchers,
+  and a Playwright adapter for a runtime-provided page.
+- `ReproEngine.reproduce` requires identical failed assertions and correlated
+  fingerprints across two fresh sessions. `repair` invokes its proposal callback
+  only after this gate and both cleanups succeed. Passing/flaky/mismatched runs
+  return `no_failure`; execution and cleanup errors block admission.
+- The current platform spec's sections 3–5 do not define a ReproSpec wire format;
+  this additive module supplies one. JSON examples and all primitive behaviors
+  are exercised in `tests/test_repro.py`. The existing worker, CLI, and TypeScript
+  oracle remain unchanged. Wiring a sandbox session factory into those paths is
+  separate integration work: it must reset application state and browser context,
+  enforce network isolation, and confirm cleanup. The adapter does not launch apps.
+- Verification: requested pytest command **88 passed**; `make check` exit 0:
+  **286 backend/script, 450 orchestrator, 81 runner tests**, lint, strict typing,
+  provenance, frontend/Inspector/runner builds, and Python distribution builds.
+  Initial `make check` lacked frontend dependencies; locked `npm ci` installs
+  resolved that environment issue. No dependency or lockfile changes.
+
 Updated October 29, 2026. Latest: branch `FrankieBiz/judge-review-demo-polish` (worktree `jaeger`), pushed to `main`. The sections after this one describe the earlier `brittlestar` session and still hold.
 
 ## October 29: interactive judge experience (jaeger)
