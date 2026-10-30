@@ -68,22 +68,10 @@ async function proxy(request: NextRequest, context: Context) {
   // to submit jobs through this local UI, including form POSTs without CORS.
   if (request.method === "POST") {
     const origin = request.headers.get("origin");
+    // Do not accept a different loopback origin, scheme, or port.
     const expectedOrigin = `${request.nextUrl.protocol}//${authority}`;
     const site = request.headers.get("sec-fetch-site");
-    let isAllowed = !origin || origin === expectedOrigin || isOrcaPreviewOrigin(origin, authority, site);
-    if (!isAllowed && origin) {
-      try {
-        const originUrl = new URL(origin);
-        const [authHost, authPort] = authority.split(":");
-        const isLoopback = (h: string) => h === "localhost" || h === "127.0.0.1" || h.endsWith(".localhost");
-        if (isLoopback(originUrl.hostname) && isLoopback(authHost) && (originUrl.port || "80") === (authPort || "80")) {
-          isAllowed = true;
-        }
-      } catch {
-        isAllowed = false;
-      }
-    }
-    if (!isAllowed || site === "cross-site") {
+    if ((origin && origin !== expectedOrigin && !isOrcaPreviewOrigin(origin, authority, site)) || site === "cross-site") {
       return NextResponse.json(
         { error: { code: "forbidden", message: "Same-origin request required." } },
         { status: 403 }
