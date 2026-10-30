@@ -12,7 +12,7 @@ const SCENARIO_ID = "scripted_checkout_repair";
 const POLL_MS = 1500;
 
 type Stream = "idle" | "live" | "reconnecting" | "closed";
-type Busy = "submit" | "cancel" | "reset" | null;
+type Busy = "submit" | "cancel" | "reset" | "apply" | "revert" | null;
 
 const errorText = (e: unknown) => (e instanceof ApiError ? e.message : "Unexpected client error.");
 const newKey = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -182,6 +182,38 @@ export default function Inspector() {
     }
   };
 
+  const applyPatch = async (targetJobId: string) => {
+    setBusy("apply");
+    setNotice(null);
+    try {
+      await api(`jobs/${encodeURIComponent(targetJobId)}/apply`, { method: "POST" });
+      setNotice({
+        tone: "ok",
+        text: "Verified patch applied to live store! BuggyShop (http://127.0.0.1:3000) is now working.",
+      });
+    } catch (e) {
+      setNotice({ tone: "bad", text: errorText(e) });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const revertStore = async () => {
+    setBusy("revert");
+    setNotice(null);
+    try {
+      await api("revert", { method: "POST" });
+      setNotice({
+        tone: "warn",
+        text: "Live store reverted to seeded defect. Checkout on port 3000 will now fail.",
+      });
+    } catch (e) {
+      setNotice({ tone: "bad", text: errorText(e) });
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const downloadRecord = () => {
     if (!detail) return;
     const blob = new Blob([JSON.stringify(detail, null, 2)], { type: "application/json" });
@@ -295,6 +327,15 @@ export default function Inspector() {
             <button type="button" className="btn quiet" onClick={refreshReadiness} disabled={busy !== null}>
               Refresh readiness
             </button>
+            <button
+              type="button"
+              className="btn quiet"
+              onClick={revertStore}
+              disabled={running || busy !== null}
+              title="Reset apps/buggyshop-backend/app/routes/checkout.py to seeded bug"
+            >
+              {busy === "revert" ? "Reverting…" : "Revert store to defect"}
+            </button>
           </div>
           {gate && <p id="gate" className="gate" role="status">{gate}</p>}
           {notice && <p className="notice" data-tone={notice.tone} role="alert">{notice.text}</p>}
@@ -357,6 +398,41 @@ export default function Inspector() {
             />
             <Artifacts artifacts={detail.artifacts} executions={detail.executions} attempts={detail.attempts} />
             <EventLog events={events} stream={stream} />
+            {verified && (
+              <div
+                style={{
+                  display: "flex",
+                  gap: "12px",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  margin: "18px 0",
+                  padding: "16px",
+                  borderRadius: "8px",
+                  background: "rgba(35, 134, 54, 0.12)",
+                  border: "1px solid rgba(35, 134, 54, 0.35)",
+                }}
+              >
+                <button
+                  type="button"
+                  className="btn primary"
+                  onClick={() => applyPatch(job.id)}
+                  disabled={busy !== null}
+                >
+                  {busy === "apply" ? "Applying fix…" : "Apply fix to live store"}
+                </button>
+                <button
+                  type="button"
+                  className="btn quiet"
+                  onClick={revertStore}
+                  disabled={busy !== null}
+                >
+                  {busy === "revert" ? "Reverting…" : "Revert store to defect"}
+                </button>
+                <span className="muted" style={{ fontSize: "13px" }}>
+                  Hot-reloads live BuggyShop on port 8000 with verified AST-contained patch.
+                </span>
+              </div>
+            )}
             <p className="record">
               <button type="button" className="btn quiet" onClick={downloadRecord}>Download job record (JSON)</button>
               <span className="muted">The exact orchestrator response for this job, unedited.</span>

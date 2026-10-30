@@ -5,9 +5,9 @@ export const revalidate = 0;
 
 type Context = { params: Promise<{ path: string[] }> };
 const READ_PATH = /^(?:readiness|scenarios|jobs|jobs\/[\da-f-]+(?:\/events)?|artifacts\/[\da-f-]+)$/i;
-const WRITE_PATH = /^(?:jobs|reset|jobs\/[\da-f-]+\/cancel)$/i;
+const WRITE_PATH = /^(?:jobs|reset|revert|jobs\/[\da-f-]+\/(?:cancel|apply))$/i;
 
-function isLoopbackHost(hostname: string): boolean {
+function isLoopbackOrPrivateHost(hostname: string): boolean {
   return (
     hostname === "localhost" ||
     hostname.endsWith(".localhost") ||
@@ -15,7 +15,12 @@ function isLoopbackHost(hostname: string): boolean {
     hostname.startsWith("127.") ||
     hostname === "[::1]" ||
     hostname === "::1" ||
-    hostname === "0.0.0.0"
+    hostname === "0.0.0.0" ||
+    hostname.endsWith(".local") ||
+    hostname.endsWith(".lan") ||
+    hostname.startsWith("192.168.") ||
+    hostname.startsWith("10.") ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(hostname)
   );
 }
 
@@ -39,17 +44,23 @@ async function proxy(request: NextRequest, context: Context) {
         if ((hostHeader && originUrl.host === hostHeader) || (fwdHost && originUrl.host === fwdHost)) {
           isAllowed = true;
         }
-        if (isLoopbackHost(originUrl.hostname)) {
+        if (isLoopbackOrPrivateHost(originUrl.hostname)) {
           isAllowed = true;
         }
       } catch {
         isAllowed = false;
       }
       if (!isAllowed) {
-        return NextResponse.json({ error: { message: "Same-origin request required." } }, { status: 403 });
+        return NextResponse.json(
+          { error: { code: "forbidden", message: "Same-origin or local network request required." } },
+          { status: 403 }
+        );
       }
     } else if (secFetchSite === "cross-site") {
-      return NextResponse.json({ error: { message: "Same-origin request required." } }, { status: 403 });
+      return NextResponse.json(
+        { error: { code: "forbidden", message: "Same-origin request required." } },
+        { status: 403 }
+      );
     }
   }
   const token = process.env.FAULTLINE_CONTROL_TOKEN;

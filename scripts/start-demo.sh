@@ -28,6 +28,7 @@ if len(set(ports)) != 4 or any(not 1 <= port <= 65535 for port in ports):
     raise SystemExit('Demo ports must be distinct integers between 1 and 65535.')
 for port in ports:
     with socket.socket() as probe:
+        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             probe.bind(('127.0.0.1', port))
         except OSError:
@@ -70,7 +71,7 @@ start() {
   (cd "$ROOT/$directory"; exec setsid "$@") &
   children+=("$!")
 }
-start apps/buggyshop-backend env PYTHONPATH="$ROOT" uv run --python 3.13 --locked uvicorn app.main:app --host 127.0.0.1 --port "$BACKEND_PORT" --log-level warning
+start apps/buggyshop-backend env PYTHONPATH="$ROOT" uv run --python 3.13 --locked uvicorn app.main:app --host 127.0.0.1 --port "$BACKEND_PORT" --reload --reload-dir "$ROOT/apps/buggyshop-backend" --log-level warning
 start services/repair-orchestrator env PYTHONPATH="$ROOT" FAULTLINE_RUNTIME=isolated uv run --python 3.13 --locked uvicorn app.main:app --host 127.0.0.1 --port "$CONTROL_PORT" --log-level warning
 start apps/buggyshop-frontend env BUGGYSHOP_BACKEND_URL="http://127.0.0.1:$BACKEND_PORT" node node_modules/next/dist/bin/next start -p "$STORE_PORT" -H 127.0.0.1
 start web/inspector-ui env FAULTLINE_ORCHESTRATOR_URL="http://127.0.0.1:$CONTROL_PORT" node node_modules/next/dist/bin/next start -p "$UI_PORT" -H 127.0.0.1

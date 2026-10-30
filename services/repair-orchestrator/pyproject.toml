@@ -17,6 +17,9 @@ dependencies = [
     "sse-starlette>=3,<4",
 ]
 
+[project.scripts]
+faultline = "app.cli:main"
+
 [dependency-groups]
 dev = ["ruff>=0.11,<1", "mypy>=1.15,<2", "httpx2>=2,<3"]
 

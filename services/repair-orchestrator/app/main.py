@@ -367,6 +367,26 @@ def create_app(
             raise DatabaseError("reset_failed", 503) from exc
         return {"status": "ok"}
 
+    @routes.post("/jobs/{job_id}/apply")
+    async def apply_job(job_id: str, control: Control) -> dict[str, Any]:
+        """Apply a verified candidate patch from a job to the live codebase."""
+        from app.cli import apply_patch_for_job
+
+        res = apply_patch_for_job(job_id, database=control.database)
+        if not res.get("success"):
+            raise DatabaseError(res.get("error_code", "apply_failed"), 400, job_id)
+        return res
+
+    @routes.post("/revert")
+    async def revert_codebase(control: Control) -> dict[str, Any]:
+        """Revert the live codebase back to the seeded defect state."""
+        from app.cli import revert_to_seeded
+
+        res = revert_to_seeded()
+        if not res.get("success"):
+            raise DatabaseError(res.get("error_code", "revert_failed"), 500)
+        return res
+
     @routes.get("/artifacts/{artifact_id}")
     async def artifact(artifact_id: str, control: Control) -> Response:
         """Serve verified registered evidence as inert, private downloads."""
