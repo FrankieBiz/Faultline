@@ -827,7 +827,7 @@ This is research direction B (independent evaluator, `LONG_TERM_RESEARCH_AND_IDE
 ### 8.1 Runner constraints
 
 **Unverified:**
-- Whether GitHub-hosted Ubuntu 24.04 runners allow unprivileged user namespaces for bwrap. Ubuntu 24.04 restricts them through AppArmor by default.
+- Whether GitHub-hosted `ubuntu-latest` runners allow unprivileged user namespaces for bwrap. That label is migrating to Ubuntu 26 starting October 19, 2026, according to the runner notice in this repo's Verify log on October 30. Ubuntu has restricted these namespaces through AppArmor by default since 24.04.
 - Whether the runner user gets a systemd user manager with cgroup delegation.
 
 The README already requires both for the bwrap engine.
