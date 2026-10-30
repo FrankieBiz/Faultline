@@ -1,5 +1,16 @@
 # Agent handoff state
 
+## October 30: terminal HUD and dashboard commands (claude-terminal-hud)
+
+- `faultline listen [JOB] [--port 9000] [--plain] [--ascii]` streams `/api/faultline/jobs/{id}/events` and redraws the PLATFORM_DX_SPEC §6.3 screen in place. Stage labels match the Inspector's `STAGE_LABEL`. Without a TTY, with `--plain`, or with `CI=true`, it prints the §6.9 one-line-per-stage form. It honors `NO_COLOR` and exits with the §5.2 code for the outcome.
+- The SSE events carry no assertion data, so pass/fail marks come from `GET /jobs/{id}` executions. Verification reports are matched to attempts by `attempt_id`. The baseline stops early, so the summary counts assertions passing "in both" separately from those that ran on only one side.
+- The progress bar counts settled stages out of 7. It is not a time estimate, because §6.2 forbids percentage bars for work of unknown length.
+- A stage that ends into cleanup shows "verdict pending" until the outcome event arrives. A second attempt marks where the first was rejected.
+- Dropped streams (including `IncompleteRead`) resume after the last sequence, up to 5 reconnects. SIGTERM and Ctrl+C restore the cursor; the run continues in the engine.
+- `faultline dashboard [--port 4000] [--no-open]` opens the Inspector. If nothing serves the port, it starts the built Inspector detached, as `start-demo.sh` does, logs to `$FAULTLINE_DATA_DIR/inspector.log`, and prints the PID. It refuses a port that is serving something else, and it never builds `.next`. `--run` from the spec is omitted because the Inspector has no run deep link yet.
+- Verified with a read-only replay of a real `sander` job and a live deterministic run on a temporary isolated controller (port 9471, now stopped), both rendered on a pseudo-terminal. `make check` exit 0 on the pre-merge tree; it was re-run on the merged tree before pushing.
+- The pre-existing `test_apply_and_revert_helpers` calls the real `revert_to_seeded()`. It rewrites the worktree's `checkout.py`, which today is a no-op because the file is already seeded.
+
 ## October 30: ReproSpec engine (codex-universal-repro)
 
 - Added `services/repair-orchestrator/app/repro.py`: strict versioned ReproSpec,
