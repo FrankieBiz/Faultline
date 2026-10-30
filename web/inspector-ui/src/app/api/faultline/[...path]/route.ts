@@ -7,6 +7,18 @@ type Context = { params: Promise<{ path: string[] }> };
 const READ_PATH = /^(?:readiness|scenarios|jobs|jobs\/[\da-f-]+(?:\/events)?|artifacts\/[\da-f-]+)$/i;
 const WRITE_PATH = /^(?:jobs|reset|jobs\/[\da-f-]+\/cancel)$/i;
 
+function isLoopbackHost(hostname: string): boolean {
+  return (
+    hostname === "localhost" ||
+    hostname.endsWith(".localhost") ||
+    hostname === "127.0.0.1" ||
+    hostname.startsWith("127.") ||
+    hostname === "[::1]" ||
+    hostname === "::1" ||
+    hostname === "0.0.0.0"
+  );
+}
+
 async function proxy(request: NextRequest, context: Context) {
   const { path } = await context.params;
   const target = path.join("/");
@@ -17,21 +29,17 @@ async function proxy(request: NextRequest, context: Context) {
   // to submit jobs through this local UI, including form POSTs without CORS.
   if (request.method === "POST") {
     const origin = request.headers.get("origin");
-    if (request.headers.get("sec-fetch-site") === "cross-site") {
-      return NextResponse.json({ error: { message: "Same-origin request required." } }, { status: 403 });
-    }
+    const secFetchSite = request.headers.get("sec-fetch-site");
     if (origin) {
       let isAllowed = origin === request.nextUrl.origin;
       try {
         const originUrl = new URL(origin);
         const hostHeader = request.headers.get("host");
-        if (hostHeader && originUrl.host === hostHeader) {
+        const fwdHost = request.headers.get("x-forwarded-host");
+        if ((hostHeader && originUrl.host === hostHeader) || (fwdHost && originUrl.host === fwdHost)) {
           isAllowed = true;
         }
-        const isLoopback = originUrl.hostname === "localhost" || originUrl.hostname === "127.0.0.1";
-        const nextIsLoopback = request.nextUrl.hostname === "localhost" || request.nextUrl.hostname === "127.0.0.1";
-        const portMatches = (originUrl.port || "80") === (request.nextUrl.port || hostHeader?.split(":")[1] || "80");
-        if (isLoopback && nextIsLoopback && portMatches) {
+        if (isLoopbackHost(originUrl.hostname)) {
           isAllowed = true;
         }
       } catch {
@@ -40,6 +48,8 @@ async function proxy(request: NextRequest, context: Context) {
       if (!isAllowed) {
         return NextResponse.json({ error: { message: "Same-origin request required." } }, { status: 403 });
       }
+    } else if (secFetchSite === "cross-site") {
+      return NextResponse.json({ error: { message: "Same-origin request required." } }, { status: 403 });
     }
   }
   const token = process.env.FAULTLINE_CONTROL_TOKEN;
