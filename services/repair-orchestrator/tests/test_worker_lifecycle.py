@@ -11,7 +11,7 @@ from app.database import DatabaseError
 from app.evidence import ArtifactError
 from app.model_adapter import ModelError, ModelResponse, RepairContext
 from app.policy import TARGET_FILE
-from app.runtime import RuntimeArtifact
+from app.runtime import RuntimeArtifact, RuntimeUnavailable
 from app.worker import Budgets
 from shared.contracts.models import (
     Artifact,
@@ -81,6 +81,17 @@ async def test_classified_terminal_paths(
         assert len(harness.database.list_attempts(job.id)) == 2
         seeds = [snapshot.source_sha256 for snapshot in harness.runtime.snapshots]
         assert seeds[1] == seeds[2]
+
+
+async def test_trusted_failure_records_its_reason_code(harness: Harness) -> None:
+    harness.runtime.prepare = AsyncMock(  # type: ignore[method-assign]
+        side_effect=RuntimeUnavailable("trusted_frontend_readiness_timeout")
+    )
+    job = await harness.run()
+    assert job.outcome == TerminalOutcome.INFRASTRUCTURE_ERROR
+    assert job.error_details is not None
+    assert job.error_details["code"] == "trusted_operation_failed"
+    assert job.error_details["reason"] == "trusted_frontend_readiness_timeout"
 
 
 async def test_second_attempt_receives_failed_verification_checks(harness: Harness) -> None:

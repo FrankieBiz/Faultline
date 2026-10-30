@@ -1,0 +1,107 @@
+# FaultLine live repair service, run by the systemd *user* manager of the
+# unprivileged demo account (not root, not an SSH login shell).
+#
+# Installed by deploy/bootstrap.sh to ~/.config/systemd/user/faultline-live.service
+# (it rewrites %h/faultline if the checkout lives elsewhere). Then:
+#   systemctl --user enable --now faultline-live.service
+#   journalctl --user -u faultline-live.service -f
+# Lingering (loginctl enable-linger) keeps the user manager, and this service,
+# running with nobody logged in.
+#
+# Why a user service: every candidate backend runs in a transient scope created
+# with `systemd-run --user --scope` (services/repair-orchestrator/app/
+# isolated_runtime.py). The user manager can only move a process into a new
+# scope if that process already lives inside the manager's own cgroup subtree
+# (user@UID.service). Processes of an SSH login live in session-N.scope, owned
+# by the system manager, so scope creation and the aggregate-limit probe fail
+# there. A service of the user manager satisfies this by construction.
+#
+# Why no Delegate=: the scopes are created by the user manager itself, as
+# siblings under app.slice, not inside this service's cgroup, and this service
+# never writes cgroup files (it only reads them back). The cgroup controllers
+# the scopes need (memory, pids, cpu) are delegated to the user manager by
+# upstream systemd's user@.service (Delegate=pids memory cpu). Verified on
+# Fedora 44 / systemd 259: a full holdout run from a transient user service
+# with the hardening below recorded 2 of 2 backend sessions under
+# kernel-verified limits, with no Delegate= set.
+
+[Unit]
+Description=FaultLine live repair service (loopback API behind Caddy)
+Documentation=https://github.com/FrankieBiz/Faultline/blob/main/deploy/README.md
+# The service exits on purpose after an infrastructure failure (see
+# LIVE_DEMO_EXIT_ON_FAILURE below). More than 5 starts in 10 minutes means the
+# host is broken: systemd then leaves the unit failed instead of flapping, and
+# each start's provider probe (one real generation call) stops too. Recover with
+#   systemctl --user reset-failed faultline-live.service && systemctl --user start faultline-live.service
+StartLimitIntervalSec=10min
+StartLimitBurst=5
+
+[Service]
+Type=exec
+WorkingDirectory=%h/faultline
+# A lingering user manager has no login PATH; uv lives in ~/.local/bin.
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin
+# Production settings; values in the EnvironmentFile below override these.
+# Port 9600 must match the reverse_proxy line in deploy/Caddyfile.
+Environment=LIVE_DEMO_PORT=9600
+# Caddy is the only client of 127.0.0.1:9600 and replaces any client-supplied
+# X-Forwarded-For with the connecting address, so the last hop is the visitor.
+Environment=LIVE_DEMO_TRUST_PROXY=1
+Environment=LIVE_DEMO_ALLOWED_ORIGINS=https://frankiebiz.github.io
+# Refuse to open (available=false) unless the provider probes as Meta, so a
+# missing or wrong key never serves the deterministic fallback as the live demo.
+Environment=LIVE_DEMO_REQUIRE_PROVIDER=meta
+# After an infrastructure failure the service SIGTERMs itself so that
+# Restart=always brings it back through the fail-closed preflight.
+Environment=LIVE_DEMO_EXIT_ON_FAILURE=1
+# META_API_KEY and optional LIVE_DEMO_* overrides; mode 0600, outside the repo.
+# Values in this file override the Environment= lines above.
+EnvironmentFile=%h/.config/faultline/live.env
+ExecStart=/usr/bin/bash %h/faultline/scripts/start-live-demo.sh
+Restart=always
+RestartSec=10s
+# SIGTERM goes to the main process (uv), which forwards it to uvicorn for a
+# graceful shutdown; anything left after the timeout is killed. uvicorn then
+# re-raises SIGTERM, so uv exits 143; treat that as a clean stop.
+KillMode=mixed
+SuccessExitStatus=143
+TimeoutStopSec=30s
+
+# --- hardening (deploy/bootstrap.sh replays exactly these lines in its preflight) ---
+# Each line below was tested together on Fedora 44 / systemd 259 with the
+# isolated-runtime preflight and a full holdout run. Seccomp-based settings are
+# inherited by bwrap and the candidate backend, which is intended.
+NoNewPrivileges=yes
+UMask=0077
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
+# AF_NETLINK is required: bwrap brings up loopback in the new network namespace
+# over rtnetlink. Without it the sandbox profile check fails.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+# Bounds the controller process itself. Candidate backends run in their own
+# scopes (512 MiB, no swap, 64 tasks, one CPU) outside this cgroup.
+MemoryMax=1G
+TasksMax=256
+# --- end hardening ---
+#
+# Deliberately NOT set, with the observed or documented reason:
+# - RestrictNamespaces=: blocks bwrap's user/mount/pid/net namespaces
+#   (tested: sandbox profile check fails).
+# - ProtectKernelTunables=, ProtectKernelLogs=, ProtectProc=, ProcSubset=: they
+#   over-mount parts of /proc, after which the kernel refuses bwrap's fresh
+#   /proc mount (tested for the first two: sandbox profile check fails).
+# - SystemCallFilter=@system-service: excludes mount/pivot_root, which bwrap
+#   needs (tested: sandbox profile check fails).
+# - PrivateUsers=, PrivateTmp=, ProtectSystem=, ProtectHome=, ProtectHostname=:
+#   in a user manager these make systemd itself set up a user namespace for the
+#   service. PrivateUsers=yes, PrivateTmp=yes and ProtectSystem=strict each
+#   passed the preflight on Fedora 44, but on hosts that restrict unprivileged
+#   user namespaces (Ubuntu 24.04's AppArmor policy) they are an extra way for
+#   the service to fail, and they add little: candidate code already runs in
+#   bwrap with a read-only root and a private /tmp.
+# - Delegate=: not needed (see above).
+
+[Install]
+WantedBy=default.target

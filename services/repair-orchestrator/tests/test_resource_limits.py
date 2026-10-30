@@ -562,7 +562,39 @@ async def test_lingering_scopes_are_killed_once_by_unit(runtime: IsolatedRuntime
         patch.object(runtime, "_systemctl", systemctl),
     ):
         await runtime.release_scope(UNIT, grace=0)
-    systemctl.assert_awaited_once_with("kill", "--signal=SIGKILL", UNIT)
+    assert [call.args for call in systemctl.await_args_list] == [
+        ("kill", "--signal=SIGKILL", UNIT),
+        ("stop", "--no-block", UNIT),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_empty_active_scope_requires_manager_stop_before_cleanup_succeeds(
+    runtime: IsolatedRuntime,
+) -> None:
+    # Immediate launch cancellation can leave systemd's scope active even after
+    # every process exits. SIGKILL alone cannot retire that empty manager unit.
+    stopped = False
+
+    async def manager(*args: str) -> str:
+        nonlocal stopped
+        if args == ("stop", "--no-block", UNIT):
+            stopped = True
+        return ""
+
+    async def state(unit: str) -> dict[str, str]:
+        assert unit == UNIT
+        return scope_state("not-found", "inactive") if stopped else scope_state("loaded", "active")
+
+    with (
+        patch("app.isolated_runtime.SCOPE_RELEASE_SECONDS", 0.15),
+        patch.object(runtime, "_scope_state", AsyncMock(side_effect=state)),
+        patch.object(runtime, "_systemctl", AsyncMock(side_effect=manager)) as systemctl,
+    ):
+        await runtime.release_scope(UNIT, grace=0)
+    assert stopped
+    assert systemctl.await_args_list[0].args == ("kill", "--signal=SIGKILL", UNIT)
+    assert systemctl.await_args_list[1].args == ("stop", "--no-block", UNIT)
 
 
 @pytest.mark.asyncio

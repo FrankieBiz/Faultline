@@ -17,7 +17,7 @@ This is a working reference, not a replacement for the official rules. Recheck t
 - Tracks:
   - **Indie developer:** individuals and students; creativity, technical ambition, and whether it works.
   - **Startup:** teams and founders building a real product; technical execution and production readiness.
-- The official page says every project enters one track. Track selection for Faultline has not been recorded yet.
+- The official page says every project enters one track. [PROJECT_STATUS.md](PROJECT_STATUS.md) records the Indie Developer track for FaultLine; confirm it on the submission form.
 
 ## Officially described tools and models
 
@@ -30,7 +30,7 @@ The event pages describe access or use of:
 - Meta open-weight models
 - Muse Code, Meta's coding agent
 
-These are event-level descriptions, not confirmation that every model is enabled for Frankie's account. Check the actual account dashboard and current API docs before choosing an integration. The event page also lists partner offers for selected participants: Baseten ($100 and 2M TPM rate limits), Modal ($100), and Fireworks AI ($25). These are conditional offers, not guaranteed credits for Frankie.
+These are event-level descriptions, not confirmation that every model is enabled for Frankie's account. Check the actual account dashboard and current API docs before choosing an integration. The event page also lists partner offers for selected participants: Baseten ($100 and 2M TPM rate limits), Modal ($100), and Fireworks AI ($100; this brief listed $25 until the official page was rechecked on October 28, 2026). These are conditional offers, not guaranteed credits for Frankie.
 
 ## Credits and personal access
 

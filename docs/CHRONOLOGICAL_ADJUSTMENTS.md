@@ -38,6 +38,14 @@ An audit compared those additions against the code and recorded evidence. The sc
 | The impact document added a firsthand incident, four interviews, and a 34.3x time trial. The interviews are dated October 24–27 but praise the minimizer, bundle verifier, and cgroup limits, which did not exist until October 28. The trial describes querying an SQLite database that BuggyShop does not have, and credits Llama 3.2 with a 14.5-second repair. The only recorded Llama 3.2 run attempted one case, timed out, and repaired nothing. | Removed pending the owner's confirmation. If any of it is genuine, it is recoverable from commit `80a29f2` and should be restored with real dates and records. |
 | The submission draft repeated these claims, plus local Llama 3.2 support as an achievement. | Rewritten to claims backed by the repository and recorded evidence. |
 
+## October 28, evening: retained Meta evidence and publication
+
+- **`a113531`** exported Meta controller job `82ac2dcc` as a static replay. Its first attempt was rejected at the snapshot step, not by a business check, and its second attempt verified.
+- **`0acf59a`, `3993cdf`** added `.nojekyll` and a GitHub Pages portal at `docs/index.html`.
+- **`faa71bb`** exported Meta job `3573b32b` (44 of 44 assertions, cleanup succeeded), including its two trace archives, and pointed `docs/replay/` at it. **`0a24285`** revised the portal.
+- **`a69d705`** added `--unidiff-zero` to snapshot patch application and fixed the Inspector's loopback proxy origin. **`876fd77`** added a root redirect and Vercel configuration; no Vercel deployment is documented.
+- **`9794abe`** improved the judge walkthrough and scope cleanup, and added the [retained Meta replay review](evidence/2026-10-28-meta-replay-review.md), which superseded statements that no Meta repair had been recorded. **`b2535ec`** simplified the Inspector, and **`a24e890`** allowed same-origin requests through Orca previews.
+
 ## Status of the assessment's problems
 
 | Problem | Status | Evidence |
@@ -45,8 +53,8 @@ An audit compared those additions against the code and recorded evidence. The sc
 | No aggregate resource quota | Resolved | Kernel read-back per launch, enforcement probe, real memory/task hog tests |
 | Evaluation limited to one fixture defect | Resolved for one route | [EVALUATION.md](EVALUATION.md): authored corpus; gates rejected 6 of 6 wrong repairs |
 | Benefit not measured | Partly resolved | Gate value measured on the corpus; no time or user study exists |
-| Successful runs were deterministic; no live Meta repair | **Open** | No Meta-hosted run. A non-Meta model (DeepSeek, labeled) verified 18 of 20 holdout runs. The one local Llama 3.2 run failed |
+| Successful runs were deterministic; no live Meta repair | Partly resolved | Two retained Meta controller repairs (`3573b32b`, `82ac2dcc`) with a [provenance review](evidence/2026-10-28-meta-replay-review.md). No repeated Meta series or Meta corpus run. A non-Meta model (DeepSeek, labeled) verified 18 of 20 holdout runs. The one local Llama 3.2 run failed |
 | Firsthand relevance and user validation | **Open** | Needs the owner's account and real conversations ([IMPACT_EVIDENCE.md](IMPACT_EVIDENCE.md)) |
 | Independent containment review | Partly resolved | Internal AI-assisted adversarial review with fixes; external review outstanding |
-| No shareable experience | Partly resolved | Static replay export and reviewed example; not yet published |
+| No shareable experience | Partly resolved | Static replays published on GitHub Pages; the Meta replay's trace archives contain workstation paths and await the owner's decision |
 | No final video | **Open** | — |

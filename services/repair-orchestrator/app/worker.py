@@ -36,6 +36,7 @@ from app.runtime import (
     Phase,
     Runtime,
     RuntimeArtifact,
+    RuntimeUnavailable,
 )
 from app.snapshots import Snapshot, SnapshotManager
 from shared.config import REGISTRY, Scenario
@@ -67,6 +68,7 @@ class Budgets:
     verification: float = 20
     work: float = 170
     cleanup: float = 10
+    preflight: float = 45
     overall: float = 180
     poll: float = 0.025
 
@@ -720,11 +722,15 @@ class RepairWorker:
                     "failed_stage": self.database.get_job(job_id).stage.value,
                 }
             except Exception as exc:
+                logger.exception("Job %s failed in a trusted operation", job_id)
                 details = {
                     "code": "trusted_operation_failed",
                     "exception_type": type(exc).__name__,
                     "failed_stage": self.database.get_job(job_id).stage.value,
                 }
+                if isinstance(exc, RuntimeUnavailable | CandidateRejected):
+                    # Their messages are fixed reason codes, never untrusted content.
+                    details["reason"] = str(exc)[:120]
             if time.monotonic() >= started + self.budgets.work:
                 outcome = TerminalOutcome.TIMEOUT
             if (
@@ -749,6 +755,7 @@ class RepairWorker:
                     await self.snapshots.cleanup(job_id)
                     clean = True
             except Exception:
+                logger.exception("Cleanup for job %s was not confirmed", job_id)
                 details = {**(details or {}), "cleanup_error": "resource_cleanup_unconfirmed"}
             # Keep failed-attempt details unless a more specific outer failure exists.
             if (
@@ -779,7 +786,7 @@ class RepairWorker:
                 clean=clean,
                 error_details={"code": "controller_restart", "failed_stage": job.stage.value},
             )
-        async with asyncio.timeout(self.budgets.cleanup):
+        async with asyncio.timeout(self.budgets.preflight):
             await self.runtime.reconcile(installation)
         lease = self.database.get_lease()
         if lease.owner_id is not None and lease.owner_id.startswith("reset:"):
@@ -795,7 +802,7 @@ class RepairWorker:
             raise RuntimeError("Reset reservation has no owner")
         clean = False
         try:
-            async with asyncio.timeout(self.budgets.cleanup):
+            async with asyncio.timeout(self.budgets.preflight):
                 if not self.runtime.ready:
                     raise RuntimeError("Runtime is not ready")
                 await self.runtime.reconcile(lease.installation_id)

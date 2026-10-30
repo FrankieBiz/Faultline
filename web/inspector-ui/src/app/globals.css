@@ -95,13 +95,20 @@ h3 .muted { font-weight: 400; margin-left: 8px; }
 .job-head { display: grid; grid-template-columns: 1fr auto; gap: 32px; align-items: start; }
 .facts { display: grid; gap: 6px; margin: 0; font-size: 13px; }
 
-.track { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; margin: 32px 0; padding: 0; list-style: none; font-size: 12px; color: var(--ink-3); }
-.track li::before { content: ""; display: block; height: 2px; margin-bottom: 8px; background: var(--line); }
-.track li[data-state="reached"] { color: var(--ink-2); }
-.track li[data-state="reached"]::before { background: var(--ink-3); }
-.track li[data-state="current"] { color: var(--ink); }
-.track li[data-state="current"]::before { background: var(--ink); animation: pulse 1.4s ease-in-out infinite; }
-.track li[data-state="skipped"]::before { background: repeating-linear-gradient(90deg, var(--line-strong) 0 4px, transparent 4px 8px); }
+/* Run pipeline: one row per judge-facing step; the mark carries the evidence tone. */
+.pipeline { margin: 0 0 32px; padding: 0; list-style: none; border-top: 1px solid var(--line); }
+.pipeline li { display: grid; grid-template-columns: 24px minmax(0, 210px) minmax(0, 1fr); gap: 4px 16px; align-items: baseline; padding: 13px 0; border-bottom: 1px solid var(--line); }
+.pipeline strong { font-size: 14px; font-weight: 600; }
+.pipeline p { margin: 0; color: var(--ink-2); font-size: 13.5px; overflow-wrap: anywhere; }
+.pipeline-mark { display: grid; place-items: center; width: 24px; height: 24px; border: 1px solid var(--line-strong); border-radius: 50%; background: rgba(255, 255, 255, 0.04); color: var(--ink-2); font: 12px var(--mono); }
+.pipeline li[data-state="pending"] :is(strong, p), .pipeline li[data-state="skipped"] p { color: var(--ink-3); }
+.pipeline li[data-state="pending"] .pipeline-mark { background: none; border-color: var(--line); color: var(--ink-3); }
+.pipeline li[data-state="skipped"] .pipeline-mark { background: none; border-style: dashed; color: var(--ink-3); }
+.pipeline li[data-state="current"] .pipeline-mark { border-color: var(--ink); color: var(--ink); animation: pulse 1.4s ease-in-out infinite; }
+.pipeline li[data-step-tone="ok"] .pipeline-mark { border-color: var(--green); color: var(--green); }
+.pipeline li[data-step-tone="bad"] .pipeline-mark { border-color: var(--red); color: var(--red); }
+.pipeline li[data-step-tone="warn"] .pipeline-mark { border-color: var(--amber); color: var(--amber); }
+.pipeline li[data-state="failed"] p { color: var(--ink); }
 
 .seam { display: grid; grid-template-columns: 1fr 1px 1fr; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
 .seam-rule { background: var(--line); }
@@ -121,8 +128,18 @@ h3 .muted { font-weight: 400; margin-left: 8px; }
 
 /* Evidence blocks */
 .block { margin-top: 48px; }
-details > summary { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 12px 0; border-bottom: 1px solid var(--line); cursor: pointer; font-size: 13.5px; }
-details > summary::marker { color: var(--ink-3); }
+details > summary { position: relative; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; padding: 12px 0 12px 18px; border-bottom: 1px solid var(--line); cursor: pointer; font-size: 13.5px; list-style: none; }
+details > summary::-webkit-details-marker { display: none; }
+/* Flex summaries drop the native marker, so draw a chevron that turns when open.
+   It is positioned outside the flex flow so wrapped labels never strand it. */
+details > summary::before {
+  content: ""; position: absolute; left: 2px; top: calc(12px + 0.5lh - 4px); width: 6px; height: 6px;
+  border-right: 1.5px solid var(--ink-3); border-bottom: 1.5px solid var(--ink-3);
+  transform: rotate(-45deg); transition: transform 160ms ease-out;
+}
+details[open] > summary::before { transform: rotate(45deg); }
+details > summary:hover { color: var(--ink); }
+details > summary:hover::before { border-color: var(--ink-2); }
 details[open] > summary { margin-bottom: 16px; }
 .attempt + .attempt { margin-top: 8px; }
 .inline { display: flex; flex-wrap: wrap; gap: 6px 20px; margin: 0 0 16px; padding: 0; list-style: none; font: 12.5px var(--mono); color: var(--ink-2); }
@@ -176,7 +193,8 @@ details[open] > summary { margin-bottom: 16px; }
   .intro { padding: 40px 0 32px; }
   .actions .btn { flex: 1 1 100%; }
   .job-head, .cols { grid-template-columns: 1fr; gap: 20px; }
-  .track { grid-template-columns: repeat(4, 1fr); row-gap: 14px; }
+  .pipeline li { grid-template-columns: 24px minmax(0, 1fr); }
+  .pipeline p { grid-column: 2; }
   .seam { grid-template-columns: 1fr; }
   .seam-rule { height: 1px; }
   .seam[data-verified="true"] .seam-rule { background: linear-gradient(90deg, var(--red), var(--green)); }
@@ -198,3 +216,59 @@ main, section, .job-head > div, .cols > *, .facts, .strip dd { min-width: 0; }
 .facts dd, .strip dd, .rows code, .events li > span { overflow-wrap: anywhere; }
 .side img { height: auto; }
 @media (max-width: 760px) { .top { position: static; } .strip { gap: 8px; padding-bottom: 12px; } .strip div { flex-wrap: wrap; } .facts div { flex-wrap: wrap; } }
+
+.journey { margin: 24px 0 16px; padding-left: 22px; max-width: 80ch; color: var(--ink-2); }
+.journey li + li { margin-top: 8px; }
+.scope { max-width: 80ch; color: var(--ink-2); }
+.evidence-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+a.btn { display: inline-flex; align-items: center; text-decoration: none; }
+
+/* Guided demo: one action first, supporting evidence on demand. */
+.shell { max-width: 1080px; }
+.top { position: static; }
+.top-row { min-height: 68px; }
+.readiness { color: var(--ink-2); font-size: 13px; }
+.readiness[data-tone="ok"] { color: var(--green); }
+.readiness[data-tone="warn"] { color: var(--amber); }
+.intro { display: grid; grid-template-columns: minmax(0, 1fr) 310px; gap: 72px; align-items: end; padding: 88px 0 44px; }
+.intro-kicker, .result-kicker { margin: 0 0 16px; color: var(--green); font-size: 13px; font-weight: 600; }
+h1 { max-width: 14ch; font-size: clamp(42px, 6vw, 68px); letter-spacing: -0.045em; }
+.intro-description { max-width: 53ch; margin: 24px 0 0; color: var(--ink-2); font-size: 17px; line-height: 1.65; }
+.actions { margin-top: 28px; }
+.run-button { min-height: 52px; padding: 0 24px; font-size: 16px; }
+.source-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; max-width: 72ch; margin: 16px 0 0; padding-left: 12px; border-left: 2px solid var(--line-strong); color: var(--ink-2); font-size: 13px; }
+.source-line[data-tone="warn"] { border-color: var(--amber); }
+.source-key { color: var(--ink-3); font: 11.5px var(--mono); }
+.source-note { flex-basis: 100%; color: var(--amber); }
+.btn.retry { margin-top: 6px; padding-left: 14px; }
+.block-note { max-width: 72ch; margin: -4px 0 16px; color: var(--ink-3); font-size: 13px; }
+.result-heading h2:focus { outline: none; }
+.how-it-works { padding: 24px 0 0; border-top: 1px solid var(--line-strong); }
+.how-it-works h2 { font-size: 15px; }
+.how-it-works ol { display: grid; gap: 22px; margin: 22px 0 0; padding: 0; list-style: none; }
+.how-it-works li { display: grid; grid-template-columns: 28px 1fr; gap: 12px; }
+.how-it-works li > span { display: grid; place-items: center; width: 24px; height: 24px; border: 1px solid var(--line-strong); border-radius: 50%; color: var(--ink-2); font-size: 12px; }
+.how-it-works strong { font-size: 14px; }
+.how-it-works p { margin: 4px 0 0; color: var(--ink-2); font-size: 13px; }
+.scope { max-width: none; margin: 0; padding: 17px 0; border-top: 1px solid var(--line); color: var(--ink-2); font-size: 13px; }
+.manual-walkthrough { margin-top: 24px; }
+.manual-walkthrough p { max-width: 70ch; color: var(--ink-2); }
+.manual-walkthrough .btn { margin-bottom: 12px; }
+.job { margin-top: 48px; padding-top: 44px; }
+.result-heading { margin-bottom: 28px; }
+.result-heading h2 { font-size: clamp(28px, 4vw, 40px); }
+.technical-details, .setup-details { margin-top: 32px; }
+.technical-details > summary, .setup-details > summary, .history > summary { color: var(--ink-2); font-size: 14px; }
+.technical-details .facts { margin-top: 20px; }
+.job > .block { margin-top: 40px; }
+.side .signal + .signal { margin-top: 4px; }
+.side img { aspect-ratio: 16 / 10; object-fit: cover; object-position: top; }
+.history { margin-top: 52px; }
+.preview { margin-top: 32px; padding-top: 0; }
+.foot { margin-top: 64px; }
+@media (max-width: 760px) {
+  .intro { grid-template-columns: 1fr; gap: 38px; padding: 54px 0 32px; }
+  .intro-description { font-size: 16px; }
+  .how-it-works ol { gap: 16px; }
+  .job { margin-top: 36px; }
+}

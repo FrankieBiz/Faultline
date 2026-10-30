@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "FaultLine — Controlled Browser QA & Verified Source Repair",
-  description: "Meta AI Developer Hackathon entry: Autonomous browser defect reproduction, Meta model repair, and sandboxed AST verification.",
+  description: "Meta Global AI Developer Hackathon entry: reproduce a seeded checkout failure in a real browser, gate a proposed patch, and verify it in an isolated runtime.",
 };
 
 export default function RootLayout({

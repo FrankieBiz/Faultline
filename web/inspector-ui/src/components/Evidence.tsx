@@ -1,6 +1,6 @@
 import {
-  STAGES, STAGE_LABEL, TERMINAL, limitsName, providerName,
-  type Artifact, type Attempt, type Execution, type Job, type JobEvent, type Tone,
+  STAGE_LABEL, TERMINAL, providerName,
+  type Artifact, type Attempt, type Execution, type JobDetail, type JobEvent, type JobStage, type Tone,
 } from "@/lib/faultline-api";
 
 export const artifactUrl = (id: string) => `/api/faultline/artifacts/${encodeURIComponent(id)}`;
@@ -19,18 +19,102 @@ function failureSignal(x: Execution): string {
   return failed ? `${failed.id}: expected ${failed.expected}, observed ${failed.observed}` : "No failure detail recorded.";
 }
 
-export function Track({ job, events }: { job: Job; events: JobEvent[] }) {
+/** Symptom and recorded cause in one line, e.g. "POST /api/checkout returned HTTP 500 · TypeError: …". */
+function failureSummary(x: Execution): string {
+  const http = x.report.observations.find((o) => o.kind === "http_error");
+  const cause = x.report.observations.find((o) => o.kind === "server_exception");
+  const status = http?.data?.status;
+  const symptom = http && (typeof http.source === "string" && typeof status === "number"
+    ? `${http.source} returned HTTP ${status}` : http.message);
+  const parts = [symptom, cause?.message].filter((part): part is string => Boolean(part));
+  return parts.length ? parts.join(" · ") : failureSignal(x);
+}
+
+const diffStat = (diff: string) => {
+  const lines = diff.split("\n").filter((l) => !l.startsWith("+++") && !l.startsWith("---"));
+  return `+${lines.filter((l) => l.startsWith("+")).length} −${lines.filter((l) => l.startsWith("-")).length}`;
+};
+
+/** The five judge-facing steps, mapped from orchestrator stages. */
+export const STEP_LABELS = [
+  "Reproduce the failure", "Propose a patch", "Pass the policy gates", "Verify the candidate", "Record evidence and clean up",
+] as const;
+const STEP_OF: Record<JobStage, number> = {
+  preparing: 0, baseline: 0, diagnosing: 1, patch_validation: 2, activating: 3, verification: 3, cleanup: 4, completed: 4,
+};
+const STEP_DOING = [
+  "A fresh browser in the isolated runtime places an order without a coupon.",
+  "The repair provider is asked for a one-file diff. The prompt states the checkout rules, not the defect.",
+  "The diff's path, source hash, size, syntax, and imports are checked before any code runs.",
+  "A patched copy reruns the same browser journey plus pricing, coupon, and order-storage checks.",
+  "The isolated runtime is disposed of and checksummed evidence is recorded.",
+];
+type StepState = "done" | "current" | "pending" | "failed" | "skipped";
+const STEP_STATE_TEXT: Record<StepState, string> = {
+  done: "complete", current: "in progress", pending: "not started", failed: "failed", skipped: "not reached",
+};
+
+/** Events can arrive over SSE before the next poll; the newest one is the most current stage. */
+export const currentStep = (job: JobDetail["job"], events: JobEvent[]) => STEP_OF[events.at(-1)?.stage ?? job.stage] ?? STEP_OF[job.stage];
+
+/** What happened at each step, read only from recorded data; nothing is inferred as passed. */
+export function Pipeline(props: { detail: JobDetail; events: JobEvent[]; verification: Execution | null; verified: boolean }) {
+  const { detail, events, verification, verified } = props;
+  const { job, baseline, attempts, artifacts } = detail;
   const terminal = TERMINAL.has(job.state);
-  const reached = new Set<string>(events.map((e) => e.stage)).add(job.stage);
+  const current = terminal ? -1 : currentStep(job, events);
+  const latest = attempts.at(-1) ?? null;
+  const v = latest?.validation_result ?? null;
+  const verifiedNumber = attempts.find((a) => a.id === verification?.attempt_id)?.attempt_number;
+  const prefix = (n: number | undefined) => (attempts.length > 1 && n ? `Attempt ${n}: ` : "");
+  const noRepair = job.effective_mode === "detect" || job.outcome === "repair_unavailable" || job.outcome === "detected";
+
+  type Recorded = { state: StepState; tone: Tone; text: string } | null;
+  const recorded: Recorded[] = [
+    baseline ? {
+      state: baseline.report.verdict === "error" || baseline.report.verdict === "timed_out" ? "failed" : "done",
+      tone: baseline.report.verdict === "failed" ? "bad" : baseline.report.verdict === "passed" ? "idle" : "warn",
+      text: baseline.report.verdict === "failed" ? `Reproduced: ${failureSummary(baseline)}`
+        : baseline.report.verdict === "passed" ? "The checkout worked, so there was nothing to repair."
+        : `${VERDICT[baseline.report.verdict]} before the failure could be confirmed.`,
+    } : null,
+    latest ? {
+      state: latest.parsed_diff ? "done" : "failed", tone: latest.parsed_diff ? "idle" : "bad",
+      text: `${prefix(latest.attempt_number)}${typeof v?.provider === "string" && typeof v?.model === "string" ? providerName(v.provider, v.model) : "Provider not recorded"}${
+        latest.parsed_diff ? ` · ${diffStat(latest.parsed_diff)} lines in ${typeof v?.target_file === "string" ? v.target_file : "one file"}` : " · no usable diff returned"}`,
+    } : job.outcome === "model_error" ? { state: "failed", tone: "bad", text: "The repair provider returned no usable proposal." }
+      : noRepair ? { state: "skipped", tone: "idle", text: "No patch requested: this was a detection-only run." } : null,
+    v && typeof v.is_valid === "boolean" ? {
+      state: v.is_valid ? "done" : "failed", tone: v.is_valid ? "ok" : "bad",
+      text: v.is_valid ? `${prefix(latest?.attempt_number)}Scope, syntax, and AST safety policy passed before any code ran.`
+        : `${prefix(latest?.attempt_number)}Rejected before execution: ${typeof v.error_message === "string" ? v.error_message : "policy violation"}`,
+    } : null,
+    verification ? {
+      state: verification.report.verdict === "passed" ? "done" : "failed",
+      tone: verification.report.verdict !== "passed" ? "bad" : verified ? "ok" : "warn",
+      text: (() => {
+        const list = verification.report.assertions;
+        const failed = list.filter((a) => !a.passed).length;
+        return `${prefix(verifiedNumber)}${list.length - failed} of ${list.length} checks passed in the isolated runtime${failed ? `; ${failed} failed` : ""}.`;
+      })(),
+    } : null,
+    job.cleanup_status === "succeeded" ? { state: "done", tone: "idle", text: `Cleanup confirmed · ${artifacts.length} artifacts recorded with SHA-256 checksums.` }
+      : job.cleanup_status === "failed" ? { state: "failed", tone: "bad", text: "Cleanup could not be confirmed, so new runs are held until a reset." }
+      : null,
+  ];
+
   return (
-    <ol className="track" aria-label="Job stages">
-      {STAGES.map((stage) => {
-        const state =
-          !terminal && stage === job.stage ? "current" : reached.has(stage) ? "reached" : terminal ? "skipped" : "pending";
+    <ol className="pipeline" aria-label="What FaultLine did in this run">
+      {STEP_LABELS.map((label, i) => {
+        const step = !terminal
+          ? i < current ? recorded[i] ?? { state: "done" as const, tone: "idle" as const, text: "Complete." }
+            : { state: i === current ? "current" as const : "pending" as const, tone: "idle" as const, text: STEP_DOING[i] }
+          : recorded[i] ?? { state: "skipped" as const, tone: "idle" as const, text: "Not reached in this run." };
         return (
-          <li key={stage} data-state={state} aria-current={state === "current" ? "step" : undefined}>
-            {STAGE_LABEL[stage]}
-            <span className="sr-only"> ({state === "skipped" ? "not reached" : state})</span>
+          <li key={label} data-state={step.state} data-step-tone={step.tone} aria-current={step.state === "current" ? "step" : undefined}>
+            <span className="pipeline-mark" aria-hidden="true">{i + 1}</span>
+            <strong>{label}<span className="sr-only"> ({STEP_STATE_TEXT[step.state]})</span></strong>
+            <p>{step.text}</p>
           </li>
         );
       })}
@@ -48,14 +132,12 @@ function Side(props: { label: string; run: Execution | null; tone: Tone; empty: 
       {run ? (
         <>
           <p className="verdict">{VERDICT[run.report.verdict]}</p>
-          <p className="signal">
-            {run.report.verdict === "passed" ? `${passed} of ${assertions.length} assertions passed` : failureSignal(run)}
-          </p>
-          <p className="meta">
-            {run.runtime_kind === "isolated-browser" ? "Isolated browser" : "Unverified runtime"} ·{" "}
-            {limitsName(run.resource_limits)} ·{" "}
-            {Math.round(run.report.duration_ms)} ms · snapshot {run.candidate_snapshot_sha256.slice(0, 12)}
-          </p>
+          {run.report.verdict === "passed" ? <p className="signal">{passed} of {assertions.length} checks passed</p> : (
+            <>
+              {assertions.length > 0 && <p className="signal">{assertions.length - passed} of {assertions.length} checks failed</p>}
+              <p className="signal muted">{failureSummary(run)}</p>
+            </>
+          )}
           {shot && (
             // Shown only when the runner registered a screenshot; hidden if the bytes do not decode.
             // eslint-disable-next-line @next/next/no-img-element
@@ -80,20 +162,25 @@ function Side(props: { label: string; run: Execution | null; tone: Tone; empty: 
 export function Seam(props: {
   baseline: Execution | null; verification: Execution | null; verified: boolean;
   attemptNumber: number | null; artifacts: Artifact[];
+  /** Current pipeline step while the job runs; null once it is terminal. */
+  step: number | null;
 }) {
-  const { baseline, verification, verified, attemptNumber, artifacts } = props;
+  const { baseline, verification, verified, attemptNumber, artifacts, step } = props;
   const shot = (x: Execution | null) => (x ? artifacts.find((a) => a.role === "screenshot" && belongsTo(a, x)) : undefined);
   const baseTone: Tone = !baseline ? "idle" : baseline.report.verdict === "failed" ? "bad" : baseline.report.verdict === "passed" ? "idle" : "warn";
   const afterTone: Tone = verified ? "ok" : !verification ? "idle" : verification.report.verdict === "passed" ? "warn" : "bad";
   return (
     <div className="seam" data-verified={verified}>
-      <Side label="Before · baseline run" run={baseline} tone={baseTone} empty="The baseline has not run yet." shot={shot(baseline)} />
+      <Side label="Before · broken checkout" run={baseline} tone={baseTone} shot={shot(baseline)}
+        empty={step === null ? "No baseline was recorded for this run."
+          : step === 0 ? "Reproducing the checkout in a fresh browser…" : "Loading the recorded baseline…"} />
       <div className="seam-rule" aria-hidden="true" />
       <Side
-        label={`After · verification${attemptNumber ? `, attempt ${attemptNumber}` : ""}`}
+        label={`After · tested fix${attemptNumber && attemptNumber > 1 ? `, attempt ${attemptNumber}` : ""}`}
         run={verification}
         tone={afterTone}
-        empty="No patched candidate has been verified for this job."
+        empty={step === null ? "No patched candidate was verified for this run."
+          : step < 3 ? "Waiting for a patched candidate to test…" : "Testing the patched candidate…"}
         shot={shot(verification)}
       />
     </div>
@@ -155,7 +242,8 @@ export function Attempts({ attempts, terminal }: { attempts: Attempt[]; terminal
   if (!attempts.length) return null;
   return (
     <section className="block" aria-labelledby="attempts-h">
-      <h3 id="attempts-h">Repair attempts</h3>
+      <h3 id="attempts-h">{attempts.length > 1 ? `Proposed patches · ${attempts.length} attempts` : "Proposed patch"}</h3>
+      <p className="block-note">The diff the provider returned, with the policy gate results. It was applied only to an isolated copy; nothing is deployed.</p>
       {[...attempts].reverse().map((a, index) => {
         const v = a.validation_result;
         const provider = typeof v?.provider === "string" && typeof v?.model === "string"
@@ -200,8 +288,8 @@ export function Assertions({ runs }: { runs: { label: string; run: Execution }[]
           const list = run.report.assertions;
           const failed = list.filter((a) => !a.passed).length;
           return (
-            <details key={run.report.execution_id} open={run.phase === "verification" || failed > 0}>
-              <summary>{label} · {list.length - failed} of {list.length} passed</summary>
+            <details key={run.report.execution_id}>
+              <summary>{label} · {list.length - failed} of {list.length} passed{failed > 0 && ` · ${failed} failed`}</summary>
               {list.length === 0 ? <p className="muted">No assertions recorded.</p> : (
                 <ul className="asserts">
                   {list.map((a) => (
@@ -232,8 +320,16 @@ export function Artifacts(props: { artifacts: Artifact[]; executions: Execution[
   };
   return (
     <section className="block" aria-labelledby="artifacts-h">
-      <h3 id="artifacts-h">Artifacts</h3>
-      <ul className="rows">
+      <h3 id="artifacts-h">Evidence</h3>
+      <p className="block-note">Screenshots, Playwright traces, request logs, and reports from both runs, each recorded with a SHA-256 checksum.</p>
+      <p className="evidence-actions">
+        {artifacts.filter((a) => a.role === "proof_bundle_md" || a.role === "proof_bundle").map((a) => (
+          <a key={a.id} className="btn" href={artifactUrl(a.id)} download>{a.role === "proof_bundle_md" ? "Download review summary" : "Download evidence bundle"}</a>
+        ))}
+      </p>
+      <details>
+        <summary>All artifacts · {artifacts.length} files</summary>
+        <ul className="rows">
         {artifacts.map((a) => (
           <li key={a.id}>
             <strong>{a.role}</strong>
@@ -247,7 +343,8 @@ export function Artifacts(props: { artifacts: Artifact[]; executions: Execution[
             </a>
           </li>
         ))}
-      </ul>
+        </ul>
+      </details>
     </section>
   );
 }
@@ -255,7 +352,9 @@ export function Artifacts(props: { artifacts: Artifact[]; executions: Execution[
 export function EventLog({ events, stream }: { events: JobEvent[]; stream: string }) {
   return (
     <section className="block" aria-labelledby="events-h">
-      <h3 id="events-h">Events <span className="muted">{events.length} recorded · stream {stream}</span></h3>
+      <h3 id="events-h">Events <span className="muted">{events.length} recorded · {stream === "closed" ? "complete · job finished" : `updates ${stream}`}</span></h3>
+      <details>
+        <summary>View event log</summary>
       {events.length === 0 ? <p className="muted">No events recorded yet.</p> : (
         <ol className="events" role="log" tabIndex={0} aria-label="Job events">
           {events.map((e) => (
@@ -268,6 +367,7 @@ export function EventLog({ events, stream }: { events: JobEvent[]; stream: strin
           ))}
         </ol>
       )}
+      </details>
     </section>
   );
 }

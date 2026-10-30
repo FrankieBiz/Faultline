@@ -716,8 +716,10 @@ class IsolatedRuntime:
     async def release_scope(self, unit: str | None, *, grace: float = 1.0) -> None:
         """Confirm a scope is gone, SIGKILLing only that unit's cgroup if it lingers.
 
-        OOM-killed scopes stay loaded as failed until reset, so absence is
-        confirmed only after reset-failed. Raises (bounded) without discarding
+        OOM-killed scopes stay loaded as failed until reset. An early-cancelled
+        launch can leave an empty active scope, which needs an explicit stop:
+        SIGKILL alone cannot retire the manager unit. Neither case counts as
+        absent until the manager reports not-found. Raises (bounded) without discarding
         the caller's ownership, which keeps the quarantine path available.
         """
         if unit is None:
@@ -735,7 +737,12 @@ class IsolatedRuntime:
                     await self._systemctl("reset-failed", unit)
                 elif not killed and time.monotonic() - started >= grace:
                     killed = True
-                    await self._systemctl("kill", "--signal=SIGKILL", unit)
+                    try:
+                        await self._systemctl("kill", "--signal=SIGKILL", unit)
+                    finally:
+                        # Request the manager transition without waiting inside
+                        # systemctl; this loop still confirms actual absence.
+                        await self._systemctl("stop", "--no-block", unit)
             except RuntimeUnavailable:
                 pass
             if time.monotonic() - started > grace + SCOPE_RELEASE_SECONDS:
@@ -775,10 +782,11 @@ class IsolatedRuntime:
                 "print('isolated-profile-ready')",
                 env={},
             )
-            if (
-                await process.wait(5) != 0
-                or bytes(process.stdout).strip() != b"isolated-profile-ready"
-            ):
+            try:
+                status = await process.wait(5)
+            except TimeoutError:
+                raise RuntimeUnavailable("isolated_profile_timeout") from None
+            if status != 0 or bytes(process.stdout).strip() != b"isolated-profile-ready":
                 raise RuntimeUnavailable("isolated_profile_unavailable")
 
     async def _enforcement_probe(self) -> str | None:
@@ -909,13 +917,21 @@ class IsolatedRuntime:
             cwd=self.root / "tools/browser-runner",
             env=self._trusted_environment(),
         )
-        self._preflight = await process.wait(5) == 0
+        # A cold Chromium start on a loaded machine withholds readiness; it must not abort startup.
+        try:
+            self._preflight = await process.wait(15) == 0
+        except TimeoutError:
+            self._preflight = False
 
     def _trusted_environment(self) -> dict[str, str]:
         # Never propagate control/model credentials or load a project environment file.
         env = {"PATH": os.defpath, "NODE_ENV": "production", "NEXT_TELEMETRY_DISABLED": "1"}
-        # Playwright uses HOME only to locate its installed, trusted browser cache.
-        env["PLAYWRIGHT_BROWSERS_PATH"] = str(Path.home() / ".cache/ms-playwright")
+        # Use the browser cache `make setup` installed into: the operator's absolute
+        # PLAYWRIGHT_BROWSERS_PATH if set, otherwise Playwright's default under HOME.
+        configured = os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "")
+        default = Path.home() / ".cache/ms-playwright"
+        browsers = configured if Path(configured).is_absolute() else str(default)
+        env["PLAYWRIGHT_BROWSERS_PATH"] = browsers
         return env
 
     async def prepare(self, installation_id: str, job_id: str, snapshot: Snapshot) -> None:

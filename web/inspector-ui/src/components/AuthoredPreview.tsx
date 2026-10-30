@@ -26,9 +26,9 @@ export default function AuthoredPreview() {
   const expected = scenario.receiptOutput.afterRepair;
 
   return (
-    <section className="preview" aria-labelledby="preview-h">
+    <details className="preview">
+      <summary>Scenario reference · authored preview, not execution evidence</summary>
       <p className="tag">Authored preview · not execution evidence</p>
-      <h2 id="preview-h">Scenario reference</h2>
       <p className="lede">
         Scripted from <code>chaos-scenarios.ts</code>. Nothing here is sent to the orchestrator. Only NoneType
         Discount has a seeded backend scenario; the others are design references.
@@ -82,6 +82,6 @@ export default function AuthoredPreview() {
           <li key={step.atMs}><span className="muted">{step.actor}</span>{step.message}</li>
         ))}
       </ol>
-    </section>
+    </details>
   );
 }

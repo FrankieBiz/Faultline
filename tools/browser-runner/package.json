@@ -23,6 +23,7 @@
     "test:e2e": "playwright test --project=chromium-e2e",
     "check": "npm run typecheck && npm run build && npm run test:unit",
     "checkout": "node dist/cli.js",
+    "test:storefront": "FAULTLINE_STOREFRONT_TEST=1 playwright test --project=storefront",
     "test:inspector": "FAULTLINE_INSPECTOR_TEST=1 playwright test --project=inspector"
   },
   "dependencies": {

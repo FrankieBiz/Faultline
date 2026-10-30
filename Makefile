@@ -8,7 +8,8 @@ FRONTEND := apps/buggyshop-frontend
 RUNNER := tools/browser-runner
 INSPECTOR := web/inspector-ui
 
-check: lint typecheck test provenance frontend runner inspector build
+# Tests follow the storefront and runner builds; isolated-runtime tests need both.
+check: lint typecheck provenance frontend runner inspector test build
 
 setup:
 	./scripts/setup.sh
@@ -18,6 +19,7 @@ integration: frontend runner
 
 browser:
 	cd $(RUNNER) && npm run test:inspector
+	cd $(RUNNER) && npm run test:storefront
 
 frontend:
 	cd $(FRONTEND) && npm run check
@@ -33,8 +35,8 @@ test:
 	$(ORCHESTRATOR_UV) pytest $(ORCHESTRATOR)/tests
 
 lint:
-	$(UV) ruff check --config $(BACKEND)/pyproject.toml $(BACKEND) shared fixtures tests
-	$(UV) ruff format --check --config $(BACKEND)/pyproject.toml $(BACKEND) shared fixtures tests
+	$(UV) ruff check --config $(BACKEND)/pyproject.toml $(BACKEND) shared fixtures tests scripts
+	$(UV) ruff format --check --config $(BACKEND)/pyproject.toml $(BACKEND) shared fixtures tests scripts
 	$(ORCHESTRATOR_UV) ruff check --config $(ORCHESTRATOR)/pyproject.toml $(ORCHESTRATOR)
 	$(ORCHESTRATOR_UV) ruff format --check --config $(ORCHESTRATOR)/pyproject.toml $(ORCHESTRATOR)
 

@@ -48,7 +48,7 @@ An overlapping startup build invalidated one browser run and three runtime-readi
 
 ## Follow-up review and remediation — October 28, 2026
 
-This pass acted on every gap in the [score assessment](HACKATHON_SCORE_ASSESSMENT.md) that engineering could address. Two independent internal reviews (a correctness review of the full diff and an AI-assisted adversarial containment review with real probes) checked the new work. Their findings were fixed before the final gates below. External review is still outstanding.
+This pass acted on every gap in the [score assessment](HACKATHON_SCORE_ASSESSMENT.md) that engineering could address. Two separate internal reviews (a correctness review of the full diff and an AI-assisted adversarial containment review with real probes) checked the new work. Their findings were fixed before the final gates below. External review is still outstanding.
 
 | Severity | Observed problem | Remediation and evidence |
 | --- | --- | --- |
@@ -73,6 +73,10 @@ Residual risks accepted for now: no seccomp filter; the candidate's abstract lis
 
 A parallel session added a payload minimizer, an AST analyzer, an evidence bundle, a terminal walkthrough, and new impact content. An audit found fabricated evidence and unsupported claims among them. In repair jobs the minimizer used a hardcoded oracle and payload. The walkthrough printed successes it never measured. The bundle claimed cryptographic authenticity and was never actually saved. The impact interviews predate the features they describe. These were corrected or removed, and a real catch-all-exception rule was added to the patch policy. Details are in [CHRONOLOGICAL_ADJUSTMENTS.md](CHRONOLOGICAL_ADJUSTMENTS.md).
 
+## Retained Meta evidence review — October 28, 2026
+
+The [replay provenance review](evidence/2026-10-28-meta-replay-review.md) checked a retained controller-recorded `meta` / `muse-spark-1.3` repair: failed baseline, 44 passing candidate assertions, successful cleanup, 16 matching replay checksums, and a consistent evidence bundle. No fresh Meta call was made during this review. This supersedes earlier statements that no recorded Meta repair existed; it does not establish Meta holdout performance or repeated-run reliability. Both retained ZIP traces contain workstation paths. They are now publicly served by GitHub Pages and need the owner's decision. The historical score below is unchanged.
+
 ## Harsh provisional judging assessment
 
 The [standalone score assessment](HACKATHON_SCORE_ASSESSMENT.md) explains each awarded score, the missing evidence, and what would justify reassessment.
@@ -88,6 +92,8 @@ These are my evidence-limited estimates, not official results. The rubric weight
 | Total | **55/100** | A defensible prototype; insufficient evidence for a frontier repair platform. |
 
 ## Highest-value remaining work
+
+Written October 27. Status as of October 28: aggregate limits (item 6) and an unfamiliar-defect corpus (item 2) are implemented, and two retained Meta controller repairs exist, though not a repeated series (item 1). Static replays are published on GitHub Pages (item 5). External review, repeated Meta trials, impact evidence, and the recording remain open.
 
 1. **Live Meta evidence.** Configure the credential privately and retain repeated real attempts, including failures, actual usage, browser artifacts, and cleanup. Provider identity must remain visible.
 2. **Generalization.** Keep the controlled demo, but add independent holdout defects or a second actual scenario with protected assertions. A model repairing a known one-line fixture does not establish general repair ability.
