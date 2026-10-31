@@ -67,6 +67,8 @@ cmd_spawn() {
   esac
 
   echo "==> Spawning real Orca child: ${agent} (${model}, effort: ${effort}) in worktree '${name}'" >&2
+  local current_branch
+  current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")"
   local output
   output="$("$ORCA_BIN" worktree create \
     --name "$name" \
@@ -74,6 +76,7 @@ cmd_spawn() {
     --model "$model" \
     --effort "$effort" \
     --prompt "$prompt" \
+    --base-branch "$current_branch" \
     --activate \
     --json)"
 
