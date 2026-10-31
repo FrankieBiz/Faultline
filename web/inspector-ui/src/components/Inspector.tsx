@@ -2,22 +2,25 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import CliGuide from "@/components/CliGuide";
+import CrawlerHud, { applyCrawlEvent, crawlFromCheck, crawlInFlight, startCrawl, type CrawlState } from "@/components/CrawlerHud";
 import { STEP_LABELS, currentStep } from "@/components/Evidence";
-import GuidedFlow, { type FlowRun } from "@/components/GuidedFlow";
+import GuidedFlow, { type FlowRun, type StoreHunt } from "@/components/GuidedFlow";
 import InvariantPanel from "@/components/InvariantPanel";
 import JobResult, { summarizeJob } from "@/components/JobResult";
 import PackPanel from "@/components/PackPanel";
 import ProbeDialog, { type ProbeValues } from "@/components/ProbeDialog";
 import QuickTest from "@/components/QuickTest";
 import ScenarioRail, { type RailStatus, type Selection } from "@/components/ScenarioRail";
-import { playCue, readSoundPreference, writeSoundPreference, type Cue } from "@/lib/audio-cues";
+import { playFailureAlarm, playResolutionChime, readSoundPreference, writeSoundPreference, type Cue } from "@/lib/audio-cues";
 import {
-  ApiError, REASON, TERMINAL, api, checkVerdict, limitsStatusLabel, providerName, providerNote, routeOf, sameOrigin,
+  ApiError, CrawlInterrupted, REASON, TERMINAL, api, checkVerdict, crawl, limitsStatusLabel, providerName, providerNote, routeOf, sameOrigin,
   type CheckRecord, type Invariant, type Job, type JobDetail, type JobEvent, type Readiness,
   type RepairScenario, type ScenarioListing, type StoreStatus, type Tone,
 } from "@/lib/faultline-api";
 
 const POLL_MS = 1500;
+/** Attempts against a crawler endpoint that is still starting before a direct check stands in. */
+const CRAWL_ATTEMPTS = 3;
 
 type Stream = "idle" | "live" | "reconnecting" | "closed";
 type Busy = "submit" | "cancel" | "reset" | "apply" | "revert" | "check" | "remove" | null;
@@ -31,6 +34,9 @@ const json = (body: unknown): RequestInit => ({
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 // Bring a fresh live check result into view without jumping when it is already visible.
 const revealCheck = () => requestAnimationFrame(() => document.querySelector("#workspace .check")?.scrollIntoView({ block: "nearest" }));
+const revealHud = () => requestAnimationFrame(() => document.querySelector(".hud")?.scrollIntoView({ block: "nearest" }));
+/** What stands in for the crawler when its endpoint is not answering: a real HTTP check, named for the HUD. */
+type CrawlFallback = { title: string; run: () => Promise<CheckRecord | null> };
 // The controller requires a UUID. randomUUID exists only in secure contexts (not plain http on a LAN IP),
 // so build an RFC 4122 v4 UUID from getRandomValues, which is available everywhere.
 const newKey = () => {
@@ -59,6 +65,8 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
   /** The URL the custom check dialog opens with, carried over from the header field. */
   const [dialogSeed, setDialogSeed] = useState("");
   const [quickTesting, setQuickTesting] = useState(false);
+  const [crawlState, setCrawlState] = useState<CrawlState | null>(null);
+  const crawlAbort = useRef<AbortController | null>(null);
   const [flowAction, setFlowAction] = useState<FlowAction>(null);
   /** Bumped to open the CLI guide; the dialog closes itself. */
   const [guideRequest, setGuideRequest] = useState(0);
@@ -155,14 +163,18 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
     }
   }, []);
 
-  const cue = useCallback((name: Cue) => { if (soundRef.current) playCue(name); }, []);
+  const cue = useCallback((name: Cue) => {
+    if (!soundRef.current) return;
+    if (name === "catastrophe") playFailureAlarm();
+    else playResolutionChime();
+  }, []);
   const toggleSound = () => {
     const next = !soundRef.current;
     soundRef.current = next;
     setSound(next);
     writeSoundPreference(next);
     // The click that enables sound is the gesture that unlocks audio; confirm with the pass cue.
-    if (next) playCue("resolve");
+    if (next) playResolutionChime();
   };
 
   // Read the stored preference after hydration, so server and client render the same first frame.
@@ -171,6 +183,9 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
     soundRef.current = stored;
     setSound(stored);
   }, []);
+
+  // A crawl streams until it finishes; leaving the page ends it.
+  useEffect(() => () => crawlAbort.current?.abort(), []);
 
   // "?" opens the workflow quick sheet from anywhere except a text field or an open dialog.
   useEffect(() => {
@@ -473,8 +488,8 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
    * Check the store's checkout live and show the result. After a source change the store hot-reloads,
    * so `reloading` re-checks a few times until it reports the expected verdict; every check is recorded.
    */
-  const settleLive = async (want: Tone, reloading: boolean) => {
-    if (!liveCheckout) return;
+  const settleLive = async (want: Tone, reloading: boolean): Promise<CheckRecord | null> => {
+    if (!liveCheckout) return null;
     select({ kind: "invariant", id: liveCheckout.id });
     let record: CheckRecord | null = null;
     for (let attempt = 0; attempt < (reloading ? 5 : 1); attempt++) {
@@ -484,15 +499,86 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
     }
     if (record && reloading) cueFor(record);
     revealCheck();
+    return record;
   };
 
-  // Step 1: show the live store failing, restoring the seeded defect first when a fix is applied.
+  /**
+   * Stream a Playwright chaos crawl of `url` into the HUD. While the crawler endpoint is starting
+   * (no answer, 502, 503) it is retried briefly; when it is still unavailable, or absent (404),
+   * `fallback` sends a real HTTP check instead and the HUD shows that check's sessions, labeled as such.
+   */
+  const runCrawl = async (url: string, fallback: CrawlFallback | null) => {
+    crawlAbort.current?.abort();
+    const controller = new AbortController();
+    crawlAbort.current = controller;
+    const update = (change: (state: CrawlState) => CrawlState) => {
+      if (!controller.signal.aborted) setCrawlState((state) => state && change(state));
+    };
+    setCrawlState(startCrawl(url));
+    revealHud();
+    for (let attempt = 1; ; attempt++) {
+      let seen = false;
+      try {
+        await crawl(url, (event) => {
+          if (controller.signal.aborted) return;
+          seen = true;
+          if (event.type === "defect") cue("catastrophe");
+          update((state) => applyCrawlEvent(state, event));
+        }, controller.signal);
+        update((state) => crawlInFlight(state) ? { ...state, phase: "incomplete", note: "The crawler stopped before reporting a result." } : state);
+        return;
+      } catch (e) {
+        if (controller.signal.aborted) return;
+        const starting = e instanceof ApiError && [0, 502, 503].includes(e.status);
+        const absent = e instanceof ApiError && e.status === 404;
+        if (seen || e instanceof CrawlInterrupted || !(starting || absent)) {
+          update((state) => ({ ...state, phase: "failed", note: e instanceof Error && !(e instanceof ApiError) ? e.message : errorText(e) }));
+          return;
+        }
+        if (starting && attempt < CRAWL_ATTEMPTS) {
+          update((state) => ({ ...state, phase: "retrying", note: `Crawler is starting up. Retrying (${attempt + 1} of ${CRAWL_ATTEMPTS})…` }));
+          await pause(1000 * attempt);
+          if (controller.signal.aborted) return;
+          continue;
+        }
+        const why = absent ? "This engine has no Playwright crawler endpoint yet" : "The Playwright crawler is not answering";
+        if (!fallback) {
+          update((state) => ({ ...state, phase: "failed", note: `${why}, and no direct check covers this page.` }));
+          return;
+        }
+        update((state) => ({ ...state, phase: "fallback", source: "check", note: null, fallbackReason: `${why}. Sending "${fallback.title}" directly from two fresh sessions instead.` }));
+        try {
+          const record = await fallback.run();
+          update((state) => record ? crawlFromCheck(state, record, fallback.title)
+            : { ...state, phase: "failed", note: "The direct check could not run. See the message in the workspace." });
+        } catch (error) {
+          update((state) => ({ ...state, phase: "failed", note: errorText(error) }));
+        }
+        return;
+      }
+    }
+  };
+
+  const closeCrawl = () => {
+    crawlAbort.current?.abort();
+    crawlAbort.current = null;
+    setCrawlState(null);
+  };
+
+  /** The store's own checkout check, standing in for the crawler on the store's origins. */
+  const storeFallback = (reloading: boolean): CrawlFallback | null =>
+    liveCheckout ? { title: liveCheckout.title, run: () => settleLive("bad", reloading) } : null;
+
+  // Step 1: crawl the store until checkout breaks, restoring the seeded defect first when a fix is applied.
   const breakStore = async () => {
     if (!store) return;
     setFlowAction("break");
     try {
       const seeded = store.state === "seeded";
-      if (seeded || await revertStore()) await settleLive("bad", !seeded);
+      if (!seeded && !await revertStore()) return;
+      // A reverted store hot-reloads; give it a moment before the crawler loads it.
+      if (!seeded) await pause(1500);
+      await runCrawl(storefrontUrl, storeFallback(!seeded));
     } finally {
       setFlowAction(null);
     }
@@ -516,8 +602,8 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
     }
   };
 
-  /** Header shortcut: reuse the saved GET probe for this URL when there is one, then check it live. */
-  const quickTest = async (url: string) => {
+  /** Header ping: reuse the saved GET probe for this URL when there is one, then check it live. */
+  const quickTest = async (url: string): Promise<CheckRecord | null> => {
     const existing = listing?.invariants.find((i) => i.source === "probe" && i.method === "GET" && i.url === url
       && i.expected_status === 200 && !i.has_body) ?? null;
     setQuickTesting(true);
@@ -525,10 +611,18 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
       const target = existing ?? await api<Invariant>("invariants", json({ method: "GET", url, expected_status: 200 }));
       if (!existing) await refreshListing();
       select({ kind: "invariant", id: target.id });
-      if (await runCheck(target, null)) revealCheck();
+      const record = await runCheck(target, null);
+      if (record) revealCheck();
+      return record;
     } finally {
       setQuickTesting(false);
     }
+  };
+
+  /** Header crawl: on the store's origins the checkout check stands in for the crawler, elsewhere a GET ping. */
+  const autoBreak = async (url: string) => {
+    const onStore = sameOrigin(url, storefrontUrl, null) || (store !== null && sameOrigin(url, store.url, null));
+    await runCrawl(url, (onStore ? storeFallback(false) : null) ?? { title: `GET ${url}`, run: () => quickTest(url) });
   };
 
   const select = (next: Selection) => {
@@ -576,6 +670,30 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
     blocked: status === "ready" ? null : status === "detect_only" ? "Repair provider unavailable"
       : status === "blocked" || readinessError ? "Engine needs attention" : "Checking the engine…",
   };
+  const crawlRunning = crawlInFlight(crawlState);
+  const crawlDefect = crawlState?.defect ?? null;
+  const defectRoute = crawlDefect ? `${crawlDefect.method.toUpperCase()} ${crawlDefect.path}` : null;
+  const defectScenario = crawlDefect
+    ? listing?.scenarios.find((s) => s.id === crawlDefect.scenario_id) ?? listing?.scenarios.find((s) => s.route && s.route === defectRoute) ?? null
+    : null;
+  const crawlRepairBlocked = !crawlDefect ? null
+    : !defectScenario ? `No sandbox repair covers ${defectRoute} yet, so this failure is detection only.`
+    : running ? "A sandbox run is in progress."
+    : flowRun.blocked ?? (busy !== null || flowAction !== null || crawlRunning ? "Waiting for the current action to finish…" : null);
+  const repairLabel = !metaReady ? "Auto-repair"
+    : model.model.toLowerCase().includes("muse-spark") ? "Repair with Meta Muse Spark" : "Repair with Meta";
+  // Step 1 counts a crawl only when it ran against the store and caught the store's own route failing.
+  const onStoreCrawl = crawlState !== null && (sameOrigin(crawlState.target, storefrontUrl, null) || (store !== null && sameOrigin(crawlState.target, store.url, null)));
+  const hunt: StoreHunt = {
+    running: onStoreCrawl && crawlState !== null && ["connecting", "retrying", "running"].includes(crawlState.phase),
+    caughtOn: onStoreCrawl && crawlState?.source === "playwright" && crawlDefect && storeRoute !== null && defectRoute === storeRoute
+      ? crawlDefect.trigger.page : null,
+  };
+  const repairFromCrawl = () => {
+    if (!defectScenario) return;
+    select({ kind: "pack", id: defectScenario.id });
+    void start("repair", defectScenario.id);
+  };
   const engineLabel = status === "ready" ? "Ready" : status === "detect_only" ? "Detection only"
     : status === "blocked" || readinessError ? "Needs attention" : "Checking…";
 
@@ -585,8 +703,9 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
       <header className="top">
         <div className="shell top-row">
           <span className="wordmark"><span aria-hidden="true" className="glyph" />FaultLine{" "}<span className="wordmark-sub">Inspector</span></span>
-          <QuickTest busy={busy !== null || quickTesting || flowAction !== null} testing={quickTesting} onTest={quickTest}
-            onMore={(url) => { setDialogSeed(url); setDialogOpen(true); }} />
+          <QuickTest busy={busy !== null || quickTesting || flowAction !== null || crawlRunning}
+            breaking={crawlRunning && flowAction === null} pinging={quickTesting && !crawlRunning}
+            onBreak={autoBreak} onPing={async (url) => { await quickTest(url); }} />
           <div className="top-tools">
             <span className="readiness" data-tone={readinessTone}>
               <span className="readiness-dot" aria-hidden="true" />
@@ -602,13 +721,15 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
         </div>
       </header>
       {(storePack || !listing) && <GuidedFlow store={store} error={storeError} storefrontUrl={storefrontUrl}
-        liveCheck={liveCheck} canCheckLive={liveCheckout !== null} run={flowRun}
+        liveCheck={liveCheck} canCheckLive={liveCheckout !== null} run={flowRun} hunt={hunt}
         verifiedJobId={verified && job ? job.id : null}
-        busy={busy !== null || running || flowAction !== null || quickTesting}
+        busy={busy !== null || running || flowAction !== null || quickTesting || crawlRunning}
         breaking={flowAction === "break"} applying={busy === "apply"} confirming={flowAction === "confirm"}
         reverting={busy === "revert"} checking={liveCheckout !== null && checkingId === liveCheckout.id}
         onBreak={() => void breakStore()} onRepair={repairStore} onApply={() => void applyAndConfirm()}
         onRevert={() => void revertStore()} onRetry={refreshStore} onCheckLive={() => void settleLive("bad", false)} />}
+      {crawlState && <CrawlerHud state={crawlState} repairLabel={repairLabel} repairBlocked={crawlRepairBlocked}
+        onRepair={repairFromCrawl} onDismiss={closeCrawl} />}
 
       <div className="shell dashboard">
         <ScenarioRail listing={listing} error={listingError} selection={selection} packStatus={packStatus} checkingId={checkingId}

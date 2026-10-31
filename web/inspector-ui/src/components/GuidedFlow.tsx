@@ -31,9 +31,18 @@ export interface FlowRun {
 
 const httpStatus = (check: CheckRecord) => check.sessions.find((s) => s.status !== null)?.status ?? null;
 
+/** The chaos crawler's run against the store, as step 1 reports it. */
+export interface StoreHunt {
+  /** True while the Playwright crawler is connecting or clicking through the store. */
+  running: boolean;
+  /** The page where the crawler caught the store's checkout defect, or null when it has not. */
+  caughtOn: string | null;
+}
+
 /**
- * Demo Playground: the sample store's three-step story. Break it (a real live
- * checkout returns HTTP 500), repair it in the sandbox, and apply the verified
+ * Demo Playground: the sample store's three-step story. Break it (the Playwright
+ * chaos crawler clicks through the store until checkout returns HTTP 500, or a
+ * direct live checkout when the crawler is unavailable), repair it in the sandbox, and apply the verified
  * fix so checkout returns HTTP 201. Each step's state is read from evidence
  * (store source, the latest live check, the run on screen), never from clicks.
  */
@@ -41,9 +50,10 @@ export default function GuidedFlow(props: {
   store: StoreStatus | null; error: string | null; storefrontUrl: string;
   /** The latest live check of the store's checkout, or null when none has run. */
   liveCheck: CheckRecord | null;
-  /** Whether a live checkout check is declared, so steps 1 and 3 can confirm in the live store. */
+  /** Whether a live checkout check is declared, so step 3 (and step 1 without the crawler) can confirm in the live store. */
   canCheckLive: boolean;
   run: FlowRun;
+  hunt: StoreHunt;
   /** A run whose evidence verifies a fix, or null when none is open. */
   verifiedJobId: string | null;
   /** `checking` is true only while the store's own checkout check is in flight. */
@@ -51,7 +61,7 @@ export default function GuidedFlow(props: {
   onBreak: () => void; onRepair: () => void; onApply: () => void;
   onRevert: () => void; onCheckLive: () => void; onRetry: () => void;
 }) {
-  const { store, error, storefrontUrl, liveCheck, canCheckLive, run, verifiedJobId, busy, breaking, applying, confirming, reverting, checking } = props;
+  const { store, error, storefrontUrl, liveCheck, canCheckLive, run, hunt, verifiedJobId, busy, breaking, applying, confirming, reverting, checking } = props;
   const state = store ? headline(store) : null;
   const fixed = store?.state === "patched";
   const live = liveCheck ? checkVerdict(liveCheck) : null;
@@ -60,19 +70,21 @@ export default function GuidedFlow(props: {
 
   const step3Done = fixed;
   const step2Done = fixed || run.verified;
-  const step1Done = step2Done || run.running || (store?.state === "seeded" && failingLive);
+  const caught = store?.state === "seeded" && hunt.caughtOn !== null;
+  const step1Done = step2Done || run.running || caught || (store?.state === "seeded" && failingLive);
   const current = !step1Done ? 1 : !step2Done ? 2 : !step3Done ? 3 : null;
 
-  const canBreak = canCheckLive && store !== null && store.state !== "missing" && !busy;
+  const canBreak = store !== null && store.state !== "missing" && !busy;
   const canRepair = run.blocked === null && !busy;
   const canApply = store?.state === "seeded" && verifiedJobId !== null && !busy;
   const canRevert = store !== null && store.state !== "seeded" && store.state !== "missing" && !busy;
 
-  const step1: StepStatus = breaking || (checking && store?.state === "seeded" && !confirming) ? { tone: "active", text: "Sending a real checkout…" }
-    : !canCheckLive ? { tone: "idle", text: "No live checkout check is declared" }
+  const step1: StepStatus = hunt.running ? { tone: "active", text: "Playwright hunting for bugs…" }
+    : breaking || (checking && store?.state === "seeded" && !confirming) ? { tone: "active", text: "Sending a real checkout…" }
+    : caught ? { tone: "bad", text: `Bug caught on ${hunt.caughtOn}!` }
     : store?.state === "seeded" && liveCheck ? { tone: live?.tone ?? "idle", text: `HTTP ${status ?? "no response"} · ${failingLive ? "checkout crashes" : live?.title.toLowerCase()}` }
-    : fixed ? { tone: "idle", text: "Reverts the fix, then checks again" }
-    : { tone: "idle", text: "Send a real checkout to the store" };
+    : fixed ? { tone: "idle", text: "Reverts the fix, then crawls again" }
+    : { tone: "idle", text: "Clicks through the store until checkout fails" };
   const step2: StepStatus = run.running ? { tone: "active", text: `${run.stage ?? "Starting"}…` }
     : run.verified && run.checks ? { tone: "ok", text: `${run.checks.passed} of ${run.checks.total} checks passed` }
     : run.outcome ? { tone: run.outcome.tone, text: run.outcome.title }
@@ -86,7 +98,7 @@ export default function GuidedFlow(props: {
     : { tone: "idle", text: "Unlocks after a verified repair" };
 
   const steps = [
-    { n: 1, title: "Break it", detail: "Live store returns HTTP 500", status: step1, done: step1Done, enabled: canBreak, onClick: props.onBreak },
+    { n: 1, title: "Break it", detail: "Run Playwright Chaos Crawler", status: step1, done: step1Done, enabled: canBreak, onClick: props.onBreak },
     { n: 2, title: run.label, detail: "Sandboxed, verified by every check", status: step2, done: step2Done, enabled: canRepair, onClick: props.onRepair },
     { n: 3, title: "Apply fix", detail: "Checkout returns HTTP 201", status: step3, done: step3Done, enabled: canApply, onClick: props.onApply },
   ];

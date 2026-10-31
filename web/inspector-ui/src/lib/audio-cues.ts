@@ -64,6 +64,11 @@ export function playCue(cue: Cue): void {
   }, () => {});
 }
 
+/** A failure was observed: a live check failed, a crawl intercepted a defect, or a run ended badly. */
+export const playFailureAlarm = (): void => playCue("catastrophe");
+/** The failure resolved: a check passed or a repair was verified. */
+export const playResolutionChime = (): void => playCue("resolve");
+
 function schedule(ctx: AudioContext, cue: Cue): void {
   const t = ctx.currentTime + 0.02;
   const master = ctx.createGain();

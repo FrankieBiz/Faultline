@@ -105,9 +105,11 @@ type Options = {
   checks?: Record<string, object[]>; onCheck?: (invariantId: string, body: unknown) => object;
   register?: (body: Record<string, unknown>) => { status: number; json: object } | undefined;
   apply?: () => { status: number; json: object };
+  /** Answers POST crawl; without it the engine has no crawler endpoint (HTTP 404). */
+  crawl?: (body: Record<string, unknown>) => { status: number; json?: object; ndjson?: object[] };
 };
 async function mock(page: Page, options: Options = {}) {
-  const calls = { posts: 0, detail: 0, jobBodies: [] as Record<string, unknown>[], checks: [] as { id: string; body: unknown }[], registered: [] as Record<string, unknown>[], applies: 0, reverts: 0, removes: 0 };
+  const calls = { posts: 0, detail: 0, jobBodies: [] as Record<string, unknown>[], checks: [] as { id: string; body: unknown }[], registered: [] as Record<string, unknown>[], applies: 0, reverts: 0, removes: 0, crawls: [] as Record<string, unknown>[] };
   let current: Listing = structuredClone(options.listing ?? listing);
   let store = options.store ?? seededStore;
   await page.route("**/api/faultline/**", async (route) => {
@@ -157,6 +159,16 @@ async function mock(page: Page, options: Options = {}) {
       if (response) return route.fulfill(response);
       store = { ...seededStore, state: "patched", applied_job_id: id, applied_at: "2026-10-30T12:05:00Z" };
       return route.fulfill({ json: { status: "applied", store } });
+    }
+    if (path === "crawl" && post) {
+      const body = request.postDataJSON() as Record<string, unknown>;
+      calls.crawls.push(body);
+      const response = options.crawl?.(body);
+      if (!response) return route.fulfill({ status: 404, json: { error: { code: "not_found" } } });
+      if (response.ndjson) {
+        return route.fulfill({ status: response.status, contentType: "application/x-ndjson", body: response.ndjson.map((e) => JSON.stringify(e)).join("\n") + "\n" });
+      }
+      return route.fulfill({ status: response.status, json: response.json ?? {} });
     }
     if (path === "revert") {
       calls.reverts++;
@@ -397,9 +409,16 @@ test("the guided demo advances Break it, repair, and Apply fix on recorded evide
   await expect(page.getByText("Repair with Meta")).toHaveCount(0);
   await expect(flow.getByRole("button", { name: "Apply fix" })).toBeDisabled();
 
+  // This engine has no crawler endpoint, so the store's checkout check stands in and the HUD says so.
+  await expect(flow.getByRole("button", { name: "Break it" })).toHaveAccessibleDescription(/Run Playwright Chaos Crawler/);
   await flow.getByRole("button", { name: "Break it" }).click();
   await expect(page.getByRole("heading", { name: "Failing", exact: true })).toBeVisible();
+  expect(calls.crawls).toEqual([{ url: "http://127.0.0.1:3000", max_steps: 25 }]);
   expect(calls.checks).toEqual([{ id: "scenario.checkout_api", body: { port: 8000 } }]);
+  const hud = page.getByRole("region", { name: "Direct HTTP check" });
+  await expect(hud).toContainText("no Playwright crawler endpoint yet");
+  await expect(hud.getByRole("alert")).toContainText("Defect Intercepted: HTTP 500 on POST /api/checkout");
+  await expect(hud.getByRole("log", { name: "Crawl steps" })).toContainText("[Step 1] Session 1: POST /api/checkout → HTTP 500");
   await expect(steps.nth(0)).toHaveAttribute("data-state", "done");
   await expect(steps.nth(0).locator(".flow-status")).toHaveText("HTTP 500 · checkout crashes");
   await expect(steps.nth(1)).toHaveAttribute("aria-current", "step");
@@ -419,7 +438,7 @@ test("the guided demo advances Break it, repair, and Apply fix on recorded evide
   await expect(flow.locator("[aria-current]")).toHaveCount(0);
 
   // Breaking a fixed store restores the seed first, then shows checkout failing again.
-  await expect(flow.getByRole("button", { name: "Break it" })).toHaveAccessibleDescription(/Reverts the fix, then checks again/);
+  await expect(flow.getByRole("button", { name: "Break it" })).toHaveAccessibleDescription(/Reverts the fix, then crawls again/);
   await flow.getByRole("button", { name: "Break it" }).click();
   await expect(page.getByRole("heading", { name: "Checkout is broken: the seeded defect is live" })).toBeVisible();
   await expect(steps.nth(0).locator(".flow-status")).toHaveText("HTTP 500 · checkout crashes");
@@ -440,29 +459,33 @@ test("the repair step says Meta only for the Meta Model API and explains a block
   await expect(flow.getByRole("button", { name: "Auto-repair" })).toHaveAccessibleDescription(/Engine needs attention/);
 });
 
-test("the header tests any URL in one step, reuses its saved check, and opens more options", async ({ page }) => {
+test("the header tests any URL without asking for an expected status, reusing its saved check", async ({ page }) => {
   const calls = await mock(page, {
-    onCheck: (invariantId) => check(invariantId, "no_failure", { method: "GET", url: "http://localhost:3000/health" }),
+    onCheck: (invariantId) => check(invariantId, "no_failure", { method: "GET", url: "http://localhost:5000/health" }),
     register: (body) => String(body.url).includes("full") ? { status: 409, json: { error: { code: "too_many_probes" } } } : undefined,
   });
   await page.goto("/");
-  const quick = page.getByRole("form", { name: "Test any URL" });
-  const field = page.getByRole("textbox", { name: "Test any URL" });
+  const quick = page.getByRole("form", { name: "Break any page" });
+  const field = page.getByRole("textbox", { name: "Target URL" });
+  const ping = quick.getByRole("button", { name: "Quick HTTP Ping" });
   await expect(field).toHaveAttribute("placeholder", "http://localhost:3000/...");
+  await expect(quick.getByRole("button", { name: "Auto-Break Page (Playwright)" })).toBeVisible();
+  await expect(quick.getByText(/expected/i)).toHaveCount(0);
   await field.fill("http://");
-  await quick.getByRole("button", { name: "Test endpoint" }).click();
+  await ping.click();
   await expect(quick.getByRole("alert")).toHaveText("Enter a full URL, such as http://localhost:3000/.");
   await expect(field).toHaveAttribute("aria-invalid", "true");
   expect(calls.registered).toHaveLength(0);
 
   // A bare host and port means http, as in a browser's address bar.
-  await field.fill("localhost:3000/health");
-  await quick.getByRole("button", { name: "Test endpoint" }).click();
-  await expect(field).toHaveValue("http://localhost:3000/health");
+  await field.fill("localhost:5000/health");
+  await ping.click();
+  await expect(field).toHaveValue("http://localhost:5000/health");
   await expect(page.getByRole("heading", { name: "Passing", exact: true })).toBeVisible();
   await expect(quick.getByRole("alert")).toHaveCount(0);
-  expect(calls.registered).toEqual([{ method: "GET", url: "http://localhost:3000/health", expected_status: 200 }]);
+  expect(calls.registered).toEqual([{ method: "GET", url: "http://localhost:5000/health", expected_status: 200 }]);
   expect(calls.checks).toEqual([{ id: "probe-0123456789ab", body: {} }]);
+  expect(calls.crawls).toHaveLength(0);
   await expect(page.getByText("Your custom website", { exact: true }).first()).toBeVisible();
   const saved = rail(page).getByRole("region", { name: "Your custom website" }).getByRole("button");
   await expect(saved).toHaveAttribute("aria-current", "true");
@@ -470,20 +493,83 @@ test("the header tests any URL in one step, reuses its saved check, and opens mo
   await expect(page.locator("#workspace .check")).toBeInViewport();
 
   // Testing the same URL again reuses the saved check instead of adding a duplicate.
-  await quick.getByRole("button", { name: "Test endpoint" }).click();
+  await ping.click();
   await expect.poll(() => calls.checks.length).toBe(2);
   expect(calls.registered).toHaveLength(1);
   await expect(saved).toHaveCount(1);
 
-  await field.fill("http://localhost:3000/full");
-  await quick.getByRole("button", { name: "Test endpoint" }).click();
-  await expect(quick.getByRole("alert")).toHaveText("You have 50 saved URLs. Remove one before adding another.");
-  expect(calls.checks).toHaveLength(2);
+  await expect(ping).toBeEnabled();
+  // Enter runs the crawler. With no crawler endpoint, a GET ping stands in and the HUD says so.
+  await field.press("Enter");
+  const hud = page.getByRole("region", { name: "Direct HTTP check" });
+  await expect(hud).toContainText('Sending "GET http://localhost:5000/health" directly');
+  await expect(hud.getByRole("status")).toHaveText("No defect found");
+  await expect(hud).toContainText("Passing: Both fresh sessions met every expectation.");
+  expect(calls.crawls).toEqual([{ url: "http://localhost:5000/health", max_steps: 25 }]);
+  expect(calls.checks).toHaveLength(3);
+  await hud.getByRole("button", { name: "Close the crawler" }).click();
+  await expect(hud).toHaveCount(0);
 
-  await quick.getByRole("button", { name: "More options" }).click();
-  const dialog = page.getByRole("dialog", { name: "Custom URL check" });
-  await expect(dialog).toBeVisible();
-  await expect(dialog.getByLabel("URL")).toHaveValue("http://localhost:3000/full");
+  await field.fill("http://localhost:5000/full");
+  await ping.click();
+  await expect(quick.getByRole("alert")).toHaveText("You have 50 saved URLs. Remove one before adding another.");
+  expect(calls.checks).toHaveLength(3);
+});
+
+test("the chaos crawler streams its scan and steps, intercepts the defect, and repairs it with Meta", async ({ page }) => {
+  let attempts = 0;
+  const calls = await mock(page, {
+    readiness: { ...ready, model: { ...ready.model, provider: "meta", model: "muse-spark-1.3" } },
+    // The first request finds the crawler still starting; the retry streams the crawl.
+    crawl: () => ++attempts === 1 ? { status: 503, json: { error: { code: "crawler_starting", message: "starting" } } } : { status: 200, ndjson: [
+      { type: "scan", url: "http://127.0.0.1:3000", buttons: 6, forms: 1, links: 3 },
+      { type: "step", n: 1, action: "click", target: "Trail Mug", page: "/", ok: true },
+      { type: "step", n: 2, action: "click", target: "Add to Cart", page: "/products/trail-mug", ok: true },
+      { type: "step", n: 3, action: "submit", target: "Place order", page: "/checkout", ok: false, note: "HTTP 500" },
+      { type: "defect", method: "POST", path: "/api/checkout", status: 500, trigger: { kind: "Button", label: "Place order", page: "/checkout" }, fingerprint },
+      { type: "done", steps: 3, defect: true },
+    ] },
+  });
+  await page.goto("/");
+  const flow = page.getByRole("list", { name: "Guided demo" });
+  const steps = flow.getByRole("listitem");
+  await flow.getByRole("button", { name: "Break it" }).click();
+  const hud = page.getByRole("region", { name: "Playwright chaos crawler" });
+  await expect(hud).toContainText("Scanning DOM… found 6 buttons & 1 form");
+  const log = hud.getByRole("log", { name: "Crawl steps" });
+  await expect(log.getByRole("listitem")).toHaveText([
+    '[Step 1] Clicked "Trail Mug" (OK) on /',
+    '[Step 2] Clicked "Add to Cart" (OK) on /products/trail-mug',
+    '[Step 3] Submitted "Place order" (HTTP 500) on /checkout',
+  ]);
+  const banner = hud.getByRole("alert");
+  await expect(banner).toContainText("Defect Intercepted: HTTP 500 on POST /api/checkout");
+  await expect(banner).toContainText("Triggered by: Button “Place order” on /checkout");
+  expect(attempts).toBe(2);
+  expect(calls.checks).toHaveLength(0);
+  await expect(steps.nth(0)).toHaveAttribute("data-state", "done");
+  await expect(steps.nth(0).locator(".flow-status")).toHaveText("Bug caught on /checkout!");
+  await expect(steps.nth(1)).toHaveAttribute("aria-current", "step");
+  await expect(flow.getByRole("button", { name: "Repair with Meta" })).toBeEnabled();
+
+  await banner.getByRole("button", { name: "Repair with Meta Muse Spark" }).click();
+  await expect.poll(() => calls.jobBodies).toEqual([expect.objectContaining({ scenario_id: pack.id, mode: "repair" })]);
+});
+
+test("a crawl defect no sandbox repair covers is detection only", async ({ page }) => {
+  await mock(page, { crawl: () => ({ status: 200, json: { events: [
+    { type: "scan", url: "http://localhost:5000/", buttons: 1, forms: 0, links: 0 },
+    { type: "step", n: 1, action: "click", target: "Export", page: "/", ok: false, note: "HTTP 500" },
+    { type: "defect", method: "GET", path: "/api/export", status: 500, trigger: { kind: "Button", label: "Export", page: "/" } },
+    { type: "done", steps: 1, defect: true },
+  ] } }) });
+  await page.goto("/");
+  await page.getByRole("textbox", { name: "Target URL" }).fill("localhost:5000/");
+  await page.getByRole("button", { name: "Auto-Break Page (Playwright)" }).click();
+  const banner = page.getByRole("region", { name: "Playwright chaos crawler" }).getByRole("alert");
+  await expect(banner).toContainText("Defect Intercepted: HTTP 500 on GET /api/export");
+  await expect(banner.getByRole("button", { name: "Auto-repair" })).toBeDisabled();
+  await expect(banner.getByRole("button", { name: "Auto-repair" })).toHaveAccessibleDescription("No sandbox repair covers GET /api/export yet, so this failure is detection only.");
 });
 
 test("delivery refusals are explained", async ({ page }) => {

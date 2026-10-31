@@ -204,8 +204,8 @@ Static AST inspection and Git worktrees are policy and source-management tools; 
 
 ### Web Inspector studio (`localhost:4000`)
 
-- **1-2-3 guided demo.** The Demo Playground (sample store) runs **Break it** (live checkout returns HTTP 500), the sandbox repair (labeled **Repair with Meta** only when the engine reports the Meta Model API), and **Apply fix** (hot-patch, then a live check confirms HTTP 201). Each step advances on recorded evidence, not clicks.
-- **Test any URL.** The header field sends a GET from two fresh sessions and shows the result. Bare `localhost:3000/path` means http, and **More options** opens the full **Custom URL check** dialog.
+- **1-2-3 guided demo.** The Demo Playground (sample store) runs **Break it** (the Playwright chaos crawler clicks through the store until checkout returns HTTP 500), the sandbox repair (labeled **Repair with Meta** only when the engine reports the Meta Model API), and **Apply fix** (hot-patch, then a live check confirms HTTP 201). Each step advances on recorded evidence, not clicks.
+- **Auto-break any page.** Paste a URL; nothing asks for an expected status or error. **Auto-Break Page (Playwright)** streams a chaos crawl (`POST /api/faultline/crawl`) into a live HUD: the DOM scan, each click and submit, then the intercepted failing request and the element that sent it, with a one-click sandbox repair. Until the engine serves a crawler endpoint, a real two-session HTTP check stands in and the HUD labels it as such. **Quick HTTP Ping** sends a GET from two fresh sessions. Bare `localhost:3000/path` means http.
 - **Scenario rail.** Repairable defects, project checks from `faultline.toml`, and your saved URLs, each with a status line: cyan while work is in flight, emerald only for evidence-verified repairs, red for failures.
 - **Live invariant tester.** Runs `[[invariants.rule]]` and `[scenarios.*]` from `faultline.toml` against the running store, in two sessions each.
 - **Custom URL check dialog.** Any method, JSON body, and expected status, validated in place.
@@ -252,10 +252,10 @@ These results describe an authored corpus for one checkout route, not arbitrary 
 | Repair orchestrator and CLI (pytest) | 709 |
 | Browser runner unit tests | 96 |
 | **Unit and integration total** (`make check`) | **1,091** |
-| Inspector browser tests (Playwright) | 35 |
+| Inspector browser tests (Playwright) | 37 |
 | Storefront browser test (Playwright) | 1 |
-| **Browser total** (`make browser`) | **36** |
-| **All automated tests** | **1,127** |
+| **Browser total** (`make browser`) | **38** |
+| **All automated tests** | **1,129** |
 
 `make check` also runs Ruff lint and format checks, strict mypy, fixture and corpus provenance, the storefront, runner, and Inspector builds, and both Python distribution builds. `make integration` exercises real isolated Chromium and cgroup enforcement, and `make evaluate` runs the corpus.
 

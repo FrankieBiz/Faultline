@@ -256,6 +256,10 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   }
   const body: unknown = await response.json().catch(() => null);
   if (response.ok) return body as T;
+  throw errorOf(response, body);
+}
+
+function errorOf(response: Response, body: unknown): ApiError {
   const error = (body as { error?: unknown } | null)?.error;
   const message =
     error && typeof error === "object" && "message" in error && typeof error.message === "string"
@@ -264,7 +268,86 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const code =
     error && typeof error === "object" && "code" in error ? String(error.code)
     : response.status === 502 ? "proxy_unreachable" : `http_${response.status}`;
-  throw new ApiError(response.status, code, message);
+  return new ApiError(response.status, code, message);
+}
+
+/**
+ * One event of a Playwright chaos crawl. The controller loads the page, counts what can be
+ * clicked or submitted, then works through it until a request fails or the step budget runs out.
+ */
+export type CrawlEvent =
+  | { type: "scan"; url: string; buttons: number; forms: number; links: number }
+  | {
+    type: "step"; n: number; action: "visit" | "click" | "fill" | "submit"; target: string; page: string;
+    ok: boolean; note?: string | null;
+  }
+  | {
+    /** The first failing request, with the element whose action sent it. */
+    type: "defect"; method: string; path: string; status: number | null;
+    trigger: { kind: string; label: string; page: string };
+    fingerprint?: string | null;
+    /** The registered repair scenario covering this route, when the controller knows one. */
+    scenario_id?: string | null;
+  }
+  | { type: "done"; steps: number; defect: boolean }
+  | { type: "error"; message: string };
+
+/** Thrown when a crawl stream breaks after events arrived, so it is not mistaken for a crawler still starting. */
+export class CrawlInterrupted extends Error {}
+
+const CRAWL_TYPES = new Set(["scan", "step", "defect", "done", "error"]);
+
+/**
+ * `POST crawl {url, max_steps}`. Reads the controller's NDJSON stream as each line arrives; a
+ * buffered `{"events": [...]}` JSON body is read the same way. HTTP errors throw `ApiError`
+ * before any event is delivered.
+ */
+export async function crawl(url: string, onEvent: (event: CrawlEvent) => void, signal?: AbortSignal): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetch("/api/faultline/crawl", {
+      method: "POST", cache: "no-store", signal,
+      headers: { "Content-Type": "application/json", Accept: "application/x-ndjson, application/json" },
+      body: JSON.stringify({ url, max_steps: 25 }),
+    });
+  } catch (e) {
+    if (signal?.aborted) throw e;
+    throw new ApiError(0, "proxy_unreachable");
+  }
+  if (!response.ok) throw errorOf(response, await response.json().catch(() => null));
+  const emit = (value: unknown) => {
+    if (value && typeof value === "object" && "type" in value && CRAWL_TYPES.has(String(value.type))) onEvent(value as CrawlEvent);
+  };
+  const type = response.headers.get("content-type") ?? "";
+  if (!type.includes("ndjson") && type.includes("json")) {
+    const body: unknown = await response.json().catch(() => null);
+    const events = (body as { events?: unknown } | null)?.events;
+    if (!Array.isArray(events)) throw new ApiError(response.status, "invalid_crawl", "The crawler answered without any events.");
+    events.forEach(emit);
+    return;
+  }
+  if (!response.body) throw new ApiError(response.status, "invalid_crawl", "The crawler answered without any events.");
+  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+  let buffer = "";
+  let seen = false;
+  const line = (text: string) => {
+    if (!text.trim()) return;
+    try { emit(JSON.parse(text)); seen = true; } catch {}
+  };
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += value;
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      lines.forEach(line);
+    }
+    line(buffer);
+  } catch (e) {
+    if (signal?.aborted) throw e;
+    throw seen ? new CrawlInterrupted("The crawler stream was interrupted.") : new ApiError(0, "proxy_unreachable");
+  }
 }
 
 /** Identity is derived server-side from the endpoint host; only Meta hosts read as Meta. */

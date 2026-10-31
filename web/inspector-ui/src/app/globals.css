@@ -117,17 +117,57 @@ a.btn { display: inline-flex; align-items: center; text-decoration: none; }
 .empty { margin: 32px 0 0; padding: 28px 0; border-top: 1px solid var(--line); color: var(--ink-2); }
 
 /* Header quick test: one URL, one button, a live result in the workspace. */
-.quick-test { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; flex: 1 1 420px; max-width: 620px; }
+/* Its own row under the wordmark and tools: the URL field gets the width it needs at every size. */
+.quick-test { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; order: 3; flex: 1 1 100%; }
 .quick-label { color: var(--ink-3); font: 500 11px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; }
-.quick-row { display: flex; flex-wrap: wrap; gap: 6px; flex: 1 1 300px; min-width: 0; }
+.quick-row { display: flex; gap: 6px; flex: 1 1 300px; min-width: 0; }
 .quick-row input {
-  flex: 1 1 200px; min-width: 0; min-height: 36px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 8px;
+  flex: 1 1 240px; min-width: 0; min-height: 36px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 8px;
   background: var(--well); color: var(--ink); font: 13px var(--mono);
 }
 .quick-row input::placeholder { color: var(--ink-3); }
 .quick-row input[aria-invalid="true"] { border-color: var(--red); }
-.quick-row .btn { min-height: 36px; padding: 0 14px; font-size: 13px; }
+.quick-row .btn { flex: none; min-height: 36px; padding: 0 12px; font-size: 13px; }
 .quick-error { flex-basis: 100%; margin: 0; color: var(--red); font-size: 12.5px; }
+.quick-row .quick-break { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.quick-bolt { font-size: 12px; line-height: 1; }
+
+/* Crawler HUD: the live Playwright crawl as a terminal, ending in the intercepted defect. */
+.hud { padding-top: 18px; }
+.hud-frame { border: 1px solid var(--line); border-radius: 12px; background: var(--well); overflow: hidden; animation: rise 220ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.hud[data-phase="caught"] .hud-frame { border-color: rgba(255, 77, 106, 0.4); }
+.hud-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 10px 10px 10px 16px; border-bottom: 1px solid var(--line); background: var(--raised); }
+.hud-key { margin: 0; color: var(--ink-2); font: 500 11px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; }
+.hud-target { flex: 1 1 180px; min-width: 0; color: var(--ink); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hud-phase { display: inline-flex; align-items: center; gap: 7px; color: var(--ink-2); font: 500 12px var(--mono); }
+.hud-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.hud-phase[data-tone="active"] { color: var(--cyan); }
+.hud-phase[data-tone="active"] .hud-dot { box-shadow: 0 0 10px currentColor; animation: pulse 1.2s ease-in-out infinite; }
+.hud-phase[data-tone="bad"] { color: var(--red); }
+.hud-phase[data-tone="warn"] { color: var(--amber); }
+.btn.hud-close { min-height: 30px; margin-left: auto; font-size: 12px; }
+.hud-scan, .hud-note, .hud-cursor { margin: 0; padding: 12px 16px 0; font: 12.5px/1.5 var(--mono); }
+.hud-scan { color: var(--ink); }
+.hud-prompt { margin-right: 10px; color: var(--cyan); }
+.hud-note { color: var(--ink-2); }
+.hud-note:is([data-phase="failed"], [data-phase="incomplete"], [data-phase="retrying"], [data-phase="fallback"]) { color: var(--amber); }
+.hud-ticker { max-height: 224px; margin: 0; padding: 10px 16px 0; overflow-y: auto; list-style: none; font: 12.5px/1.65 var(--mono); color: var(--ink-2); overscroll-behavior: contain; }
+.hud-ticker li { animation: rise 180ms ease-out; overflow-wrap: anywhere; }
+.hud-ticker li[data-ok="false"] { color: var(--red); }
+.hud-step { color: var(--ink-3); }
+.hud-ticker li[data-ok="false"] .hud-step { color: inherit; }
+/* A blinking block cursor while the crawler is still working. */
+.hud-cursor { color: var(--cyan); }
+.hud-cursor::after { content: ""; display: inline-block; width: 7px; height: 13px; margin-left: 8px; vertical-align: -2px; background: currentColor; animation: blink 1s steps(1) infinite; }
+.hud-frame > :last-child:not(.hud-head, .hud-defect) { padding-bottom: 14px; }
+.hud-defect { display: grid; gap: 4px; margin: 14px 0 0; padding: 14px 16px 16px; border-top: 1px solid rgba(255, 77, 106, 0.3); background: var(--red-wash); box-shadow: inset 3px 0 0 var(--red); }
+.hud-defect p { margin: 0; }
+.hud-defect-title { color: var(--red); font: 600 14px/1.4 var(--mono); overflow-wrap: anywhere; }
+.hud-defect-trigger { color: var(--ink); font-size: 13.5px; }
+.hud-defect-fp { color: var(--ink-3); font-size: 12px; }
+.hud-defect-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 10px; }
+.hud-repair { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.hud-blocked { color: var(--amber); font-size: 12.5px; }
 
 /* Demo Playground: the sample store's state and the three-step guided demo. */
 .playground { background: var(--raised); border-bottom: 1px solid var(--line); box-shadow: inset 3px 0 0 var(--line-strong); }
@@ -420,18 +460,19 @@ details[open] > summary { margin-bottom: 16px; }
 @keyframes pop { from { transform: scale(0.6); opacity: 0; } }
 @keyframes settle { from { opacity: 0.4; } to { opacity: 1; } }
 @keyframes rise { from { opacity: 0; transform: translateY(6px) scale(0.99); } }
+@keyframes blink { 50% { opacity: 0; } }
 @keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
 
 @media (max-width: 960px) {
   .dashboard { grid-template-columns: 1fr; gap: 32px; padding-top: 24px; }
   .rail { position: static; }
-  .quick-test { order: 3; flex-basis: 100%; max-width: none; }
   .flow { grid-template-columns: 1fr; gap: 10px; }
   .flow-step + .flow-step::before { left: 30px; top: -10px; width: 1px; height: 10px; }
 }
 
 @media (max-width: 760px) {
   .shell { padding-inline: 16px; }
+  .quick-row { flex-wrap: wrap; }
   .actions .btn { flex: 1 1 100%; }
   .cols, .sessions { grid-template-columns: 1fr; }
   .session + .session { border-left: 0; border-top: 1px solid var(--line); }
