@@ -26,7 +26,7 @@ class Scenario(BaseModel):
 REGISTRY: dict[str, Scenario] = {
     "scripted_checkout_repair": Scenario(
         id="scripted_checkout_repair",
-        title="Scripted checkout repair",
+        title="E-Commerce Checkout Defect",
         description=(
             "Optional-coupon backend defect causing TypeError during arithmetic "
             "when coupon is omitted or empty"

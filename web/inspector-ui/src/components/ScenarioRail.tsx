@@ -78,22 +78,22 @@ export default function ScenarioRail(props: {
           {listing?.project.name ?? "Scenarios"}
           {listing?.project.config_path && <span className="muted"> from {listing.project.config_path}</span>}
         </p>
-        <button type="button" className="btn primary rail-new" onClick={onNew}>New invariant</button>
+        <button type="button" className="btn rail-new" onClick={onNew}>Custom URL check</button>
       </div>
       {error && !listing && (
         <p className="rail-error" role="status">{error} <button type="button" className="btn quiet inline-btn" onClick={onRetry}>Check again</button></p>
       )}
       {listing && (
         <>
-          <Group title="Sandbox repair" kind="sandbox" empty="No repair scenarios are registered." selection={selection} onSelect={onSelect}
+          <Group title="Repairable defects" kind="sandbox" empty="No repair scenarios are registered." selection={selection} onSelect={onSelect}
             items={listing.scenarios.map((s) => ({
               kind: "pack", id: s.id, title: s.title, route: s.route || `ReproSpec, ${s.expected_assertions.length} assertions`,
               ...(packStatus[s.id] ?? { tone: "idle", text: "repairable in the sandbox" }),
             }))} />
-          <Group title="faultline.toml" kind="http" empty={listing.project.config_path ? "No [scenarios] or [[invariants.rule]] entries yet." : "No faultline.toml found. Run faultline init."}
+          <Group title="Project checks" kind="faultline.toml" empty={listing.project.config_path ? "No [scenarios] or [[invariants.rule]] entries yet." : "No faultline.toml found. Run faultline init."}
             selection={selection} onSelect={onSelect} items={rules.map(entry)} />
           {listing.project.errors.map((message) => <p key={message} className="rail-warning">{message}</p>)}
-          <Group title="Added here" kind="http" empty="Probe any URL with New invariant. It is saved and listed here." selection={selection} onSelect={onSelect}
+          <Group title="Your custom website" kind="your urls" empty="Test any URL from the bar at the top. Each one is saved here." selection={selection} onSelect={onSelect}
             items={probes.map(entry)} />
         </>
       )}

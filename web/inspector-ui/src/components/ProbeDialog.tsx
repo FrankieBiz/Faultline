@@ -13,12 +13,14 @@ type Field = "url" | "status" | "body";
 const NO_BODY: ReadonlySet<Method> = new Set(["GET", "HEAD"]);
 const CHECKOUT_BODY = JSON.stringify({ items: [{ product_id: "trail-mug", quantity: 2 }] }, null, 2);
 
-/** Register an HTTP invariant against any URL, then check it live. */
+/** Register an HTTP check against any URL, with any method, body, and status, then check it live. */
 export default function ProbeDialog(props: {
   open: boolean; storeUrl: string | null;
+  /** A URL typed in the header field; it replaces the draft URL when the dialog opens. */
+  seedUrl: string;
   onClose: () => void; onSubmit: (values: ProbeValues) => Promise<void>;
 }) {
-  const { open, storeUrl, onClose, onSubmit } = props;
+  const { open, storeUrl, seedUrl, onClose, onSubmit } = props;
   const ref = useRef<HTMLDialogElement>(null);
   const urlRef = useRef<HTMLInputElement>(null);
   const ids = useId();
@@ -43,12 +45,13 @@ export default function ProbeDialog(props: {
       // A draft survives Cancel, but a stale error from the last attempt does not.
       setError(null);
       setInvalid(null);
+      if (seedUrl) setUrl(seedUrl);
       dialog.showModal();
       urlRef.current?.focus();
     } else if (!open && dialog.open) {
       dialog.close();
     }
-  }, [open]);
+  }, [open, seedUrl]);
 
   const reset = () => {
     setMethod("GET"); setUrl(""); setStatus("200"); setTitle(""); setBody(""); setError(null); setInvalid(null);
@@ -111,7 +114,7 @@ export default function ProbeDialog(props: {
   return (
     <dialog ref={ref} className="probe-dialog" aria-labelledby={`${ids}-h`} aria-describedby={`${ids}-d`} onClose={onClose}>
       <form onSubmit={submit} noValidate>
-        <h2 id={`${ids}-h`}>New invariant</h2>
+        <h2 id={`${ids}-h`}>Custom URL check</h2>
         <p id={`${ids}-d`} className="dialog-lede">
           Probe any URL. FaultLine sends the request from two fresh sessions; it counts as failing only when both miss the expected status the same way.
         </p>

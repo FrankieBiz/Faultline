@@ -2,15 +2,17 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import CliGuide from "@/components/CliGuide";
+import { STEP_LABELS, currentStep } from "@/components/Evidence";
+import GuidedFlow, { type FlowRun } from "@/components/GuidedFlow";
 import InvariantPanel from "@/components/InvariantPanel";
 import JobResult, { summarizeJob } from "@/components/JobResult";
 import PackPanel from "@/components/PackPanel";
 import ProbeDialog, { type ProbeValues } from "@/components/ProbeDialog";
+import QuickTest from "@/components/QuickTest";
 import ScenarioRail, { type RailStatus, type Selection } from "@/components/ScenarioRail";
-import StoreBar from "@/components/StoreBar";
 import { playCue, readSoundPreference, writeSoundPreference, type Cue } from "@/lib/audio-cues";
 import {
-  ApiError, REASON, TERMINAL, api, checkVerdict, limitsStatusLabel, providerName, routeOf, sameOrigin,
+  ApiError, REASON, TERMINAL, api, checkVerdict, limitsStatusLabel, providerName, providerNote, routeOf, sameOrigin,
   type CheckRecord, type Invariant, type Job, type JobDetail, type JobEvent, type Readiness,
   type RepairScenario, type ScenarioListing, type StoreStatus, type Tone,
 } from "@/lib/faultline-api";
@@ -19,11 +21,16 @@ const POLL_MS = 1500;
 
 type Stream = "idle" | "live" | "reconnecting" | "closed";
 type Busy = "submit" | "cancel" | "reset" | "apply" | "revert" | "check" | "remove" | null;
+/** A guided-flow step that spans several requests: revert then re-check, or apply then confirm. */
+type FlowAction = "break" | "confirm" | null;
 
 const errorText = (e: unknown) => (e instanceof ApiError ? e.message : "Unexpected client error.");
 const json = (body: unknown): RequestInit => ({
   method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
 });
+const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+// Bring a fresh live check result into view without jumping when it is already visible.
+const revealCheck = () => requestAnimationFrame(() => document.querySelector("#workspace .check")?.scrollIntoView({ block: "nearest" }));
 // The controller requires a UUID. randomUUID exists only in secure contexts (not plain http on a LAN IP),
 // so build an RFC 4122 v4 UUID from getRandomValues, which is available everywhere.
 const newKey = () => {
@@ -49,6 +56,10 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
   const [checks, setChecks] = useState<Record<string, CheckRecord[]>>({});
   const [checksError, setChecksError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  /** The URL the custom check dialog opens with, carried over from the header field. */
+  const [dialogSeed, setDialogSeed] = useState("");
+  const [quickTesting, setQuickTesting] = useState(false);
+  const [flowAction, setFlowAction] = useState<FlowAction>(null);
   /** Bumped to open the CLI guide; the dialog closes itself. */
   const [guideRequest, setGuideRequest] = useState(0);
   const [sound, setSound] = useState(false);
@@ -287,7 +298,7 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
     }
   }, [detail]);
 
-  const { job, verified, outcome } = summarizeJob(detail);
+  const { job, verified, outcome, verification } = summarizeJob(detail);
   const terminal = job ? TERMINAL.has(job.state) : false;
 
   // Cue once when a run watched in this session settles: resolution for a verified fix, alarm for a failure.
@@ -359,16 +370,21 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
     }
   };
 
-  const runCheck = async (invariant: Invariant, port: number | null): Promise<CheckRecord | null> => {
+  const cueFor = (record: CheckRecord) => {
+    const tone = checkVerdict(record).tone;
+    if (tone === "bad") cue("catastrophe");
+    else if (tone === "ok") cue("resolve");
+  };
+
+  /** `quiet` keeps the current notice and holds the cue, for checks that only wait out a store reload. */
+  const runCheck = async (invariant: Invariant, port: number | null, quiet = false): Promise<CheckRecord | null> => {
     setBusy("check");
     setCheckingId(invariant.id);
-    setNotice(null);
+    if (!quiet) setNotice(null);
     try {
       const record = await api<CheckRecord>(`invariants/${encodeURIComponent(invariant.id)}/check`, json(port ? { port } : {}));
       setChecks((current) => ({ ...current, [invariant.id]: [record, ...(current[invariant.id] ?? [])].slice(0, 10) }));
-      const tone = checkVerdict(record).tone;
-      if (tone === "bad") cue("catastrophe");
-      else if (tone === "ok") cue("resolve");
+      if (!quiet) cueFor(record);
       void refreshListing();
       return record;
     } catch (e) {
@@ -387,6 +403,7 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
       expected_status: values.expectedStatus, ...(values.body !== undefined ? { body: values.body } : {}),
     }));
     setDialogOpen(false);
+    setDialogSeed("");
     setSelection({ kind: "invariant", id: created.id });
     void (async () => {
       await refreshListing();
@@ -407,7 +424,7 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
       await api(`invariants/${encodeURIComponent(invariant.id)}/remove`, { method: "POST" });
       const next = await refreshListing();
       setSelection(next?.scenarios[0] ? { kind: "pack", id: next.scenarios[0].id } : null);
-      setNotice({ tone: "idle", text: `Removed the probe "${invariant.title}" and its check history.` });
+      setNotice({ tone: "idle", text: `Removed "${invariant.title}" and its check history.` });
     } catch (e) {
       setNotice({ tone: "bad", text: errorText(e) });
     } finally {
@@ -415,34 +432,102 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
     }
   };
 
-  const applyFix = async () => {
-    if (!job || !verified) return;
+  /** Resolves true once the store's source holds the fix. */
+  const applyFix = async (): Promise<boolean> => {
+    if (!job || !verified) return false;
     setBusy("apply");
     setNotice(null);
     try {
       const result = await api<{ store: StoreStatus }>(`jobs/${encodeURIComponent(job.id)}/apply`, { method: "POST" });
       setStore(result.store);
-      setNotice({ tone: "ok", text: `Applied run ${job.id.slice(0, 8)}'s verified fix to ${result.store.target_file}. The store reloads in a moment; check it live to confirm.` });
+      setNotice({ tone: "ok", text: `Applied run ${job.id.slice(0, 8)}'s verified fix to ${result.store.target_file}. The store reloads in a moment; ${liveCheckout ? "checkout is checked live once it answers" : "check it live to confirm"}.` });
+      return true;
     } catch (e) {
       setNotice({ tone: "bad", text: errorText(e) });
       void refreshStore();
+      return false;
     } finally {
       setBusy(null);
     }
   };
 
-  const revertStore = async () => {
+  /** Resolves true once the store's source is back on the seeded defect. */
+  const revertStore = async (): Promise<boolean> => {
     setBusy("revert");
     setNotice(null);
     try {
       const result = await api<{ store: StoreStatus }>("revert", { method: "POST" });
       setStore(result.store);
       setNotice({ tone: "warn", text: `Reverted ${result.store.target_file} to the seeded defect. Checkout without a coupon fails again.` });
+      return true;
     } catch (e) {
       setNotice({ tone: "bad", text: errorText(e) });
       void refreshStore();
+      return false;
     } finally {
       setBusy(null);
+    }
+  };
+
+  /**
+   * Check the store's checkout live and show the result. After a source change the store hot-reloads,
+   * so `reloading` re-checks a few times until it reports the expected verdict; every check is recorded.
+   */
+  const settleLive = async (want: Tone, reloading: boolean) => {
+    if (!liveCheckout) return;
+    select({ kind: "invariant", id: liveCheckout.id });
+    let record: CheckRecord | null = null;
+    for (let attempt = 0; attempt < (reloading ? 5 : 1); attempt++) {
+      if (reloading) await pause(1500);
+      record = await runCheck(liveCheckout, liveCheckout.default_port, reloading);
+      if (!record || checkVerdict(record).tone === want) break;
+    }
+    if (record && reloading) cueFor(record);
+    revealCheck();
+  };
+
+  // Step 1: show the live store failing, restoring the seeded defect first when a fix is applied.
+  const breakStore = async () => {
+    if (!store) return;
+    setFlowAction("break");
+    try {
+      const seeded = store.state === "seeded";
+      if (seeded || await revertStore()) await settleLive("bad", !seeded);
+    } finally {
+      setFlowAction(null);
+    }
+  };
+
+  // Step 2: the same sandbox repair as the scenario's own button.
+  const repairStore = () => {
+    if (!storePack) return;
+    select({ kind: "pack", id: storePack.id });
+    void start("repair", storePack.id);
+  };
+
+  // Step 3: write the verified fix, then wait for the reloaded store to pass the live check.
+  const applyAndConfirm = async () => {
+    if (!await applyFix() || !liveCheckout) return;
+    setFlowAction("confirm");
+    try {
+      await settleLive("ok", true);
+    } finally {
+      setFlowAction(null);
+    }
+  };
+
+  /** Header shortcut: reuse the saved GET probe for this URL when there is one, then check it live. */
+  const quickTest = async (url: string) => {
+    const existing = listing?.invariants.find((i) => i.source === "probe" && i.method === "GET" && i.url === url
+      && i.expected_status === 200 && !i.has_body) ?? null;
+    setQuickTesting(true);
+    try {
+      const target = existing ?? await api<Invariant>("invariants", json({ method: "GET", url, expected_status: 200 }));
+      if (!existing) await refreshListing();
+      select({ kind: "invariant", id: target.id });
+      if (await runCheck(target, null)) revealCheck();
+    } finally {
+      setQuickTesting(false);
     }
   };
 
@@ -473,6 +558,26 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
       : { tone: "idle", text: "repairable in the sandbox" } };
   const readinessTone = status === "ready" ? "ok" : status === "detect_only" ? "warn"
     : status === "blocked" || readinessError ? "bad" : "active";
+  const liveCheck = liveCheckout ? checks[liveCheckout.id]?.[0] ?? liveCheckout.latest_check : null;
+  // The guided flow speaks only for the store's own repair; another scenario's run leaves it idle.
+  const storeJob = job && storePack && job.scenario_id === storePack.id ? job : null;
+  const model = readiness?.model ?? null;
+  const metaReady = model?.provider === "meta" && model.available;
+  const passedChecks = verification?.report.assertions.filter((a) => a.passed).length ?? 0;
+  const flowRun: FlowRun = {
+    label: metaReady ? "Repair with Meta" : "Auto-repair",
+    source: !model ? "Runs in an isolated Bubblewrap sandbox"
+      : metaReady ? `${model.model} in a Bubblewrap sandbox` : providerNote(model.provider) ?? providerName(model.provider, model.model),
+    running: storeJob !== null && running,
+    stage: storeJob && running ? STEP_LABELS[currentStep(storeJob, events)] ?? null : null,
+    verified: storeJob !== null && verified,
+    checks: storeJob && verified && verification ? { passed: passedChecks, total: verification.report.assertions.length } : null,
+    outcome: storeJob && !running && !verified && outcome ? outcome : null,
+    blocked: status === "ready" ? null : status === "detect_only" ? "Repair provider unavailable"
+      : status === "blocked" || readinessError ? "Engine needs attention" : "Checking the engine…",
+  };
+  const engineLabel = status === "ready" ? "Ready" : status === "detect_only" ? "Detection only"
+    : status === "blocked" || readinessError ? "Needs attention" : "Checking…";
 
   return (
     <>
@@ -480,10 +585,12 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
       <header className="top">
         <div className="shell top-row">
           <span className="wordmark"><span aria-hidden="true" className="glyph" />FaultLine{" "}<span className="wordmark-sub">Inspector</span></span>
+          <QuickTest busy={busy !== null || quickTesting || flowAction !== null} testing={quickTesting} onTest={quickTest}
+            onMore={(url) => { setDialogSeed(url); setDialogOpen(true); }} />
           <div className="top-tools">
             <span className="readiness" data-tone={readinessTone}>
               <span className="readiness-dot" aria-hidden="true" />
-              {status === "ready" ? "Sandbox ready" : status === "detect_only" ? "Detection only" : status === "blocked" || readinessError ? "Sandbox needs attention" : "Checking sandbox…"}
+              <span className="readiness-key">Engine Status:</span> {engineLabel}
             </span>
             <button type="button" className="btn quiet tool" onClick={() => setGuideRequest((n) => n + 1)} aria-keyshortcuts="?" aria-haspopup="dialog">
               CLI guide <kbd aria-hidden="true">?</kbd>
@@ -494,15 +601,18 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
           </div>
         </div>
       </header>
-      {(storePack || !listing) && <StoreBar store={store} error={storeError} storefrontUrl={storefrontUrl}
+      {(storePack || !listing) && <GuidedFlow store={store} error={storeError} storefrontUrl={storefrontUrl}
+        liveCheck={liveCheck} canCheckLive={liveCheckout !== null} run={flowRun}
         verifiedJobId={verified && job ? job.id : null}
-        busy={busy !== null || running} applying={busy === "apply"} reverting={busy === "revert"} checking={busy === "check"}
-        onApply={applyFix} onRevert={revertStore} onRetry={refreshStore}
-        onCheckLive={liveCheckout ? () => { select({ kind: "invariant", id: liveCheckout.id }); void runCheck(liveCheckout, liveCheckout.default_port); } : null} />}
+        busy={busy !== null || running || flowAction !== null || quickTesting}
+        breaking={flowAction === "break"} applying={busy === "apply"} confirming={flowAction === "confirm"}
+        reverting={busy === "revert"} checking={liveCheckout !== null && checkingId === liveCheckout.id}
+        onBreak={() => void breakStore()} onRepair={repairStore} onApply={() => void applyAndConfirm()}
+        onRevert={() => void revertStore()} onRetry={refreshStore} onCheckLive={() => void settleLive("bad", false)} />}
 
       <div className="shell dashboard">
         <ScenarioRail listing={listing} error={listingError} selection={selection} packStatus={packStatus} checkingId={checkingId}
-          onSelect={select} onNew={() => setDialogOpen(true)} onRetry={refreshListing} />
+          onSelect={select} onNew={() => { setDialogSeed(""); setDialogOpen(true); }} onRetry={refreshListing} />
         <main id="workspace" tabIndex={-1}>
           {notice && <p className="notice" data-tone={notice.tone} role="alert">{notice.text}</p>}
           {pack ? (
@@ -519,7 +629,7 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
               onCheck={(port) => void runCheck(invariant, port)} onRepair={(id) => void start("repair", id)}
               onRemove={() => void removeProbe(invariant)} />
           ) : listing ? (
-            <p className="empty">Choose a scenario, or add a new invariant to probe any URL.</p>
+            <p className="empty">Choose a scenario, or test any URL from the bar above.</p>
           ) : (
             <p className="empty" role="status">{listingError ?? "Loading scenarios…"}</p>
           )}
@@ -554,7 +664,7 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
         </main>
       </div>
       <CliGuide request={guideRequest} />
-      <ProbeDialog open={dialogOpen} storeUrl={store?.url ?? null} onClose={() => setDialogOpen(false)} onSubmit={submitProbe} />
+      <ProbeDialog open={dialogOpen} seedUrl={dialogSeed} storeUrl={store?.url ?? null} onClose={() => setDialogOpen(false)} onSubmit={submitProbe} />
       <footer className="shell foot"><span>FaultLine · verified repair runs locally; nothing is pushed or deployed.</span><a href="https://github.com/FrankieBiz/Faultline">Source</a></footer>
     </>
   );
