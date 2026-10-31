@@ -183,7 +183,12 @@ cmd_clean() {
   fi
 
   echo "==> Removing child worktree: ${name}"
-  "$ORCA_BIN" worktree rm --worktree "name:${name}" --force --json | jq .
+  local wt_path="/home/frankbiz/orca/workspaces/Faultline/${name}"
+  if [[ -d "$wt_path" ]]; then
+    "$ORCA_BIN" worktree rm --worktree "path:${wt_path}" --force --json | jq .
+  else
+    "$ORCA_BIN" worktree rm --worktree "name:${name}" --force --json | jq .
+  fi
 }
 
 case "${1:-}" in
