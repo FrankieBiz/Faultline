@@ -170,6 +170,7 @@ export default function InvariantPanel(props: {
         {invariant.source === "probe" && (
           <button type="button" className="btn quiet" onClick={onRemove} disabled={busy}>Remove probe</button>
         )}
+        {checking && <p className="scan" role="status"><span className="scan-bar" aria-hidden="true" />Sending the request from two fresh sessions…</p>}
       </form>
       {invariant.live_note && (
         <p className="gate">{invariant.live_note} Run it in the sandbox with <code>faultline run {invariant.id.replace(/^scenario\./, "")}</code>.</p>

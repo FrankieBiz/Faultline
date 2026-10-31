@@ -133,17 +133,22 @@ def test_cli_jobs_command(capsys: pytest.CaptureFixture[str]) -> None:
 
 
 def test_cli_diff_command(capsys: pytest.CaptureFixture[str]) -> None:
-    """Test faultline diff displays colorized unified diff."""
+    """faultline diff prints the candidate with the job's recorded outcome, never assuming it."""
     args = argparse.Namespace(job_id="job-123")
-    mock_job = {
-        "attempts": [{"parsed_diff": "--- a/file.py\n+++ b/file.py\n@@ -1,2 +1,2 @@\n-old\n+new\n"}]
-    }
-    with patch("app.cli._api_request", return_value=mock_job):
+    attempts = [{"parsed_diff": "--- a/file.py\n+++ b/file.py\n@@ -1,2 +1,2 @@\n-old\n+new\n"}]
+    with patch("app.cli._api_request", return_value={"attempts": attempts}):
         ret = cmd_diff(args)
     assert ret == 0
     captured = capsys.readouterr().out
-    assert "Verified Candidate Diff" in captured
+    assert "Candidate diff for job job-123" in captured
+    assert "in progress" in captured
+    assert "erified" not in captured
     assert "+new" in captured
+
+    unresolved = {"job": {"outcome": "unresolved"}, "attempts": attempts}
+    with patch("app.cli._api_request", return_value=unresolved):
+        cmd_diff(args)
+    assert "unresolved" in capsys.readouterr().out
 
 
 def test_cli_verify_command(capsys: pytest.CaptureFixture[str]) -> None:
@@ -436,8 +441,12 @@ def test_render_frame_ascii_and_color() -> None:
     assert any(line.startswith(" ..   Propose patch") for line in plain)
     assert any(line.startswith(" --   Verify") for line in plain)
 
-    colored = "\n".join(render_frame(state, now=now, width=100, color=True))
+    colored = "\n".join(render_frame(state, now=now, width=100, color=True, spin=0))
     assert "\033[32m✓" in colored
+    # Work in flight reads cyan, like the Inspector: the running glyph, its spinner, and the bar.
+    assert "\033[1m\033[36m●" in colored
+    assert "\033[36m⠋\033[0m" in colored
+    assert "[\033[36m█" in colored
 
 
 def test_render_summary_marks_assertions() -> None:

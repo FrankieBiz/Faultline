@@ -653,3 +653,140 @@ test("job submission sends a UUID idempotency key even where crypto.randomUUID i
   await expect.poll(() => keys.length).toBe(1);
   expect(keys[0]).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
 });
+
+test("the CLI guide pairs each real command with its dashboard control, copies commands, and opens with ?", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await mock(page);
+  await page.goto("/");
+  const open = page.getByRole("button", { name: "CLI guide" });
+  await expect(open).toHaveAttribute("aria-keyshortcuts", "?");
+  await open.click();
+  const guide = page.getByRole("dialog", { name: "Developer workflow" });
+  await expect(guide).toBeVisible();
+  await expect(guide.getByRole("button", { name: "Close" })).toBeFocused();
+  for (const command of ["faultline init", "faultline doctor", "faultline verify", "faultline run checkout_api --detect",
+    "faultline run checkout_api", "faultline listen", "faultline dashboard", "faultline apply", "faultline revert"]) {
+    await expect(guide.getByRole("button", { name: `Copy ${command}`, exact: true })).toBeVisible();
+  }
+  // Only commands the CLI parser defines; live checks of faultline.toml rules are dashboard-only.
+  await expect(guide.getByText("faultline check")).toHaveCount(0);
+  await expect(guide).toContainText("faultline.toml rules have no CLI equivalent yet");
+  await expect(guide.getByRole("listitem").filter({ hasText: "Reproduce and repair" })).toContainText("Run sandbox repair");
+  await expect(guide).toContainText("uv run --project services/repair-orchestrator --python 3.13 --locked");
+
+  await guide.getByRole("button", { name: "Copy faultline init", exact: true }).click();
+  await expect(guide.getByRole("status")).toHaveText("Copied faultline init");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("faultline init");
+
+  await page.keyboard.press("Escape");
+  await expect(guide).toBeHidden();
+  await expect(open).toBeFocused();
+  await page.locator("body").press("?");
+  await expect(guide).toBeVisible();
+  await guide.getByRole("button", { name: "Close" }).click();
+  await expect(guide).toBeHidden();
+
+  // Typing "?" into a field is text, not a shortcut.
+  await page.getByRole("button", { name: "New invariant" }).click();
+  await page.getByRole("dialog", { name: "New invariant" }).getByLabel("URL").pressSequentially("https://x.test/?q=1");
+  await expect(page.getByRole("dialog", { name: "New invariant" }).getByLabel("URL")).toHaveValue("https://x.test/?q=1");
+  await expect(guide).toBeHidden();
+  await page.keyboard.press("Escape");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await open.click();
+  const box = await guide.boundingBox();
+  expect(box && box.x >= 0 && box.x + box.width <= 390).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test("sound cues are opt-in, persist, and sound an alarm for a reproduced failure and a resolution for a pass", async ({ page }) => {
+  // Record every oscillator the cues start; the alarm uses saw and square waves, the resolution triangle and sine.
+  await page.addInitScript(() => {
+    const started: string[] = [];
+    Object.assign(window, { __oscillators: started });
+    const Real = window.AudioContext;
+    window.AudioContext = class extends Real {
+      override createOscillator() {
+        const oscillator = super.createOscillator();
+        const start = oscillator.start.bind(oscillator);
+        oscillator.start = (when?: number) => { started.push(oscillator.type); start(when); };
+        return oscillator;
+      }
+    };
+  });
+  const started = () => page.evaluate(() => (window as unknown as { __oscillators: string[] }).__oscillators.splice(0));
+  const outcomes = [check("checkout.no_coupon", "detected"), check("checkout.no_coupon", "detected"), check("checkout.no_coupon", "no_failure")];
+  await mock(page, { onCheck: () => outcomes.shift()! });
+  await page.goto("/");
+  const toggle = page.getByRole("button", { name: "Sound cues" });
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  await rail(page).getByRole("button", { name: /Checkout without a coupon creates an order/ }).click();
+  const run = page.getByRole("button", { name: "Run live check" });
+  await run.click();
+  await expect(page.getByRole("heading", { name: "Failing", exact: true })).toBeVisible();
+  expect(await started()).toEqual([]);
+
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  expect(await started()).toEqual(["triangle", "triangle", "triangle", "sine"]);
+  await run.click();
+  await expect(run).toHaveText("Run live check");
+  expect(new Set(await started())).toEqual(new Set(["sawtooth", "square"]));
+
+  await page.reload();
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  await rail(page).getByRole("button", { name: /Checkout without a coupon creates an order/ }).click();
+  await run.click();
+  await expect(page.getByRole("heading", { name: "Passing", exact: true })).toBeVisible();
+  expect(await started()).toEqual(["triangle", "triangle", "triangle", "sine"]);
+});
+
+test("the rail shows a live check in flight and each sandbox run's evidence-checked result", async ({ page }) => {
+  let release = () => {};
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  await mock(page, { detail: verifiedDetail() });
+  await page.route("**/api/faultline/invariants/checkout.no_coupon/check", async (route) => { await held; await route.fallback(); });
+  await page.goto("/");
+  const nav = rail(page);
+  await expect(nav.getByRole("region", { name: "Sandbox repair" })).toContainText("sandbox · 1");
+  await expect(nav.getByRole("region", { name: "faultline.toml" })).toContainText("http · 3");
+  const ruleItem = nav.getByRole("button", { name: /Checkout without a coupon creates an order/ });
+  await expect(ruleItem).toContainText("not checked yet");
+
+  await ruleItem.click();
+  await page.getByRole("button", { name: "Run live check" }).click();
+  await expect(ruleItem).toContainText("checking live…");
+  await expect(ruleItem.locator(".rail-dot")).toHaveAttribute("data-tone", "active");
+  await expect(page.getByRole("status").filter({ hasText: "Sending the request from two fresh sessions…" })).toBeVisible();
+  release();
+  await expect(ruleItem).toContainText("last check: failing");
+  await expect(ruleItem.locator(".rail-dot")).toHaveAttribute("data-tone", "bad");
+  await expect(page.getByText("Sending the request from two fresh sessions…")).toHaveCount(0);
+
+  const packItem = nav.getByRole("button", { name: /Scripted checkout repair/ });
+  await expect(packItem).toContainText("repairable in the sandbox");
+  await inspectPastRun(page);
+  await expect(page.getByRole("heading", { name: "Verified repair", exact: true })).toBeVisible();
+  await expect(packItem).toContainText("last run: verified repair");
+  await expect(packItem.locator(".rail-dot")).toHaveAttribute("data-tone", "ok");
+});
+
+test("the rail marks a running sandbox job as active and never calls an unproven record verified", async ({ page }) => {
+  const events = [{ sequence: 1, timestamp: "2026-10-27T12:00:00Z", stage: "baseline", message_code: "baseline", message: "Entered baseline." }];
+  await mock(page, { detail: { ...detail("running", null), events } });
+  await page.goto("/");
+  const packItem = rail(page).getByRole("button", { name: /Scripted checkout repair/ });
+  await expect(packItem).toContainText("sandbox run in progress…");
+  await expect(packItem.locator(".rail-dot")).toHaveAttribute("data-tone", "active");
+  await expect(page.locator(".pipeline li[data-state=current]")).toHaveCount(1);
+  await expect(page.locator(".readiness")).toHaveAttribute("data-tone", "ok");
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  await mock(page, { detail: detail("succeeded", "verified") });
+  await page.reload();
+  await inspectPastRun(page);
+  await expect(page.getByRole("heading", { name: "Unverified result" })).toBeVisible();
+  await expect(packItem).toContainText("last run: unverified result");
+  await expect(packItem).not.toContainText("verified repair");
+});

@@ -209,7 +209,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         if not passed and name.startswith("Linux"):
             all_ok = False
 
-    print("\n" + ("=" * 60))
+    print(f"\n{DIM}{'─' * 60}{RESET}")
     if all_ok:
         msg = f"{GREEN}{BOLD}Result: System is ready for reproduction and verification.{RESET}\n"
         print(msg)
@@ -315,7 +315,9 @@ def cmd_diff(args: argparse.Namespace) -> int:
         print(f"{YELLOW}No diff found in proposal for job {job_id}.{RESET}")
         return 1
 
-    print(f"\n{BOLD}Verified Candidate Diff for Job {job_id}:{RESET}\n")
+    outcome = (res.get("job") or {}).get("outcome") or "in progress"
+    tone = GREEN if outcome == "verified" else YELLOW
+    print(f"\n{BOLD}Candidate diff for job {job_id}{RESET} {DIM}·{RESET} {tone}{outcome}{RESET}\n")
     for line in diff.splitlines():
         if line.startswith("+") and not line.startswith("+++"):
             print(f"{GREEN}{line}{RESET}")
@@ -741,7 +743,7 @@ ASCII_GLYPHS = {
 STATUS_STYLE = {
     "done": GREEN,
     "failed": RED,
-    "running": BOLD,
+    "running": BOLD + CYAN,
     "pending": DIM,
     "ended": DIM,
     "attention": YELLOW,
@@ -1038,7 +1040,9 @@ def render_frame(
     title = f" FaultLine{sep}run {state.job_id[:8]}" + (
         f"{sep}{state.scenario}" if state.scenario else ""
     )
-    lines = [_paint(_fit(title, width, ascii_only), BOLD, color), rule]
+    title = _fit(title, width, ascii_only)
+    # The wordmark leads in bold; the run and scenario that follow stay plain.
+    lines = [_paint(title[:10], BOLD, color) + title[10:], rule]
 
     settled = sum(status not in {"pending", "running"} for status in state.status.values())
     filled = round(BAR_WIDTH * settled / len(STAGES))
@@ -1049,7 +1053,8 @@ def render_frame(
     if state.cancel_requested and state.outcome is None:
         progress += f"{sep}cancel requested"
     progress = _fit(progress, width - BAR_WIDTH - 4, ascii_only)
-    lines.append(f" [{_paint(bar, _outcome_style(state.outcome), color)}] {progress}")
+    bar_style = _outcome_style(state.outcome) if state.outcome else CYAN
+    lines.append(f" [{_paint(bar, bar_style, color)}] {progress}")
 
     glyph_width = 4 if ascii_only else 1
     frames = ASCII_SPINNER if ascii_only else SPINNER
@@ -1059,9 +1064,13 @@ def render_frame(
             "" if status in {"pending", "skipped"} else f"{state.stage_seconds(stage, now):.1f}s"
         )
         detail = state.stage_detail(stage, sep)
-        if status == "running" and spin is not None:
-            detail = f"{frames[spin % len(frames)]} {detail}".rstrip()
         room = width - (glyph_width + 32)
+        if status == "running" and spin is not None:
+            frame = frames[spin % len(frames)]
+            fitted = _fit(detail, room - 2, ascii_only)
+            detail = f"{_paint(frame, CYAN, color)} {fitted}".rstrip()
+        else:
+            detail = _fit(detail, room, ascii_only)
         label_style = (
             BOLD if status == "running" else DIM if status in {"pending", "skipped"} else ""
         )
@@ -1074,7 +1083,7 @@ def render_frame(
                 + " "
                 + (_paint(f"{clock:>8}", DIM, color) if clock else " " * 8)
                 + "   "
-                + _fit(detail, room, ascii_only)
+                + detail
             ).rstrip()
         )
 

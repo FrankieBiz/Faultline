@@ -1,14 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import CliGuide from "@/components/CliGuide";
 import InvariantPanel from "@/components/InvariantPanel";
 import JobResult, { summarizeJob } from "@/components/JobResult";
 import PackPanel from "@/components/PackPanel";
 import ProbeDialog, { type ProbeValues } from "@/components/ProbeDialog";
-import ScenarioRail, { type Selection } from "@/components/ScenarioRail";
+import ScenarioRail, { type RailStatus, type Selection } from "@/components/ScenarioRail";
 import StoreBar from "@/components/StoreBar";
+import { playCue, readSoundPreference, writeSoundPreference, type Cue } from "@/lib/audio-cues";
 import {
-  ApiError, REASON, TERMINAL, api, limitsStatusLabel, providerName, routeOf, sameOrigin,
+  ApiError, REASON, TERMINAL, api, checkVerdict, limitsStatusLabel, providerName, routeOf, sameOrigin,
   type CheckRecord, type Invariant, type Job, type JobDetail, type JobEvent, type Readiness,
   type RepairScenario, type ScenarioListing, type StoreStatus, type Tone,
 } from "@/lib/faultline-api";
@@ -47,6 +49,13 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
   const [checks, setChecks] = useState<Record<string, CheckRecord[]>>({});
   const [checksError, setChecksError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  /** Bumped to open the CLI guide; the dialog closes itself. */
+  const [guideRequest, setGuideRequest] = useState(0);
+  const [sound, setSound] = useState(false);
+  const soundRef = useRef(false);
+  const [checkingId, setCheckingId] = useState<string | null>(null);
+  /** The job seen running in this session, so a cue marks a transition rather than a past record. */
+  const watchedJob = useRef<string | null>(null);
   const [pastRun, setPastRun] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
   const [detail, setDetail] = useState<JobDetail | null>(null);
@@ -133,6 +142,36 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
       setHistoryError(errorText(e));
       return [];
     }
+  }, []);
+
+  const cue = useCallback((name: Cue) => { if (soundRef.current) playCue(name); }, []);
+  const toggleSound = () => {
+    const next = !soundRef.current;
+    soundRef.current = next;
+    setSound(next);
+    writeSoundPreference(next);
+    // The click that enables sound is the gesture that unlocks audio; confirm with the pass cue.
+    if (next) playCue("resolve");
+  };
+
+  // Read the stored preference after hydration, so server and client render the same first frame.
+  useEffect(() => {
+    const stored = readSoundPreference();
+    soundRef.current = stored;
+    setSound(stored);
+  }, []);
+
+  // "?" opens the workflow quick sheet from anywhere except a text field or an open dialog.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "?" || event.ctrlKey || event.metaKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("input, textarea, select, [contenteditable='true'], dialog[open]")) return;
+      event.preventDefault();
+      setGuideRequest((n) => n + 1);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, []);
 
   // After a reload, the newest server-side job is the one to show and, if unfinished, reattach to.
@@ -248,8 +287,18 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
     }
   }, [detail]);
 
-  const { job, verified } = summarizeJob(detail);
+  const { job, verified, outcome } = summarizeJob(detail);
   const terminal = job ? TERMINAL.has(job.state) : false;
+
+  // Cue once when a run watched in this session settles: resolution for a verified fix, alarm for a failure.
+  useEffect(() => {
+    if (!job) return;
+    if (!terminal) { watchedJob.current = job.id; return; }
+    if (watchedJob.current !== job.id) return;
+    watchedJob.current = null;
+    if (verified) cue("resolve");
+    else if (outcome?.tone === "bad") cue("catastrophe");
+  }, [job, terminal, verified, outcome, cue]);
   // Until the first record arrives the job is assumed active, unless the record cannot be read at all.
   const running = jobId !== null && (job ? !terminal : syncError === null);
 
@@ -312,10 +361,14 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
 
   const runCheck = async (invariant: Invariant, port: number | null): Promise<CheckRecord | null> => {
     setBusy("check");
+    setCheckingId(invariant.id);
     setNotice(null);
     try {
       const record = await api<CheckRecord>(`invariants/${encodeURIComponent(invariant.id)}/check`, json(port ? { port } : {}));
       setChecks((current) => ({ ...current, [invariant.id]: [record, ...(current[invariant.id] ?? [])].slice(0, 10) }));
+      const tone = checkVerdict(record).tone;
+      if (tone === "bad") cue("catastrophe");
+      else if (tone === "ok") cue("resolve");
       void refreshListing();
       return record;
     } catch (e) {
@@ -323,6 +376,7 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
       return null;
     } finally {
       setBusy(null);
+      setCheckingId(null);
     }
   };
 
@@ -411,16 +465,33 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
     : null;
   const repairGate = status === "ready" ? (running ? "A sandbox run is in progress. Wait for it to finish." : null) : gate;
   const jobScenario = job ? listing?.scenarios.find((s) => s.id === job.scenario_id)?.title ?? job.scenario_id : null;
+  // The rail reports only the run on screen, with the same evidence test as its result heading.
+  const packStatus: Record<string, RailStatus> = !job ? {}
+    : { [job.scenario_id]: running ? { tone: "active", text: "sandbox run in progress…" }
+      : verified ? { tone: "ok", text: "last run: verified repair" }
+      : outcome ? { tone: outcome.tone, text: `last run: ${outcome.title.toLowerCase()}` }
+      : { tone: "idle", text: "repairable in the sandbox" } };
+  const readinessTone = status === "ready" ? "ok" : status === "detect_only" ? "warn"
+    : status === "blocked" || readinessError ? "bad" : "active";
 
   return (
     <>
       <a className="skip" href="#workspace">Skip to the selected scenario</a>
       <header className="top">
         <div className="shell top-row">
-          <span className="wordmark"><span aria-hidden="true" className="glyph" />FaultLine</span>
-          <span className="readiness" data-tone={status === "ready" ? "ok" : status === "detect_only" ? "warn" : "idle"}>
-            {status === "ready" ? "Sandbox ready" : status === "detect_only" ? "Detection only" : status === "blocked" || readinessError ? "Sandbox needs attention" : "Checking sandbox…"}
-          </span>
+          <span className="wordmark"><span aria-hidden="true" className="glyph" />FaultLine{" "}<span className="wordmark-sub">Inspector</span></span>
+          <div className="top-tools">
+            <span className="readiness" data-tone={readinessTone}>
+              <span className="readiness-dot" aria-hidden="true" />
+              {status === "ready" ? "Sandbox ready" : status === "detect_only" ? "Detection only" : status === "blocked" || readinessError ? "Sandbox needs attention" : "Checking sandbox…"}
+            </span>
+            <button type="button" className="btn quiet tool" onClick={() => setGuideRequest((n) => n + 1)} aria-keyshortcuts="?" aria-haspopup="dialog">
+              CLI guide <kbd aria-hidden="true">?</kbd>
+            </button>
+            <button type="button" className="btn quiet tool" onClick={toggleSound} aria-pressed={sound}>
+              <span className="sound-mark" data-on={sound} aria-hidden="true" />Sound cues
+            </button>
+          </div>
         </div>
       </header>
       {(storePack || !listing) && <StoreBar store={store} error={storeError} storefrontUrl={storefrontUrl}
@@ -430,7 +501,7 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
         onCheckLive={liveCheckout ? () => { select({ kind: "invariant", id: liveCheckout.id }); void runCheck(liveCheckout, liveCheckout.default_port); } : null} />}
 
       <div className="shell dashboard">
-        <ScenarioRail listing={listing} error={listingError} selection={selection}
+        <ScenarioRail listing={listing} error={listingError} selection={selection} packStatus={packStatus} checkingId={checkingId}
           onSelect={select} onNew={() => setDialogOpen(true)} onRetry={refreshListing} />
         <main id="workspace" tabIndex={-1}>
           {notice && <p className="notice" data-tone={notice.tone} role="alert">{notice.text}</p>}
@@ -482,6 +553,7 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
           </details>
         </main>
       </div>
+      <CliGuide request={guideRequest} />
       <ProbeDialog open={dialogOpen} storeUrl={store?.url ?? null} onClose={() => setDialogOpen(false)} onSubmit={submitProbe} />
       <footer className="shell foot"><span>FaultLine · verified repair runs locally; nothing is pushed or deployed.</span><a href="https://github.com/FrankieBiz/Faultline">Source</a></footer>
     </>
