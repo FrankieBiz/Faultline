@@ -32,14 +32,36 @@ Never commit API keys, access tokens, passwords, or private credentials. Use ign
 ## Orchestration Model Rules & Multi-Model Architecture
 
 ### Response Format & Orca Child Dispatch Requirement
-- **STRICT TRUTH IN ORCA CHILDREN**: Never fabricate, simulate, or claim models were used if they were not actually spun up as real Orca children (`orca worktree create ...`).
-- If no Orca children were spun up in a turn (e.g. pure coordinator analysis or status check), state explicitly that no children were spun up for that turn.
+- **STRICT TRUTH IN ORCA CHILDREN**: Never fabricate, simulate, or claim models were used if they were not actually spun up as real Orca children (`orca worktree create ...` or `./scripts/orca-child.sh spawn ...`).
+- If no Orca children were spun up in a turn (e.g. pure coordinator analysis, status check, or review), state explicitly:
+```markdown
+### Active Orca Children Spun Up:
+*None for this turn.*
+```
 - When Orca children ARE spun up, list ONLY the real running children concisely:
 ```markdown
 ### Active Orca Children Spun Up:
 - **<Agent Name>** (`<model>` via Orca worktree `<worktree_name>`): <Concise task description>
 ```
 - All substantial coding, refactoring, and UI development MUST be done by spinning up real Orca child agents (Codex / Claude) in separate worktrees. Antigravity acts as coordinator.
+
+### Orca Child Dispatch Protocol & Helper Commands
+Use `./scripts/orca-child.sh` (or raw `orca` CLI) to manage child agents:
+- **Spawn Codex (`gpt-6-astra` high effort)**:
+  `./scripts/orca-child.sh spawn codex <worktree-name> "<prompt>"`
+  *(Equivalent: `orca worktree create --name <name> --agent codex --model gpt-6-astra --effort high --prompt "<prompt>" --activate --json`)*
+- **Spawn Claude (`claude-opus-5-5` high reasoning)**:
+  `./scripts/orca-child.sh spawn claude <worktree-name> "<prompt>"`
+  *(Equivalent: `orca worktree create --name <name> --agent claude --model claude-opus-5-5 --effort high --prompt "<prompt>" --activate --json`)*
+- **Check Child Status**:
+  `./scripts/orca-child.sh status <worktree-name>`
+- **Read Child Output**:
+  `./scripts/orca-child.sh read <worktree-name> [lines]`
+- **Merge & Verify Child Worktree**:
+  `./scripts/orca-child.sh merge <worktree-name>`
+  *(Fetches child branch, merges, and automatically executes `make check`)*
+- **Clean Child Worktree**:
+  `./scripts/orca-child.sh clean <worktree-name>`
 
 ### Mandated Model Tiers (Strict Prohibition on Older Tiers)
 - **STRICTLY FORBIDDEN**: Never orchestrate with older or lower-tier models (no Claude 3.5 Sonnet, no GPT-4o, no legacy tiers).
