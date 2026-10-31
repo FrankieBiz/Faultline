@@ -73,15 +73,34 @@ Use `./scripts/orca-child.sh` (or raw `orca` CLI) to manage child agents:
   5. **Local Inference**: Local Ollama (`qwen2.5-coder:14b`, `7b`) at `http://localhost:11434/v1` for offline fallback.
   6. **Antigravity (Coordinator)**: Orca orchestration supervisor, task graph DAG controller, disjoint worktree/file partitioner, verification gatekeeper (`make check`), and zero-AI git finish executor.
 
-### Functional Division of Labor
-- **OpenAI GPT-6.1 (`gpt-6.1-sol`)**:
-  - Assigned to **Deep Backend Engineering**: FastAPI endpoints, Pydantic v2 schemas, patch validation logic, test harnesses, and backend regression suites.
-- **Anthropic Claude (`claude-opus-5-5` / high reasoning)**:
-  - Assigned to **Frontend Ergonomics & Browser QA**: Next.js App Router UI, Playwright browser test visualization, Inspector panels, terminal aesthetics, and hackathon presentation/narrative.
-- **DeepSeek (`deepseek-v4.1-flash`)**:
-  - Assigned to **High-Throughput Extraction & Rapid Auditing**: Batch syntax/error analysis, edge-case test fuzzing, and rapid token scanning.
-- **Antigravity (Coordinator)**:
-  - Oversees the autonomous perfection loop: plans the feature DAG, partitions file boundaries to prevent merge conflicts, dispatches parallel workers, monitors progress reactively, executes verification gates (`make check`), and runs the zero-AI git finish protocol.
+### Deterministic Model Routing Matrix
+
+Every task entering the system MUST be routed according to this strict, unambiguous division of labor:
+
+| Target Model | Role / Specialization | Assigned Task Domains | Prohibited Task Domains |
+| :--- | :--- | :--- | :--- |
+| **Anthropic Claude** (`claude-opus-5-5` high reasoning) | **Frontend Architect & Browser QA** (Main Coder - Long Running) | Next.js App Router UI (`web/inspector-ui`), React components, Tailwind styling, CLI visual aesthetics, terminal formatting, Playwright browser test suites (`make browser`), user journeys, hackathon presentation, and narrative polish. | Deep kernel sandboxing, raw AST byte patching, backend database models. |
+| **OpenAI / Codex** (`gpt-6-astra` / `gpt-6.1-sol` high effort) | **Deep Backend & Systems Engineer** (Main Coder - Long Running) | FastAPI microservices, Pydantic v2 schemas, Bubblewrap sandbox mounts & Linux cgroup isolation, AST parsing & patch policy validation, multi-language execution runtimes (`project.py`, `repro_browser.mjs`), test harnesses (`pytest`), CLI core runner logic (`faultline run`, `faultline init`). | Next.js frontend styling, JSX components, CSS layout. |
+| **DeepSeek** (`deepseek-v4.1-flash` via API) | **High-Throughput Auditor & Fuzzer** | Batch syntax verification, repository-wide defect sweeps, edge-case test fuzzing, and rapid token extraction. | Architectural refactoring, frontend layout. |
+| **Meta Inference** (`muse-spark-1.3`, `Llama-3.3-70B`) | **Core Domain Patch Synthesizer** | Generating unified code diffs from verified reproduction traces under strict prompt containment. | System orchestration, tooling automation. |
+| **Antigravity (Gemini)** | **Orchestrator, Coordinator & Image Generator** | 1. DAG decomposition and disjoint file partitioning.<br>2. Spawning and supervising long-running Claude/Codex Orca children.<br>3. Verification gates (`make check`, `make browser`) and zero-AI git finish.<br>4. Minor coordination edits (scratch scripts, config paths, symlinks).<br>5. Image generation (diagrams, assets, badges via `image-generator` subagent). | **STRICTLY PROHIBITED** from writing substantial feature code, frontend UI, or backend application logic. |
+
+### Long-Running Child Execution Policy
+- **Freedom to Run Deep**: Claude and Codex are the primary coders. They are given permission and context to execute deep, multi-step, long-running agent chats without interruption.
+- **Rich Task Prompts**: When spawning children, the coordinator provides comprehensive context, target file paths, expected interfaces, and verification commands.
+- **No Premature Interruption**: The coordinator does not cancel or rush children while they are actively working. It allows them to iterate and debug until their sub-tasks are complete.
+- **Child Self-Verification**: Children must run relevant unit tests and verify their work before concluding.
+
+### Project Skills Catalog & Invocation Protocol
+Skills reside in `.agents/skills/` and are discovered from `~/.gemini/config/skills.json`. Agents must invoke the appropriate skill for the task at hand:
+- `hackathon-judge`: Scoring against Meta's rubric (Impact 30%, Tooling 25%, Technical 20%, Demo 25%), running hostile mock judging, and 3-minute pitch rehearsals.
+- `virality`: Engineering developer virality, high-sensory UI aesthetics, demo scripts, launch hooks, and social distribution.
+- `verification-before-completion`: Required before claiming any task is done; enforces running `make check` and verifying tests and builds.
+- `systematic-debugging`: Multi-phase defect isolation for hard-to-diagnose test or runtime failures.
+- `diagnosing-bugs`: Rapid bug triage and reproduction scoping.
+- `frontend-design`: Creating distinctive, production-grade frontend interfaces with clean typography, contrast, and layout.
+- `orchestration` & `orca-cli`: Managing Orca worktrees, terminals, child agent dispatch, and multi-model coordination.
+- `using-git-worktrees`: Best practices for isolated git worktrees, preventing branch cross-contamination and merge conflicts.
 
 ### Autonomous Perfection Loop & Finish Protocol
 1. **Autonomous Execution**: When in loop mode, the coordinator plans what needs to be done, dispatches the frontier models to execute, reviews outputs, validates test suites, and pushes to main. Do not pause for routine confirmation—proceed autonomously while periodically grounding to ensure architectural alignment.

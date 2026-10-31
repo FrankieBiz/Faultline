@@ -26,7 +26,7 @@ ORCA_BIN="$(resolve_orca)"
 usage() {
   cat <<'EOF'
 Usage:
-  ./scripts/orca-child.sh spawn <codex|claude> <worktree-name> <prompt>
+  ./scripts/orca-child.sh spawn <codex|claude> <worktree-name> <prompt> [effort]
   ./scripts/orca-child.sh list
   ./scripts/orca-child.sh status <worktree-name>
   ./scripts/orca-child.sh read <worktree-name> [limit]
@@ -34,8 +34,8 @@ Usage:
   ./scripts/orca-child.sh clean <worktree-name>
 
 Frontier Model Defaults:
-  codex  -> gpt-6-astra (effort: high)
-  claude -> claude-opus-5-5 (effort: high)
+  codex  -> gpt-6-astra (effort: high or xhigh)
+  claude -> claude-opus-5-5 (effort: high or xhigh)
 EOF
   exit 1
 }
@@ -44,23 +44,21 @@ cmd_spawn() {
   local agent="${1:-}"
   local name="${2:-}"
   local prompt="${3:-}"
+  local effort="${4:-high}"
 
   if [[ -z "$agent" || -z "$name" || -z "$prompt" ]]; then
-    echo "Error: spawn requires <agent> <worktree-name> <prompt>" >&2
+    echo "Error: spawn requires <agent> <worktree-name> <prompt> [effort]" >&2
     usage
   fi
 
   local model=""
-  local effort="high"
 
   case "$agent" in
     codex)
       model="gpt-6-astra"
-      effort="high"
       ;;
     claude)
       model="claude-opus-5-5"
-      effort="high"
       ;;
     *)
       echo "Error: Unsupported agent '$agent'. Must be 'codex' or 'claude'." >&2
@@ -68,7 +66,7 @@ cmd_spawn() {
       ;;
   esac
 
-  echo "==> Spawning real Orca child: ${agent} (${model}) in worktree '${name}'" >&2
+  echo "==> Spawning real Orca child: ${agent} (${model}, effort: ${effort}) in worktree '${name}'" >&2
   local output
   output="$("$ORCA_BIN" worktree create \
     --name "$name" \
