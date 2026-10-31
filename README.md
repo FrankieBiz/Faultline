@@ -153,7 +153,8 @@ store it stops at **Place order** with `HTTP 500 on POST /api/checkout`. Exit co
 are **0** clean (after `--max-actions`, default 15, or nothing left to try), **1**
 defect found or crawl failure, and **2** invalid input. `--json` prints only the
 report. The orchestrator exposes the same crawl as an authenticated
-`POST /api/crawl` with body `{"url": "...", "max_actions": 15}`.
+`POST /api/crawl` with body `{"url": "...", "max_actions": 15}`. The Inspector's
+**Auto-Break Page** button streams it live through `POST /api/faultline/crawl`.
 
 Then, inside any Next.js, Vite, Express, or FastAPI repository:
 
@@ -269,13 +270,13 @@ These results describe an authored corpus for one checkout route, not arbitrary 
 | Suite | Tests |
 | --- | ---: |
 | Backend, scripts, and fixtures (pytest) | 286 |
-| Repair orchestrator and CLI (pytest) | 747 |
+| Repair orchestrator and CLI (pytest) | 754 |
 | Browser runner unit tests | 117 |
-| **Unit and integration total** (`make check`) | **1,150** |
+| **Unit and integration total** (`make check`) | **1,157** |
 | Inspector browser tests (Playwright) | 37 |
 | Storefront browser test (Playwright) | 1 |
 | **Browser total** (`make browser`) | **38** |
-| **All automated tests** | **1,188** |
+| **All automated tests** | **1,195** |
 
 `make check` also runs Ruff lint and format checks, strict mypy, fixture and corpus provenance, the storefront, runner, and Inspector builds, and both Python distribution builds. `make integration` exercises real isolated Chromium and cgroup enforcement, and `make evaluate` runs the corpus.
 

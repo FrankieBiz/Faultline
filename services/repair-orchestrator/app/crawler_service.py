@@ -12,6 +12,7 @@ import json
 import shutil
 import subprocess
 import threading
+import time
 import urllib.parse
 from collections import deque
 from collections.abc import Callable
@@ -51,25 +52,8 @@ def validate_url(url: str) -> str:
     return candidate
 
 
-def run_crawl(
-    url: str,
-    *,
-    max_actions: int = DEFAULT_MAX_ACTIONS,
-    timeout_ms: int = DEFAULT_TIMEOUT_MS,
-    on_event: Callable[[Event], None] | None = None,
-    runner: Path = RUNNER_CLI,
-) -> dict[str, Any]:
-    """Crawl ``url`` in headless Chromium and return the runner's CrawlReport.
-
-    Raises CrawlError when input is invalid, the runner is missing, or it
-    exits without a report. Page defects are not errors: they come back as a
-    report with ``status: "failure"``.
-    """
-    target = validate_url(url)
-    if not 1 <= max_actions <= MAX_ACTIONS:
-        raise CrawlError("invalid_request", f"max_actions must be from 1 to {MAX_ACTIONS}.")
-    if not 1_000 <= timeout_ms <= MAX_TIMEOUT_MS:
-        raise CrawlError("invalid_request", f"timeout_ms must be from 1000 to {MAX_TIMEOUT_MS}.")
+def ensure_runner(runner: Path = RUNNER_CLI) -> str:
+    """Return the Node.js executable, or raise ``runner_unavailable``."""
     node = shutil.which("node")
     if node is None:
         raise CrawlError("runner_unavailable", "Node.js is not on PATH.")
@@ -78,6 +62,30 @@ def run_crawl(
             "runner_unavailable",
             "The browser runner is not built. Run: npm --prefix tools/browser-runner run build",
         )
+    return node
+
+
+def run_crawl(
+    url: str,
+    *,
+    max_actions: int = DEFAULT_MAX_ACTIONS,
+    timeout_ms: int = DEFAULT_TIMEOUT_MS,
+    on_event: Callable[[Event], None] | None = None,
+    runner: Path = RUNNER_CLI,
+    cancel: threading.Event | None = None,
+) -> dict[str, Any]:
+    """Crawl ``url`` in headless Chromium and return the runner's CrawlReport.
+
+    Raises CrawlError when input is invalid, the runner is missing, or it
+    exits without a report. Page defects are not errors: they come back as a
+    report with ``status: "failure"``. Setting ``cancel`` stops the runner.
+    """
+    target = validate_url(url)
+    if not 1 <= max_actions <= MAX_ACTIONS:
+        raise CrawlError("invalid_request", f"max_actions must be from 1 to {MAX_ACTIONS}.")
+    if not 1_000 <= timeout_ms <= MAX_TIMEOUT_MS:
+        raise CrawlError("invalid_request", f"timeout_ms must be from 1000 to {MAX_TIMEOUT_MS}.")
+    node = ensure_runner(runner)
 
     command = [
         node,
@@ -111,9 +119,21 @@ def run_crawl(
 
         drainer = threading.Thread(target=drain_stderr, daemon=True)
         drainer.start()
-        killer = threading.Timer(timeout_ms / 1000 + KILL_GRACE_SECONDS, process.kill)
-        killer.daemon = True
-        killer.start()
+        finished = threading.Event()
+        deadline = time.monotonic() + timeout_ms / 1000 + KILL_GRACE_SECONDS
+
+        def watchdog() -> None:
+            # Ends a runner that outlives its budget or whose caller gave up.
+            while not finished.wait(0.2):
+                if time.monotonic() >= deadline or (cancel is not None and cancel.is_set()):
+                    process.terminate()
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                    return
+
+        threading.Thread(target=watchdog, daemon=True).start()
         try:
             for line in process.stdout:
                 try:
@@ -127,7 +147,7 @@ def run_crawl(
                 elif on_event is not None:
                     on_event(event)
         finally:
-            killer.cancel()
+            finished.set()
             if process.poll() is None:
                 # SIGTERM lets Playwright close Chromium before the runner exits.
                 process.terminate()

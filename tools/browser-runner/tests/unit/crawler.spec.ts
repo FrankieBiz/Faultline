@@ -152,19 +152,22 @@ test.describe("crawler heuristics", () => {
 
   test("formats HUD lines", () => {
     expect(formatCrawlEvent({ type: "launch" })).toBe("[Playwright] Launching Chromium...");
-    expect(formatCrawlEvent({ type: "discovered", url: ORIGIN, count: 8 })).toBe("[Playwright] Discovered 8 interactive elements.");
+    expect(formatCrawlEvent({ type: "discovered", url: ORIGIN, count: 8, buttons: 5, links: 3, forms: 0 })).toBe("[Playwright] Discovered 8 interactive elements.");
     expect(
       formatCrawlEvent({
         type: "action",
         step: 5,
         action: "click",
+        url: `${ORIGIN}/checkout`,
+        element: "button",
+        submit: true,
         label: "Place order",
         selector: 'button:has-text("Place order")',
         ok: false,
         failure: { kind: "http_error", message: "500", status: 500, method: "POST", endpoint: "/api/checkout" },
       }),
     ).toBe("[Playwright] Step 5: Clicking Place order -> 💥 HTTP 500 on POST /api/checkout");
-    expect(formatCrawlEvent({ type: "action", step: 3, action: "fill", label: "Email", selector: "#email", value: "test@example.com", ok: true })).toBe(
+    expect(formatCrawlEvent({ type: "action", step: 3, action: "fill", url: `${ORIGIN}/checkout`, element: "field", submit: false, label: "Email", selector: "#email", value: "test@example.com", ok: true })).toBe(
       '[Playwright] Step 3: Filling Email with "test@example.com" -> OK',
     );
   });
@@ -318,6 +321,13 @@ test.describe("runAutonomousCrawler in Chromium", () => {
     expect(events[0]).toEqual({ type: "launch" });
     expect(events.at(-1)).toEqual({ type: "report", report });
     expect(events.filter((event) => event.type === "action" && !event.ok)).toHaveLength(1);
+    expect(events.find((event) => event.type === "discovered" && event.url.endsWith("/checkout"))).toMatchObject({ forms: 1, buttons: 2, links: 3 });
+    expect(events.find((event) => event.type === "action" && event.label === "Place order")).toMatchObject({
+      url: `${shop.origin}/checkout`,
+      element: "button",
+      submit: true,
+      ok: false,
+    });
   });
 
   test("replaying the breadcrumbs reproduces the same failure", async () => {

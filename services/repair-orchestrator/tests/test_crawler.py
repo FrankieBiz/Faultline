@@ -15,6 +15,7 @@ from conftest import Harness
 from fastapi.testclient import TestClient
 
 from app import crawler_service
+from app.api import InspectorTranslator
 from app.cli import COLOR, PLAIN, build_parser
 from app.cli_crawl import crawl_command, render_event, render_report
 from app.crawler_service import CrawlError, run_crawl, validate_url
@@ -505,4 +506,261 @@ def test_crawl_command_reports_crawl_errors(
         "status": "error",
         "code": code,
         "error": "it broke",
+    }
+
+
+# --- POST /api/faultline/crawl (Inspector HUD stream) --------------------------
+
+RUNNER_EVENTS: list[dict[str, Any]] = [
+    {"type": "launch"},
+    {"type": "navigate", "step": 1, "url": "http://127.0.0.1:3000/"},
+    {
+        "type": "discovered",
+        "url": "http://127.0.0.1:3000/",
+        "count": 9,
+        "buttons": 3,
+        "links": 6,
+        "forms": 0,
+    },
+    {
+        "type": "action",
+        "step": 2,
+        "action": "click",
+        "url": "http://127.0.0.1:3000/",
+        "element": "link",
+        "submit": False,
+        "label": "Trail Mug",
+        "selector": 'a:has-text("Trail Mug") >> nth=0',
+        "ok": True,
+    },
+    {
+        "type": "action",
+        "step": 3,
+        "action": "fill",
+        "url": "http://127.0.0.1:3000/checkout",
+        "element": "field",
+        "submit": False,
+        "label": "Email",
+        "selector": "#email",
+        "value": "test@example.com",
+        "ok": True,
+    },
+    {
+        "type": "action",
+        "step": 4,
+        "action": "click",
+        "url": "http://127.0.0.1:3000/checkout",
+        "element": "button",
+        "submit": True,
+        "label": "Place order",
+        "selector": 'button:has-text("Place order")',
+        "ok": False,
+        "failure": {**FAILURE_REPORT["failure"], "response_body": '{"detail":"TypeError: x"}'},
+    },
+]
+HUD_EVENTS: list[dict[str, Any]] = [
+    {
+        "type": "step",
+        "n": 1,
+        "action": "visit",
+        "target": "http://127.0.0.1:3000/",
+        "page": "/",
+        "ok": True,
+    },
+    {"type": "scan", "url": "http://127.0.0.1:3000/", "buttons": 3, "forms": 0, "links": 6},
+    {"type": "step", "n": 2, "action": "click", "target": "Trail Mug", "page": "/", "ok": True},
+    {"type": "step", "n": 3, "action": "fill", "target": "Email", "page": "/checkout", "ok": True},
+    {
+        "type": "step",
+        "n": 4,
+        "action": "submit",
+        "target": "Place order",
+        "page": "/checkout",
+        "ok": False,
+        "note": "HTTP 500",
+    },
+    {
+        "type": "defect",
+        "method": "POST",
+        "path": "/api/checkout",
+        "status": 500,
+        "trigger": {"kind": "Button", "label": "Place order", "page": "/checkout"},
+        "fingerprint": "TypeError: x",
+    },
+    {"type": "done", "steps": 4, "defect": True},
+]
+
+
+def _failure_report_for_hud() -> dict[str, Any]:
+    return {
+        **FAILURE_REPORT,
+        "failure": {**FAILURE_REPORT["failure"], "response_body": '{"detail":"TypeError: x"}'},
+    }
+
+
+def test_translator_maps_runner_events_to_the_hud_contract() -> None:
+    translator = InspectorTranslator()
+    produced = [item for event in RUNNER_EVENTS for item in translator.feed(event)]
+    produced += translator.feed({"type": "report", "report": _failure_report_for_hud()})
+    assert produced == HUD_EVENTS
+
+
+def test_translator_reports_clean_errors_and_page_errors() -> None:
+    assert InspectorTranslator().feed({"type": "report", "report": CLEAN_REPORT}) == [
+        {"type": "done", "steps": 1, "defect": False}
+    ]
+    assert InspectorTranslator().feed(
+        {"type": "report", "report": {"status": "error", "error": "Could not load"}}
+    ) == [{"type": "error", "message": "Could not load"}]
+    translator = InspectorTranslator()
+    translator.feed(RUNNER_EVENTS[3])
+    report = {
+        **FAILURE_REPORT,
+        "failure": {
+            "kind": "page_error",
+            "message": "TypeError: cart is undefined",
+            "step": 2,
+            "console_errors": [],
+            "related": [],
+        },
+    }
+    defect = translator.feed({"type": "report", "report": report})[0]
+    assert defect == {
+        "type": "defect",
+        "method": "JS",
+        "path": "/",
+        "status": None,
+        "trigger": {"kind": "Link", "label": "Trail Mug", "page": "/"},
+        "fingerprint": "TypeError: cart is undefined",
+    }
+
+
+def _ndjson(response: Any) -> list[dict[str, Any]]:
+    return [json.loads(line) for line in response.text.splitlines() if line.strip()]
+
+
+def test_inspector_crawl_streams_hud_events(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: dict[str, Any] = {}
+
+    def fake(url: str, **kwargs: Any) -> dict[str, Any]:
+        seen.update(url=url, max_actions=kwargs["max_actions"])
+        for event in RUNNER_EVENTS:
+            kwargs["on_event"](event)
+        return _failure_report_for_hud()
+
+    monkeypatch.setattr(crawler_service, "ensure_runner", lambda: "node")
+    monkeypatch.setattr(crawler_service, "run_crawl", fake)
+    response = client.post(
+        "/api/faultline/crawl",
+        json={"url": "http://127.0.0.1:3000/", "max_steps": 25},
+        headers=HEADERS,
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/x-ndjson")
+    assert _ndjson(response) == HUD_EVENTS
+    assert seen == {"url": "http://127.0.0.1:3000/", "max_actions": 25}
+    # The lock is free again once the stream ends.
+    monkeypatch.setattr(crawler_service, "run_crawl", lambda url, **_: CLEAN_REPORT)
+    assert client.post("/api/crawl", json={"url": "http://x"}, headers=HEADERS).status_code == 200
+
+
+def test_inspector_crawl_streams_runner_failures_as_error_events(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fail(url: str, **_: Any) -> dict[str, Any]:
+        raise CrawlError("runner_failed", "The browser runner exited with code 2")
+
+    monkeypatch.setattr(crawler_service, "ensure_runner", lambda: "node")
+    monkeypatch.setattr(crawler_service, "run_crawl", fail)
+    response = client.post("/api/faultline/crawl", json={"url": "http://x/"}, headers=HEADERS)
+    assert response.status_code == 200
+    assert _ndjson(response) == [
+        {"type": "error", "message": "The browser runner exited with code 2"}
+    ]
+
+
+def test_inspector_crawl_rejects_before_streaming(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(crawler_service, "run_crawl", lambda url, **_: pytest.fail("ran"))
+    assert client.post("/api/faultline/crawl", json={"url": "http://x"}).status_code == 401
+    bad_url = client.post("/api/faultline/crawl", json={"url": "ftp://x"}, headers=HEADERS)
+    assert (bad_url.status_code, bad_url.json()["error"]["code"]) == (422, "invalid_url")
+    bad_steps = client.post(
+        "/api/faultline/crawl", json={"url": "http://x", "max_steps": 0}, headers=HEADERS
+    )
+    assert bad_steps.status_code == 422
+
+    def missing() -> str:
+        raise CrawlError("runner_unavailable", "not built")
+
+    monkeypatch.setattr(crawler_service, "ensure_runner", missing)
+    unavailable = client.post("/api/faultline/crawl", json={"url": "http://x"}, headers=HEADERS)
+    # 503 tells the Inspector to retry, then stand in a direct HTTP check.
+    assert (unavailable.status_code, unavailable.json()["error"]["code"]) == (
+        503,
+        "runner_unavailable",
+    )
+
+
+def test_inspector_crawl_shares_the_single_crawl_lock(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    started, release = threading.Event(), threading.Event()
+
+    def slow(url: str, **_: Any) -> dict[str, Any]:
+        started.set()
+        assert release.wait(10)
+        return CLEAN_REPORT
+
+    monkeypatch.setattr(crawler_service, "ensure_runner", lambda: "node")
+    monkeypatch.setattr(crawler_service, "run_crawl", slow)
+    first: dict[str, Any] = {}
+    thread = threading.Thread(
+        target=lambda: first.update(
+            response=client.post("/api/crawl", json={"url": "http://x"}, headers=HEADERS)
+        )
+    )
+    thread.start()
+    try:
+        assert started.wait(10)
+        busy = client.post("/api/faultline/crawl", json={"url": "http://x"}, headers=HEADERS)
+        assert (busy.status_code, busy.json()["error"]["code"]) == (409, "crawl_in_progress")
+    finally:
+        release.set()
+        thread.join(10)
+    assert first["response"].status_code == 200
+
+
+@needs_node
+@pytest.mark.skipif(
+    not crawler_service.RUNNER_CLI.is_file(), reason="browser runner is not built (make runner)"
+)
+def test_inspector_crawl_streams_a_real_chromium_defect(
+    client: TestClient, broken_shop: str
+) -> None:
+    response = client.post(
+        "/api/faultline/crawl", json={"url": broken_shop, "max_steps": 5}, headers=HEADERS
+    )
+    events = _ndjson(response)
+    assert response.status_code == 200
+    assert [event["type"] for event in events] == ["step", "scan", "step", "defect", "done"]
+    assert events[2] == {
+        "type": "step",
+        "n": 2,
+        "action": "click",
+        "target": "Place order",
+        "page": "/",
+        "ok": False,
+        "note": "HTTP 500",
+    }
+    assert events[3] == {
+        "type": "defect",
+        "method": "POST",
+        "path": "/api/orders",
+        "status": 500,
+        "trigger": {"kind": "Button", "label": "Place order", "page": "/"},
+        "fingerprint": "orders table is locked",
     }

@@ -106,11 +106,16 @@ export type CrawlReport =
 export type CrawlEvent =
   | { type: "launch" }
   | { type: "navigate"; step: number; url: string }
-  | { type: "discovered"; url: string; count: number }
+  | { type: "discovered"; url: string; count: number; buttons: number; links: number; forms: number }
   | {
       type: "action";
       step: number;
       action: Exclude<CrawlAction, "navigate">;
+      /** Page the action ran on. */
+      url: string;
+      element: "button" | "link" | "field";
+      /** True for a button that submits a form. */
+      submit: boolean;
       label: string;
       selector: string;
       value?: string;
@@ -486,6 +491,7 @@ class PageMonitor {
 interface Discovery {
   clickables: ClickableInfo[];
   fields: FieldInfo[];
+  forms: number;
 }
 
 async function discover(page: Page): Promise<Discovery> {
@@ -547,7 +553,7 @@ async function discover(page: Page): Promise<Discovery> {
       };
     }),
   );
-  return { clickables, fields };
+  return { clickables, fields, forms: await page.locator("form").count() };
 }
 
 /**
@@ -732,13 +738,14 @@ export async function runAutonomousCrawler(options: CrawlOptions): Promise<Crawl
           await monitor.settle(page, Math.min(SETTLE_CAP_MS, Math.max(0, remaining())));
           continue;
         }
-        const { clickables, fields } = discovery;
+        const { clickables, fields, forms } = discovery;
         const identity = (info: ClickableInfo) => `${pageUrl}|click|${info.tag}|${info.text}|${info.ariaLabel}|${info.href}`;
         for (const info of clickables) seenElements.add(identity(info));
         for (const field of fields) seenElements.add(`${pageUrl}|field|${field.tag}|${fieldLabel(field)}`);
         if (announced !== pageUrl) {
           announced = pageUrl;
-          emit({ type: "discovered", url: pageUrl, count: clickables.length + fields.length });
+          const links = clickables.filter((info) => info.tag === "a").length;
+          emit({ type: "discovered", url: pageUrl, count: clickables.length + fields.length, buttons: clickables.length - links, links, forms });
         }
 
         const field = fields.find((candidate) => shouldFill(candidate) && !tried.has(`${pageUrl}|field|${candidate.index}|${fieldLabel(candidate)}`));
@@ -767,7 +774,7 @@ export async function runAutonomousCrawler(options: CrawlOptions): Promise<Crawl
           breadcrumbs.push({ step, action, url: pageUrl, selector, label: fieldLabel(field), value });
           await monitor.settle(page, Math.min(SETTLE_CAP_MS, Math.max(0, remaining())));
           failure = failureSince(before, step);
-          emit({ type: "action", step, action, label: fieldLabel(field), selector, value, ok: !failure, ...(failure ? { failure } : {}) });
+          emit({ type: "action", step, action, url: pageUrl, element: "field", submit: false, label: fieldLabel(field), selector, value, ok: !failure, ...(failure ? { failure } : {}) });
           if (failure) return halt(failure);
           continue;
         }
@@ -808,7 +815,8 @@ export async function runAutonomousCrawler(options: CrawlOptions): Promise<Crawl
         await page.waitForLoadState("domcontentloaded", { timeout: Math.max(1, Math.min(SETTLE_CAP_MS, remaining())) }).catch(() => undefined);
         await monitor.settle(page, Math.min(SETTLE_CAP_MS, Math.max(0, remaining())));
         failure = failureSince(before, step);
-        emit({ type: "action", step, action: "click", label, selector, ok: !failure, ...(failure ? { failure } : {}) });
+        const element = next.info.tag === "a" ? "link" : "button";
+        emit({ type: "action", step, action: "click", url: pageUrl, element, submit: next.info.submit, label, selector, ok: !failure, ...(failure ? { failure } : {}) });
         if (failure) return halt(failure);
       }
       return finish({ status: "clean", ...summary(), stop_reason: "max_actions" });
