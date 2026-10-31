@@ -1,5 +1,11 @@
 # Agent handoff state
 
+## October 31: virality skill expansion (claude-virality-skill)
+
+- `.agents/skills/virality/SKILL.md` is now a hub for X, LinkedIn, Hacker News, and the hackathon bonus prizes. Depth lives in `references/`: `x-algorithm-mechanics.md`, `linkedin-algorithm-mechanics.md`, `hackathon-launch-playbook.md`, and `templates-and-copy.md`. The global copy at `~/.agents/skills/virality/` is rsynced to match exactly.
+- **Truthfulness decisions (do not regress).** The old unsupported examples are gone: 18 ms interception, 12.4 s, "reject 90%", 351 tests, $120k/hr, and `faultline.dev/playground`. The only quotable facts are the README/DEVPOST ones listed in SKILL.md section 0. X ranking weights are attributed to the 2023 open-source release and called directional. The +10 weight is `good_click_v2`, not bookmark. LinkedIn weights are labeled heuristic. Replay `82ac2dcc` is framed as a tooling false rejection, not as a caught bad AI patch. Rejection assets are labeled authored, DeepSeek, or deterministic as appropriate. X handles (`@AIatMeta`, `@cerebral_valley`) are marked verify-before-posting. Prize terms come from `docs/HACKATHON_BRIEF.md`: $20k Most Viral, X engagement through Nov 8 11:59 PM ET; $10k Community Vote, announced Nov 16.
+- **Verified.** `make check` exit 0: 286 + 709 + 96 = 1,091 tests. The worktree needed `npm ci` in the three Node packages. No posts were sent.
+
 ## October 31: one-command CLI integration (codex-streamline-cli)
 
 - Integrated both implementation commits. Full real-stack smoke passed on temporary ports: cold launch, reconnect, owned restart while the original CLI waited, and Ctrl+C cleanup releasing all four ports. The existing `sander` stack on default ports remained active and was recognized read-only.
