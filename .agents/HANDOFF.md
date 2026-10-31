@@ -1,5 +1,11 @@
 # Agent handoff state
 
+## October 31: README rewrite (claude-readme-polish)
+
+- **README.md** is rewritten as the judge- and developer-facing entry point. It has a hook, a local-vs-SaaS table, a quickstart (`make setup`, `./faultline doctor`, `./scripts/start-demo.sh`, the `~/.local/bin` symlink, `META_API_KEY`), the 6-step verification engine, the three surfaces, the Meta 3/3 ledger, the corpus, and the test scorecard. It has no diagrams, per the user's rule.
+- **Truthfulness decisions (do not regress).** "Zero code egress" is stated as "the repository stays local; the only egress is the bounded model request (one target file plus untrusted evidence)". WSL2 is marked untested, since nothing in the repo verifies it. The deterministic fallback is limited to the checkout demo, and project repairs require Meta. A Meta corpus run is still listed as outstanding.
+- **Scorecard counts are from this tree.** `make check` exit 0: 286 + 665 + 96 = 1,047. `make browser` exit 0: 32 Inspector + 1 storefront = 33. Total 1,080. Update the table if suites change.
+
 ## October 31: terminal color and port polish (claude-terminal-polish)
 
 - **Color policy.** Every command now goes through `_color_enabled(args)` in `cli.py`. ANSI is off when `NO_COLOR` is non-empty (per no-color.org, an empty value does not count), when stdout is not a TTY, or when `--plain` or `--no-color` is passed. Every subcommand accepts both flags. Legacy commands take a `Palette` (`c = _palette(args)`, all fields empty when color is off) instead of interpolating the module constants. The HUD renderers still take an explicit `color` flag. `listen --no-color` keeps the live redraw (cursor escapes) and drops only color. `listen --plain` now also drops color.
