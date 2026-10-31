@@ -404,7 +404,8 @@ test("the guided demo advances Break it, repair, and Apply fix on recorded evide
   await expect(page.locator(".readiness")).toHaveText("Engine Status: Ready");
   await expect(steps.nth(0)).toHaveAttribute("aria-current", "step");
   // A deterministic provider is never called Meta; the step names the fallback instead.
-  const repair = flow.getByRole("button", { name: "Auto-repair" });
+  const repair = flow.getByRole("button", { name: /Auto-repair/ });
+  await expect(repair).toContainText("deterministic-checkout-v1");
   await expect(repair).toHaveAccessibleDescription(/not a Meta model trial/);
   await expect(page.getByText("Repair with Meta")).toHaveCount(0);
   await expect(flow.getByRole("button", { name: "Apply fix" })).toBeDisabled();
@@ -455,8 +456,8 @@ test("the repair step says Meta only for the Meta Model API and explains a block
   await mock(page, { readiness: { ...ready, status: "blocked", runtime_ready: false, reason: "isolated_runtime_unavailable" } });
   await page.reload();
   await expect(page.locator(".readiness")).toHaveText("Engine Status: Needs attention");
-  await expect(flow.getByRole("button", { name: "Auto-repair" })).toBeDisabled();
-  await expect(flow.getByRole("button", { name: "Auto-repair" })).toHaveAccessibleDescription(/Engine needs attention/);
+  await expect(flow.getByRole("button", { name: /Auto-repair/ })).toBeDisabled();
+  await expect(flow.getByRole("button", { name: /Auto-repair/ })).toHaveAccessibleDescription(/Engine needs attention/);
 });
 
 test("the header tests any URL without asking for an expected status, reusing its saved check", async ({ page }) => {

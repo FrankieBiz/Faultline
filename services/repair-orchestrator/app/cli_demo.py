@@ -59,9 +59,14 @@ class Process:
 def _socket_ports() -> dict[str, int]:
     result: dict[str, int] = {}
     for name in ("tcp", "tcp6"):
-        for line in Path(f"/proc/net/{name}").read_text().splitlines()[1:]:
+        path = Path(f"/proc/net/{name}")
+        try:
+            content = path.read_text()
+        except OSError:
+            continue
+        for line in content.splitlines()[1:]:
             fields = line.split()
-            if fields[3] == "0A":  # TCP_LISTEN, including wildcard listeners
+            if len(fields) > 9 and fields[3] == "0A":  # TCP_LISTEN, including wildcard listeners
                 result[f"socket:[{fields[9]}]"] = int(fields[1].rsplit(":", 1)[1], 16)
     return result
 

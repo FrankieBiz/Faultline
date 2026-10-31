@@ -659,7 +659,7 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
   const metaReady = model?.provider === "meta" && model.available;
   const passedChecks = verification?.report.assertions.filter((a) => a.passed).length ?? 0;
   const flowRun: FlowRun = {
-    label: metaReady ? "Repair with Meta" : "Auto-repair",
+    label: metaReady ? "Repair with Meta" : `Auto-repair (${model?.model || "deterministic-checkout-v1"})`,
     source: !model ? "Runs in an isolated Bubblewrap sandbox"
       : metaReady ? `${model.model} in a Bubblewrap sandbox` : providerNote(model.provider) ?? providerName(model.provider, model.model),
     running: storeJob !== null && running,

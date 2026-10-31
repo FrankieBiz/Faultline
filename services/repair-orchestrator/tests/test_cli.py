@@ -2399,3 +2399,27 @@ def test_demo_ready_releases_lock_before_foreground_wait(
     ):
         assert _command("demo", "--no-open") == 0
     assert starts == 2
+
+
+def test_demo_socket_ports_tolerates_missing_procfs_files(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app import cli_demo
+
+    tcp_sample = (
+        "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt"
+        "   uid  timeout inode\n"
+        "   0: 0100007F:1F40 00000000:0000 0A 00000000:00000000 00:00000000 00000000"
+        "  1000        0 99999 2 0 100 0 0 10 0\n"
+    )
+
+    original_read_text = Path.read_text
+
+    def fake_read_text(self: Path, *args: Any, **kwargs: Any) -> str:
+        if str(self) == "/proc/net/tcp6":
+            raise FileNotFoundError(2, "No such file or directory", "/proc/net/tcp6")
+        if str(self) == "/proc/net/tcp":
+            return tcp_sample
+        return original_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", fake_read_text)
+    ports = cli_demo._socket_ports()
+    assert ports == {"socket:[99999]": 8000}

@@ -1016,7 +1016,7 @@ FAULTLINE_INSPECTOR_URL=http://127.0.0.1:4400 ./scripts/rehearse-demo.sh</code><
     async function refreshLive() {
       if (!live.base) {
         setStatus("warn",
-          el("p", {}, "The live service is switched off right now, so runs can't be started from this page. The list shows what you could plant; the recorded Meta run plays at its real timing."),
+          el("p", {}, "The live service is switched off right now, so runs can't be started from this page: the live service needs an isolated host with enforced cgroup v2 limits. Play the recorded Meta run instead."),
           fallbackButton());
         liveRun.disabled = true;
         buildDefects();
@@ -1032,7 +1032,7 @@ FAULTLINE_INSPECTOR_URL=http://127.0.0.1:4400 ./scripts/rehearse-demo.sh</code><
       buildDefects();
       renderLedgerRow();
       if (!live.status) {
-        setStatus("warn", el("p", {}, "The live service didn't respond. It may be restarting or switched off for the night."), fallbackButton());
+        setStatus("warn", el("p", {}, "The live service didn't respond: the live service needs an isolated host with enforced cgroup v2 limits. Play the recorded Meta run instead."), fallbackButton());
         liveRun.disabled = true;
       } else if (!live.status.available) {
         setStatus("warn", el("p", {}, `The live service is up but not accepting runs (${live.status.reason || "unavailable"}). Nothing runs until its sandbox and model checks pass.`), fallbackButton());
