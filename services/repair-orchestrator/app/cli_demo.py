@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fcntl
 import http.client
 import json
 import os
@@ -9,7 +10,8 @@ import signal
 import socket
 import subprocess
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -24,6 +26,24 @@ PORT_NAMES = ("BUGGYSHOP_API_PORT", "FAULTLINE_PORT", "BUGGYSHOP_PORT", "INSPECT
 DEFAULT_PORTS = (8000, 9000, 3000, 4000)
 START_TIMEOUT = 240.0
 STOP_TIMEOUT = 10.0
+
+
+@contextmanager
+def launch_lock(root: Path) -> Iterator[Callable[[], None]]:
+    """Serialize this installation's startup; release at readiness or on any failure."""
+    path = root / "data/demo.lock"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # Keep the inode after release: unlinking would let contenders lock different files.
+    with path.open("a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise RuntimeError("Demo launch already in progress for this installation.") from None
+
+        def release() -> None:
+            fcntl.flock(lock, fcntl.LOCK_UN)
+
+        yield release
 
 
 @dataclass(frozen=True)

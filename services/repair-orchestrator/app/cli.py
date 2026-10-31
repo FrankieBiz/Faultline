@@ -1629,9 +1629,7 @@ def cmd_demo(args: argparse.Namespace) -> int:
                 if not opened:
                     print("Could not launch a browser; open the URL above.")
 
-    try:
-        snapshot = cli_demo.processes()
-        stack = cli_demo.inspect_stack(ports, snapshot)
+    def connected(stack: cli_demo.Stack) -> bool:
         if stack.foreign:
             occupied = ", ".join(map(str, sorted(stack.foreign)))
             raise RuntimeError(
@@ -1641,23 +1639,40 @@ def cmd_demo(args: argparse.Namespace) -> int:
         if stack.active and not args.restart:
             print("FaultLine demo stack is already active")
             ready()
+            return True
+        return False
+
+    try:
+        # Read-only connections remain available even while another invocation holds the lock.
+        if connected(cli_demo.inspect_stack(ports, cli_demo.processes())):
             return 0
-        if stack.occupied:
-            if not args.restart:
-                occupied = ", ".join(map(str, sorted(stack.occupied)))
-                raise RuntimeError(
-                    f"Partial or unhealthy FaultLine demo stack (occupied ports: {occupied}). "
-                    "Wait for startup, or use --restart from its owning installation."
-                )
-            cli_demo.stop_stack(root, ports, stack, snapshot)
+        with cli_demo.launch_lock(root) as release_launch:
+            # The initial snapshot may predate another invocation's launch or shutdown.
             snapshot = cli_demo.processes()
-        cli_demo.ensure_build_unused(root, snapshot)
-        print(f"{c.cyan}Starting FaultLine demo stack...{c.reset}", flush=True)
-        previous_handler = signal.signal(signal.SIGTERM, _raise_interrupt)
-        try:
-            return cli_demo.start_demo(root, ports, ready)
-        finally:
-            signal.signal(signal.SIGTERM, previous_handler)
+            stack = cli_demo.inspect_stack(ports, snapshot)
+            if connected(stack):
+                return 0
+            if stack.occupied:
+                if not args.restart:
+                    occupied = ", ".join(map(str, sorted(stack.occupied)))
+                    raise RuntimeError(
+                        f"Partial or unhealthy FaultLine demo stack (occupied ports: {occupied}). "
+                        "Wait for startup, or use --restart from its owning installation."
+                    )
+                cli_demo.stop_stack(root, ports, stack, snapshot)
+                snapshot = cli_demo.processes()
+            cli_demo.ensure_build_unused(root, snapshot)
+            print(f"{c.cyan}Starting FaultLine demo stack...{c.reset}", flush=True)
+
+            def started() -> None:
+                release_launch()
+                ready()
+
+            previous_handler = signal.signal(signal.SIGTERM, _raise_interrupt)
+            try:
+                return cli_demo.start_demo(root, ports, started)
+            finally:
+                signal.signal(signal.SIGTERM, previous_handler)
     except KeyboardInterrupt:
         return 130
     except (OSError, RuntimeError) as exc:

@@ -93,7 +93,8 @@ Ctrl+C stops that session. Use `--no-open` to print the URL without opening a br
 or `--restart` to restart a demo owned by this installation's identifiable launcher.
 Foreign services, partial stacks without `--restart`, and restarts of other worktrees
 are refused. Other-port stacks are preserved; use a separate worktree if one is
-already using this installation's build files.
+already using this installation's build files. Concurrent `faultline demo` launches
+fail cleanly while another launch or restart is in progress.
 
 | Service | URL |
 | --- | --- |
@@ -246,13 +247,13 @@ These results describe an authored corpus for one checkout route, not arbitrary 
 | Suite | Tests |
 | --- | ---: |
 | Backend, scripts, and fixtures (pytest) | 286 |
-| Repair orchestrator and CLI (pytest) | 703 |
+| Repair orchestrator and CLI (pytest) | 709 |
 | Browser runner unit tests | 96 |
-| **Unit and integration total** (`make check`) | **1,085** |
+| **Unit and integration total** (`make check`) | **1,091** |
 | Inspector browser tests (Playwright) | 32 |
 | Storefront browser test (Playwright) | 1 |
 | **Browser total** (`make browser`) | **33** |
-| **All automated tests** | **1,118** |
+| **All automated tests** | **1,124** |
 
 `make check` also runs Ruff lint and format checks, strict mypy, fixture and corpus provenance, the storefront, runner, and Inspector builds, and both Python distribution builds. `make integration` exercises real isolated Chromium and cgroup enforcement, and `make evaluate` runs the corpus.
 

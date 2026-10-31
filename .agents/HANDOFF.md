@@ -1,5 +1,11 @@
 # Agent handoff state
 
+## October 31: concurrent demo launch fix (cli-one-command-worker child)
+
+- **Root cause:** process discovery alone admitted two simultaneous cold starts before either had spawned its launcher, causing concurrent Next builds. Parent reproduced the race during full-stack smoke; child regression tests reproduced both missing lock enforcement and stale-snapshot admission before the fix.
+- **Fix:** per-installation nonblocking `fcntl.flock` on ignored `data/demo.lock`, independent of `FAULTLINE_DATA_DIR`. Recheck socket/process/build ownership under the lock before any restart or launch. Contention exits 1 with `Demo launch already in progress for this installation.` The lock spans restart and startup, releases at full-stack readiness **before** browser opening/foreground wait, and closes on failure or interruption. Keep the lock file inode; never unlink it. Active connections bypass the lock; restart after readiness remains possible while the original CLI command is waiting. Direct manual script/build invocations do not participate in this advisory lock.
+- **Verification:** requested CLI pytest **208 passed in 13.28s**. `make check` exit **0**: **286 backend/script + 709 orchestrator + 96 runner = 1,091** tests, lint, strict typing, provenance, web/runner builds, both Python distribution builds. README retains the previously verified 33 browser tests (aggregate 1,124); browser tests were not rerun. New regressions use actual cross-process lock contention, assert the fresh ownership check, verify normal/error release, and exercise active reconnect/restart after readiness before the original command returns. No live demo was started or stopped; parent owns integration, full alternate-port smoke, and production push.
+
 ## October 31: one-command CLI (cli-one-command-worker child)
 
 - **Ownership:** branch `FrankieBiz/cli-one-command-worker`; implementation child commits locally. Coordinator in `codex-streamline-cli` owns integration, independent verification, alternate-port full-stack smoke, and production push. No additional children spawned.

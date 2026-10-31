@@ -2042,7 +2042,7 @@ def test_demo_restart_stops_then_launches(
 
     with (
         patch("app.cli.REPOSITORY_ROOT", tmp_path),
-        patch("app.cli_demo.processes", side_effect=[snapshot, {}]),
+        patch("app.cli_demo.processes", side_effect=[snapshot, snapshot, {}]),
         patch("app.cli_demo._occupied", return_value=True),
         patch("app.cli_demo._healthy", return_value=True),
         patch("app.cli_demo.stop_stack", side_effect=lambda *a: events.append("stop")),
@@ -2251,3 +2251,150 @@ def test_demo_health_requires_real_identity() -> None:
         response.status = 503
         assert not cli_demo._healthy(2, 12345)
     assert connection.close.call_count == 3
+
+
+def test_demo_launch_lock_contention_prevents_second_build(
+    tmp_path: Path,
+    demo_ports: tuple[int, ...],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    lock = tmp_path / "data/demo.lock"
+    lock.parent.mkdir()
+    code = (
+        "import fcntl,sys; "
+        "lock=open(sys.argv[1],'a'); fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB); "
+        "print('locked',flush=True); sys.stdin.read()"
+    )
+    with subprocess.Popen(
+        [sys.executable, "-c", code, str(lock)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+    ) as owner:
+        try:
+            assert owner.stdout is not None and owner.stdout.readline() == "locked\n"
+            with (
+                patch("app.cli.REPOSITORY_ROOT", tmp_path),
+                patch("app.cli_demo.processes", return_value={}),
+                patch("app.cli_demo._occupied", return_value=False),
+                patch("app.cli_demo.start_demo", return_value=0) as launch,
+            ):
+                assert _command("demo", "--no-open") == 1
+            launch.assert_not_called()
+            assert "launch already in progress" in capsys.readouterr().err
+        finally:
+            owner.communicate(timeout=5)
+
+
+def test_demo_active_connection_bypasses_launch_lock(
+    tmp_path: Path,
+    demo_ports: tuple[int, ...],
+) -> None:
+    import fcntl
+
+    snapshot = _demo_snapshot(tmp_path, demo_ports)
+    lock = tmp_path / "data/demo.lock"
+    lock.parent.mkdir()
+    with lock.open("a") as owner:
+        fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        with (
+            patch("app.cli.REPOSITORY_ROOT", tmp_path),
+            patch("app.cli_demo.processes", return_value=snapshot),
+            patch("app.cli_demo._occupied", return_value=True),
+            patch("app.cli_demo._healthy", return_value=True),
+            patch("app.cli_demo.start_demo") as launch,
+        ):
+            assert _command("demo", "--no-open") == 0
+        launch.assert_not_called()
+
+
+def test_demo_rechecks_build_owners_after_acquiring_launch_lock(
+    tmp_path: Path,
+    demo_ports: tuple[int, ...],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    snapshot = _demo_snapshot(tmp_path, (8400, 9400, 3400, 4400))
+    with (
+        patch("app.cli.REPOSITORY_ROOT", tmp_path),
+        patch("app.cli_demo.processes", side_effect=[{}, snapshot]),
+        patch("app.cli_demo._occupied", return_value=False),
+        patch("app.cli_demo.start_demo", return_value=0) as launch,
+    ):
+        assert _command("demo", "--no-open") == 1
+    launch.assert_not_called()
+    assert "no build was started" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("failure", [False, True])
+def test_demo_launch_lock_releases_on_startup_exit(
+    tmp_path: Path,
+    demo_ports: tuple[int, ...],
+    failure: bool,
+) -> None:
+    from app import cli_demo
+
+    def start(*args: object) -> int:
+        # Startup owns the actual kernel lock before the launcher is entered.
+        with pytest.raises(RuntimeError, match="launch already in progress"):
+            with cli_demo.launch_lock(tmp_path):
+                pytest.fail("two concurrent launches admitted")
+        if failure:
+            raise RuntimeError("startup failed")
+        return 0
+
+    with (
+        patch("app.cli.REPOSITORY_ROOT", tmp_path),
+        patch("app.cli_demo.processes", return_value={}),
+        patch("app.cli_demo._occupied", return_value=False),
+        patch("app.cli_demo.start_demo", side_effect=start),
+    ):
+        assert _command("demo", "--no-open") == (1 if failure else 0)
+    # A persistent file is not a stale lock; closing on either exit releases it.
+    assert (tmp_path / "data/demo.lock").is_file()
+    with cli_demo.launch_lock(tmp_path):
+        pass
+
+
+def test_demo_ready_releases_lock_before_foreground_wait(
+    tmp_path: Path,
+    demo_ports: tuple[int, ...],
+) -> None:
+    from collections.abc import Callable
+
+    from app import cli_demo
+
+    snapshot = _demo_snapshot(tmp_path, demo_ports)
+    starts = 0
+
+    def start(root: Path, ports: tuple[int, ...], ready: Callable[[], None]) -> int:
+        nonlocal starts
+        starts += 1
+        ready()  # Mirrors start_demo's readiness callback before its foreground wait.
+        with cli_demo.launch_lock(root):
+            pass
+        if starts == 1:
+            with (
+                patch("app.cli_demo.processes", return_value=snapshot),
+                patch("app.cli_demo._occupied", return_value=True),
+                patch("app.cli_demo._healthy", return_value=True),
+            ):
+                assert _command("demo", "--no-open") == 0
+                assert starts == 1  # Connecting neither launches nor requires the lock.
+            with (
+                patch("app.cli_demo.processes", side_effect=[snapshot, snapshot, {}]),
+                patch("app.cli_demo._occupied", return_value=True),
+                patch("app.cli_demo._healthy", return_value=True),
+                patch("app.cli_demo.stop_stack") as stop,
+            ):
+                assert _command("demo", "--restart", "--no-open") == 0
+                stop.assert_called_once()
+        return 0
+
+    with (
+        patch("app.cli.REPOSITORY_ROOT", tmp_path),
+        patch("app.cli_demo.processes", return_value={}),
+        patch("app.cli_demo._occupied", return_value=False),
+        patch("app.cli_demo.start_demo", side_effect=start),
+    ):
+        assert _command("demo", "--no-open") == 0
+    assert starts == 2
