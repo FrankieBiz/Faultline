@@ -1,0 +1,506 @@
+{
+  "schema_version": "1.0",
+  "tool": "scripts/trial_ledger.py",
+  "generated_at": "2026-10-31T13:28:18Z",
+  "started_at": "2026-10-31T13:27:42Z",
+  "complete": true,
+  "stop_reason": null,
+  "classification": "meta_model_trials",
+  "classification_note": "All 3 provider responses came from provider meta. These are live Meta model trials on one controlled scenario.",
+  "provider_counts": {
+    "meta": 3
+  },
+  "config": {
+    "api": "http://127.0.0.1:4000/api/faultline",
+    "scenario_id": "scripted_checkout_repair",
+    "mode": "repair",
+    "trials_requested": 3,
+    "deadline_seconds": 190.0,
+    "cancel_grace_seconds": 30.0,
+    "require_provider": "meta"
+  },
+  "readiness": {
+    "checked_at": "2026-10-31T13:27:42Z",
+    "status": "ready",
+    "runtime_ready": true,
+    "quarantined": false,
+    "reason": null,
+    "probe_time": "2026-10-31T00:54:27.389010+00:00",
+    "provider": "meta",
+    "model": "muse-spark-1.3",
+    "available": true,
+    "model_reason": null,
+    "probe_prompt_tokens": 60,
+    "probe_completion_tokens": 217,
+    "resource_limits": {
+      "requested": "required",
+      "mode": "cgroup-v2-scope",
+      "configured": {
+        "memory_max_bytes": 536870912,
+        "memory_swap_max_bytes": 0,
+        "tasks_max": 64,
+        "cpu_quota_percent": 100,
+        "oom_policy": "kill"
+      },
+      "enforcement_preflight": "passed",
+      "probe": {
+        "memory_max_bytes": 67108864,
+        "memory_swap_max_bytes": 0,
+        "tasks_max": 16,
+        "allocation_attempt_bytes": 268435456,
+        "thread_attempts": 64,
+        "oom_events": 1,
+        "oom_kill_events": 1,
+        "pids_max_events": 1,
+        "environment_clean": true,
+        "hog_exit_code": -9,
+        "threads_started": 13
+      },
+      "reason": null
+    }
+  },
+  "stop_readiness": null,
+  "summary": {
+    "trials_requested": 3,
+    "trials_run": 3,
+    "outcome_counts": {
+      "verified": 3
+    },
+    "verified_count": 3,
+    "verified_rate": 1.0,
+    "verified_on_first_attempt": 3,
+    "verified_on_second_attempt": 0,
+    "cleanup_confirmed_count": 3,
+    "expected_failure_reproduced_count": 3,
+    "deadline_exceeded_count": 0,
+    "attempts_total": 3,
+    "policy_rejected_attempts": 0,
+    "wall_seconds": {
+      "known_count": 3,
+      "median": 10.493,
+      "p95": 12.624,
+      "min": 10.436,
+      "max": 12.624
+    },
+    "prompt_tokens": {
+      "attempt_count": 3,
+      "known_count": 3,
+      "total": 4733
+    },
+    "completion_tokens": {
+      "attempt_count": 3,
+      "known_count": 3,
+      "total": 4984
+    },
+    "provider_models": [
+      {
+        "provider": "meta",
+        "model": "muse-spark-1.3"
+      }
+    ]
+  },
+  "trials": [
+    {
+      "trial": 1,
+      "idempotency_key": "89abead3-0257-447f-bdac-ef7818ce1866",
+      "job_id": "165e0b18-00d9-434e-9c67-c84f70d44321",
+      "evidence_recorded": true,
+      "scenario_id": "scripted_checkout_repair",
+      "requested_mode": "repair",
+      "effective_mode": "repair",
+      "repair_block_reason": null,
+      "created_at": "2026-10-31T13:27:42.341923Z",
+      "updated_at": "2026-10-31T13:27:52.835132Z",
+      "wall_seconds": 10.493,
+      "terminal": true,
+      "state": "succeeded",
+      "stage": "completed",
+      "outcome": "verified",
+      "cleanup_status": "succeeded",
+      "error_code": null,
+      "failed_stage": null,
+      "deadline_exceeded": false,
+      "cancel_requested_by_ledger": false,
+      "baseline_verdict": "failed",
+      "expected_failure_reproduced": true,
+      "attempts": [
+        {
+          "attempt_id": "ba853552-193a-4b6a-b37f-887a29bf8a39",
+          "attempt_number": 1,
+          "outcome": "verified",
+          "provider": "meta",
+          "model": "muse-spark-1.3",
+          "dispatched_provider": "meta",
+          "dispatched_model": "muse-spark-1.3",
+          "prompt_tokens": 1580,
+          "completion_tokens": 1303,
+          "policy_valid": true,
+          "policy_error": null,
+          "diff_sha256": "f9193387309f43e0ea1d584bd43af316f4c23f4c83b6c0a8bcd36abb8b3a8d70",
+          "diff_changed_lines": 2,
+          "prior_feedback": null
+        }
+      ],
+      "verification_executions": [
+        {
+          "execution_id": "65bc4375-b552-4949-914c-1ebaef89d957",
+          "attempt_id": "ba853552-193a-4b6a-b37f-887a29bf8a39",
+          "verdict": "passed",
+          "assertions_passed": 44,
+          "assertions_total": 44,
+          "runtime_kind": "isolated-browser",
+          "resource_limits": {
+            "mode": "cgroup-v2-scope",
+            "memory_max_bytes": 536870912,
+            "memory_swap_max_bytes": 0,
+            "tasks_max": 64,
+            "cpu_quota_percent": 100,
+            "verified": true
+          }
+        }
+      ],
+      "artifact_count": 14,
+      "artifacts": [
+        {
+          "role": "screenshot",
+          "sha256": "b958ca79e3175605bba5bb837f3c27af9b6e0a749e9ff68c673290ee7efa274e",
+          "size_bytes": 95389
+        },
+        {
+          "role": "trace",
+          "sha256": "f7be3db36ae4ddd606740f21347a2ff32a321175872aa1b341b8094d081e7c9f",
+          "size_bytes": 709673
+        },
+        {
+          "role": "requests",
+          "sha256": "1bf02045983918ac925bf7f485ef3d41673bcbbfc0f04e7ddac5f46f751661b4",
+          "size_bytes": 5437
+        },
+        {
+          "role": "logs",
+          "sha256": "46b29e2ed7f3347fda9fd1f0bd9d66966c0a44c9049f79fbdad339f4c36da3b4",
+          "size_bytes": 2357
+        },
+        {
+          "role": "report",
+          "sha256": "8c3d84ed7e8ee03b6caa5b8ddd1e34d1d096ab2adfe5a0253cf4ebdefd96501a",
+          "size_bytes": 13217
+        },
+        {
+          "role": "proposal",
+          "sha256": "87ebbb04a8bb51b0d05f6df5cfa1f8e550e28e505d34ec9cb599c08e3ea20d9b",
+          "size_bytes": 909
+        },
+        {
+          "role": "diff",
+          "sha256": "f9193387309f43e0ea1d584bd43af316f4c23f4c83b6c0a8bcd36abb8b3a8d70",
+          "size_bytes": 449
+        },
+        {
+          "role": "screenshot",
+          "sha256": "046f179a6b571d3f4c208d257507ac7f64afa3cc399af54db9a8f4dfbefbf253",
+          "size_bytes": 67969
+        },
+        {
+          "role": "trace",
+          "sha256": "81ef27ae4f4af9564c818d22e01f9765c5403ae8b4ffc618a5198aec8fbaff47",
+          "size_bytes": 643737
+        },
+        {
+          "role": "requests",
+          "sha256": "2df037383f0a39ae25b1e4d0c6dfed5689419362182eabe6602c4503d6f95bd1",
+          "size_bytes": 6033
+        },
+        {
+          "role": "logs",
+          "sha256": "fac79eb4dd6445fccc29927bded6d6d65182395c61d2d43963ef33818ffd0da4",
+          "size_bytes": 32
+        },
+        {
+          "role": "report",
+          "sha256": "860d49e576754d4780bb03150cf8854d4434c57f59eb9295fa4d8afbfe5da503",
+          "size_bytes": 11525
+        },
+        {
+          "role": "proof_bundle",
+          "sha256": "429dac1c0004c00e95f8ee2cf2562e596d43dd11779e2e29392f9e1963d2282e",
+          "size_bytes": 3938
+        },
+        {
+          "role": "proof_bundle_md",
+          "sha256": "f0f65a5368b9bc09f487c4ead04d35494a853547e97fbe7e3c2c0fd406d87f31",
+          "size_bytes": 2801
+        }
+      ],
+      "verified": true
+    },
+    {
+      "trial": 2,
+      "idempotency_key": "7e22069e-3c70-45f4-b466-1276bba7d3f0",
+      "job_id": "196cc3b6-af63-4813-bcc3-d597b15869f0",
+      "evidence_recorded": true,
+      "scenario_id": "scripted_checkout_repair",
+      "requested_mode": "repair",
+      "effective_mode": "repair",
+      "repair_block_reason": null,
+      "created_at": "2026-10-31T13:27:53.661539Z",
+      "updated_at": "2026-10-31T13:28:06.285334Z",
+      "wall_seconds": 12.624,
+      "terminal": true,
+      "state": "succeeded",
+      "stage": "completed",
+      "outcome": "verified",
+      "cleanup_status": "succeeded",
+      "error_code": null,
+      "failed_stage": null,
+      "deadline_exceeded": false,
+      "cancel_requested_by_ledger": false,
+      "baseline_verdict": "failed",
+      "expected_failure_reproduced": true,
+      "attempts": [
+        {
+          "attempt_id": "d2a0a60e-b519-4b5b-9a10-0f975141f503",
+          "attempt_number": 1,
+          "outcome": "verified",
+          "provider": "meta",
+          "model": "muse-spark-1.3",
+          "dispatched_provider": "meta",
+          "dispatched_model": "muse-spark-1.3",
+          "prompt_tokens": 1580,
+          "completion_tokens": 1856,
+          "policy_valid": true,
+          "policy_error": null,
+          "diff_sha256": "64bef337c5113ccc2ec741d5eb20153bec6abeac1b99b6921738197da0e6a1cd",
+          "diff_changed_lines": 2,
+          "prior_feedback": null
+        }
+      ],
+      "verification_executions": [
+        {
+          "execution_id": "f76168bf-91fb-4496-b3d0-1eb88690b4d2",
+          "attempt_id": "d2a0a60e-b519-4b5b-9a10-0f975141f503",
+          "verdict": "passed",
+          "assertions_passed": 44,
+          "assertions_total": 44,
+          "runtime_kind": "isolated-browser",
+          "resource_limits": {
+            "mode": "cgroup-v2-scope",
+            "memory_max_bytes": 536870912,
+            "memory_swap_max_bytes": 0,
+            "tasks_max": 64,
+            "cpu_quota_percent": 100,
+            "verified": true
+          }
+        }
+      ],
+      "artifact_count": 14,
+      "artifacts": [
+        {
+          "role": "screenshot",
+          "sha256": "b958ca79e3175605bba5bb837f3c27af9b6e0a749e9ff68c673290ee7efa274e",
+          "size_bytes": 95389
+        },
+        {
+          "role": "trace",
+          "sha256": "be5e6a384636925a2477e7a8408be3e60fa4867170f57f1fda93bbfd6ef07061",
+          "size_bytes": 655354
+        },
+        {
+          "role": "requests",
+          "sha256": "96a09d0020398e3a711d1253e53e5a618b2b34ca2f7f5346cc95570e904c3cbe",
+          "size_bytes": 5437
+        },
+        {
+          "role": "logs",
+          "sha256": "6ce22fe58f792454c4aa277960a43b26a5d9cf6d863e35ac122b9d84af793e8e",
+          "size_bytes": 2357
+        },
+        {
+          "role": "report",
+          "sha256": "8a266bca6a624710e7932829621879f6f953e237933ee780be030b21a0f61f22",
+          "size_bytes": 13218
+        },
+        {
+          "role": "proposal",
+          "sha256": "8a10eadbddf269e93ceb31f016723bb5696cb565046ea1bdcae584a5c64130cf",
+          "size_bytes": 831
+        },
+        {
+          "role": "diff",
+          "sha256": "64bef337c5113ccc2ec741d5eb20153bec6abeac1b99b6921738197da0e6a1cd",
+          "size_bytes": 398
+        },
+        {
+          "role": "screenshot",
+          "sha256": "85c823600742341818e2665901f81d62a19cb4db96bca4e67c1e76e2d126f0d5",
+          "size_bytes": 67165
+        },
+        {
+          "role": "trace",
+          "sha256": "5b1ad501d0044fb3af92f59c310f02adeacb8a041a4b79d82077264f62d8e961",
+          "size_bytes": 621498
+        },
+        {
+          "role": "requests",
+          "sha256": "bd472ceb5c9eb2b1ca0183d80019700aa0330a130114d1cb829f873ad0bc9c10",
+          "size_bytes": 6033
+        },
+        {
+          "role": "logs",
+          "sha256": "fac79eb4dd6445fccc29927bded6d6d65182395c61d2d43963ef33818ffd0da4",
+          "size_bytes": 32
+        },
+        {
+          "role": "report",
+          "sha256": "8acd43dd611b352148512659e7eb2613a574b07bbaaaac2570f698dd3834c20c",
+          "size_bytes": 11524
+        },
+        {
+          "role": "proof_bundle",
+          "sha256": "24e0d73898f2cf9c2b9817276c46d50d2daa6145c577ae88601629fcb13c8a95",
+          "size_bytes": 3883
+        },
+        {
+          "role": "proof_bundle_md",
+          "sha256": "fbfdbd038f43abcd7f93fc5551a51e3c29ec6923354eefc1a1a32307523ad337",
+          "size_bytes": 2750
+        }
+      ],
+      "verified": true
+    },
+    {
+      "trial": 3,
+      "idempotency_key": "f08f60f2-dab3-42d0-9d31-b11890009919",
+      "job_id": "5fb3c393-d967-464c-a1d1-d5d038eed7ea",
+      "evidence_recorded": true,
+      "scenario_id": "scripted_checkout_repair",
+      "requested_mode": "repair",
+      "effective_mode": "repair",
+      "repair_block_reason": null,
+      "created_at": "2026-10-31T13:28:06.963866Z",
+      "updated_at": "2026-10-31T13:28:17.400041Z",
+      "wall_seconds": 10.436,
+      "terminal": true,
+      "state": "succeeded",
+      "stage": "completed",
+      "outcome": "verified",
+      "cleanup_status": "succeeded",
+      "error_code": null,
+      "failed_stage": null,
+      "deadline_exceeded": false,
+      "cancel_requested_by_ledger": false,
+      "baseline_verdict": "failed",
+      "expected_failure_reproduced": true,
+      "attempts": [
+        {
+          "attempt_id": "0a0c2b25-b395-4854-a938-74db5f681c43",
+          "attempt_number": 1,
+          "outcome": "verified",
+          "provider": "meta",
+          "model": "muse-spark-1.3",
+          "dispatched_provider": "meta",
+          "dispatched_model": "muse-spark-1.3",
+          "prompt_tokens": 1573,
+          "completion_tokens": 1825,
+          "policy_valid": true,
+          "policy_error": null,
+          "diff_sha256": "f9193387309f43e0ea1d584bd43af316f4c23f4c83b6c0a8bcd36abb8b3a8d70",
+          "diff_changed_lines": 2,
+          "prior_feedback": null
+        }
+      ],
+      "verification_executions": [
+        {
+          "execution_id": "c017758a-0a31-4ffc-8606-ad7d75082a8c",
+          "attempt_id": "0a0c2b25-b395-4854-a938-74db5f681c43",
+          "verdict": "passed",
+          "assertions_passed": 44,
+          "assertions_total": 44,
+          "runtime_kind": "isolated-browser",
+          "resource_limits": {
+            "mode": "cgroup-v2-scope",
+            "memory_max_bytes": 536870912,
+            "memory_swap_max_bytes": 0,
+            "tasks_max": 64,
+            "cpu_quota_percent": 100,
+            "verified": true
+          }
+        }
+      ],
+      "artifact_count": 14,
+      "artifacts": [
+        {
+          "role": "screenshot",
+          "sha256": "b958ca79e3175605bba5bb837f3c27af9b6e0a749e9ff68c673290ee7efa274e",
+          "size_bytes": 95389
+        },
+        {
+          "role": "trace",
+          "sha256": "222c86ef33f1c1c9eb646a48472f85edc81258501ad4f1b9745601eaafcc9849",
+          "size_bytes": 625478
+        },
+        {
+          "role": "requests",
+          "sha256": "74e8f6af62fa2a2416e1f3c66e3d8b2976d7062b26f309ca500e05a5edec61e4",
+          "size_bytes": 5437
+        },
+        {
+          "role": "logs",
+          "sha256": "76a1391a492dd486822cea371c5358b8574f0285e053ef5b5f66620be5754c6d",
+          "size_bytes": 2357
+        },
+        {
+          "role": "report",
+          "sha256": "bc031885f06beb54dedafe225b941cc77cbdc7ed46afbab8b8af4655a15e902d",
+          "size_bytes": 13217
+        },
+        {
+          "role": "proposal",
+          "sha256": "3a40f8e3585a6cb1d3bc05541af34b51e083f9c2981f5967f2042c8a814de948",
+          "size_bytes": 883
+        },
+        {
+          "role": "diff",
+          "sha256": "f9193387309f43e0ea1d584bd43af316f4c23f4c83b6c0a8bcd36abb8b3a8d70",
+          "size_bytes": 449
+        },
+        {
+          "role": "screenshot",
+          "sha256": "8c560b353bd821e25223eaaa24564b920cb595f0b9f7f1d68071c2f8cebebea6",
+          "size_bytes": 66995
+        },
+        {
+          "role": "trace",
+          "sha256": "67db25da0ea3db6a62f62de6fbafa46b61134a3fce130b0ea706440a4076678b",
+          "size_bytes": 552866
+        },
+        {
+          "role": "requests",
+          "sha256": "9bc9841d277e4e56fd3f1a2548799557f067551de6694e8fc6195a92ed5a59ce",
+          "size_bytes": 6033
+        },
+        {
+          "role": "logs",
+          "sha256": "fac79eb4dd6445fccc29927bded6d6d65182395c61d2d43963ef33818ffd0da4",
+          "size_bytes": 32
+        },
+        {
+          "role": "report",
+          "sha256": "d295756686a5a7b016e70e66ffaa1da5278a47b0c0ad39d6f36e84eaed66aa3a",
+          "size_bytes": 11525
+        },
+        {
+          "role": "proof_bundle",
+          "sha256": "9a8435a8a5104c62b19fd6ffd0ac6bda68091df5a2760895a55be95379632ae4",
+          "size_bytes": 3938
+        },
+        {
+          "role": "proof_bundle_md",
+          "sha256": "24d2d81f5e24566c9b6b3752f073afd3f94248f46ed67fe9fb60de2b5baeacb0",
+          "size_bytes": 2801
+        }
+      ],
+      "verified": true
+    }
+  ]
+}
