@@ -100,7 +100,7 @@ def _utf8_size(value: str) -> int:
         raise PatchPolicyError("Patch and source must be valid UTF-8") from exc
 
 
-def parse_unified_diff(diff: str, source: str) -> ParsedPatch:
+def parse_unified_diff(diff: str, source: str, *, target_file: str = TARGET_FILE) -> ParsedPatch:
     """Parse and apply exact hunks in memory, rejecting fuzzy or multiple files."""
     if not diff or _utf8_size(diff) > MAX_DIFF_BYTES:
         raise PatchPolicyError("Diff is empty or exceeds 16 KiB")
@@ -123,14 +123,14 @@ def parse_unified_diff(diff: str, source: str) -> ParsedPatch:
             lines.append(line)
     cursor = 0
     if lines and lines[0].startswith("diff "):
-        if lines[0].rstrip("\n") != f"diff --git a/{TARGET_FILE} b/{TARGET_FILE}":
+        if lines[0].rstrip("\n") != f"diff --git a/{target_file} b/{target_file}":
             raise PatchPolicyError("Only the exact allowlisted file may be modified")
         cursor += 1
         if cursor < len(lines) and lines[cursor].startswith("index "):
             if not _INDEX.fullmatch(lines[cursor]):
                 raise PatchPolicyError("Invalid index metadata or file mode")
             cursor += 1
-    if lines[cursor : cursor + 2] != [f"--- a/{TARGET_FILE}\n", f"+++ b/{TARGET_FILE}\n"]:
+    if lines[cursor : cursor + 2] != [f"--- a/{target_file}\n", f"+++ b/{target_file}\n"]:
         raise PatchPolicyError("Require one existing allowlisted file with canonical paths")
     cursor += 2
     hunks: list[DiffHunk] = []
@@ -189,7 +189,7 @@ def parse_unified_diff(diff: str, source: str) -> ParsedPatch:
     candidate = "".join(output)
     if candidate == source or _utf8_size(candidate) > MAX_SOURCE_BYTES:
         raise PatchPolicyError("Patch is a no-op or candidate exceeds 32 KiB")
-    return ParsedPatch(TARGET_FILE, tuple(hunks), candidate)
+    return ParsedPatch(target_file, tuple(hunks), candidate)
 
 
 _LOOSE_HUNK = re.compile(r"@@ -(\d{1,9})(?:,\d{1,9})? \+\d{1,9}(?:,\d{1,9})? @@( [^\r\n]*)?\n?\Z")

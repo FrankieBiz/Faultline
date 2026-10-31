@@ -2,7 +2,7 @@
 
 The platform spec defines invariant matchers but no ReproSpec wire format. This
 module supplies a strict, versioned format with eight discriminated primitives.
-It is additive: the registered checkout worker and TypeScript oracle are unchanged.
+The project runtime supplies fresh isolated service and browser sessions.
 
 Execution requires a trusted async session factory. Each invocation must reset
 application data and create a fresh browser context against the SAME immutable
@@ -371,6 +371,10 @@ class ReproEngine:
             # Do not retain exception text: drivers can include secrets/response bodies in it.
             run.error = type(exc).__name__
         return run
+
+    async def run(self, spec: ReproSpec) -> ReproRun:
+        """Measure one immutable oracle; return only after session cleanup."""
+        return await self._run(ReproSpec.model_validate_json(spec.model_dump_json()))
 
     async def reproduce(self, spec: ReproSpec) -> ReproductionResult:
         # Revalidate a detached copy so callers cannot mutate the oracle between runs.

@@ -1,10 +1,14 @@
-"""Server-owned scenario definitions; callers cannot select repair paths."""
+"""Operator-owned scenario metadata and the optional built-in checkout registry.
 
-from pydantic import BaseModel, ConfigDict
+Project runs build an installation-local registry from validated TOML/ReproSpec
+configuration; they never mutate this compatibility registry.
+"""
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Scenario(BaseModel):
-    """A fixed repair target, failure fingerprint, and assertion identifiers."""
+    """An admitted repair target, failure fingerprint, and assertion identifiers."""
 
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
 
@@ -15,6 +19,8 @@ class Scenario(BaseModel):
     route: str
     error_fingerprint: str
     expected_assertions: list[str]
+    executor: str = "checkout"
+    regression_assertions: list[str] = Field(default_factory=list)
 
 
 REGISTRY: dict[str, Scenario] = {

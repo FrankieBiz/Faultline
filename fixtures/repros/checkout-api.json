@@ -1,0 +1,178 @@
+{
+  "version": 1,
+  "id": "checkout_api",
+  "steps": [
+    {
+      "action": "request",
+      "id": "no_coupon",
+      "method": "POST",
+      "path": "/api/checkout",
+      "body": {
+        "items": [
+          {
+            "product_id": "trail-mug",
+            "quantity": 1
+          }
+        ]
+      }
+    },
+    {
+      "action": "assert",
+      "id": "no_coupon.status",
+      "source": "no_coupon",
+      "check": {
+        "status": 201
+      }
+    },
+    {
+      "action": "assert",
+      "id": "no_coupon.discount",
+      "source": "no_coupon",
+      "check": {
+        "path": "$.discount",
+        "equals": 0
+      }
+    },
+    {
+      "action": "assert",
+      "id": "no_coupon.total",
+      "source": "no_coupon",
+      "check": {
+        "path": "$.total",
+        "equals": 1999
+      }
+    },
+    {
+      "action": "assert",
+      "id": "no_coupon.subtotal",
+      "source": "no_coupon",
+      "check": {
+        "path": "$.subtotal",
+        "equals": 1999
+      }
+    },
+    {
+      "action": "request",
+      "id": "tenoff",
+      "method": "POST",
+      "path": "/api/checkout",
+      "body": {
+        "items": [
+          {
+            "product_id": "trail-mug",
+            "quantity": 1
+          }
+        ],
+        "coupon_code": "TENOFF"
+      }
+    },
+    {
+      "action": "assert",
+      "id": "tenoff.status",
+      "source": "tenoff",
+      "check": {
+        "status": 201
+      }
+    },
+    {
+      "action": "assert",
+      "id": "tenoff.discount",
+      "source": "tenoff",
+      "check": {
+        "path": "$.discount",
+        "equals": 199
+      }
+    },
+    {
+      "action": "assert",
+      "id": "tenoff.total",
+      "source": "tenoff",
+      "check": {
+        "path": "$.total",
+        "equals": 1800
+      }
+    },
+    {
+      "action": "assert",
+      "id": "tenoff.subtotal",
+      "source": "tenoff",
+      "check": {
+        "path": "$.subtotal",
+        "equals": 1999
+      }
+    },
+    {
+      "action": "request",
+      "id": "fifteen",
+      "method": "POST",
+      "path": "/api/checkout",
+      "body": {
+        "items": [
+          {
+            "product_id": "trail-mug",
+            "quantity": 1
+          }
+        ],
+        "coupon_code": "FIFTEEN"
+      }
+    },
+    {
+      "action": "assert",
+      "id": "fifteen.status",
+      "source": "fifteen",
+      "check": {
+        "status": 201
+      }
+    },
+    {
+      "action": "assert",
+      "id": "fifteen.discount",
+      "source": "fifteen",
+      "check": {
+        "path": "$.discount",
+        "equals": 299
+      }
+    },
+    {
+      "action": "assert",
+      "id": "fifteen.total",
+      "source": "fifteen",
+      "check": {
+        "path": "$.total",
+        "equals": 1700
+      }
+    },
+    {
+      "action": "assert",
+      "id": "fifteen.subtotal",
+      "source": "fifteen",
+      "check": {
+        "path": "$.subtotal",
+        "equals": 1999
+      }
+    },
+    {
+      "action": "request",
+      "id": "unknown",
+      "method": "POST",
+      "path": "/api/checkout",
+      "body": {
+        "items": [
+          {
+            "product_id": "trail-mug",
+            "quantity": 1
+          }
+        ],
+        "coupon_code": "NOTVALID"
+      }
+    },
+    {
+      "action": "assert",
+      "id": "unknown.status",
+      "source": "unknown",
+      "check": {
+        "status": 400
+      }
+    }
+  ]
+}

@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "faultline-repair-orchestrator"
 version = "0.1.0"
-description = "Durable, bounded orchestration for controlled checkout repair"
+description = "Durable, bounded orchestration for repository repair"
 requires-python = ">=3.13"
 dependencies = [
     "fastapi>=0.115,<1",
@@ -23,8 +23,12 @@ faultline = "app.cli:main"
 [dependency-groups]
 dev = ["ruff>=0.11,<1", "mypy>=1.15,<2", "httpx2>=2,<3"]
 
+[tool.hatch.build]
+dev-mode-dirs = [".", "../.."]
+
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
+
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

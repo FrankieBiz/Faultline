@@ -8,7 +8,7 @@ import logging
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Annotated, Any, cast
 
@@ -24,10 +24,12 @@ from sse_starlette.sse import EventSourceResponse
 from app.database import MAX_EVENT_SEQUENCE, TERMINAL_STATES, Database, DatabaseError
 from app.evidence import ArtifactError, EvidenceStore
 from app.model_adapter import MetaRepairAdapter, ModelSettings
+from app.project import ProjectRun, ProjectSnapshots, load_project
+from app.project_runtime import ProjectRuntime
+from app.run import project_budgets
 from app.runtime import Runtime, UnavailableRuntime
 from app.snapshots import REPOSITORY_ROOT, SnapshotManager
 from app.worker import RepairWorker
-from shared.config import REGISTRY
 from shared.contracts.models import ArtifactSummary, JobMode, JobRequest, OrchestratorJob
 
 logger = logging.getLogger("faultline.orchestrator")
@@ -152,9 +154,21 @@ def create_app(
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         if not configuration.control_token:
             raise RuntimeError("FAULTLINE_CONTROL_TOKEN is required")
+        project: ProjectRun | None = None
+        project_root: Path | None = None
+        if os.environ.get("FAULTLINE_CONFIG"):
+            project_root, project = load_project(
+                Path(os.environ["FAULTLINE_CONFIG"]), os.environ.get("FAULTLINE_SCENARIO")
+            )
         owned_database = database is None
-        db = database or Database(configuration.data_dir / "faultline.db")
-        model = adapter or MetaRepairAdapter(ModelSettings.from_environment())
+        db = database or Database(
+            configuration.data_dir / "faultline.db",
+            scenario_ids={project.scenario.id} if project else None,
+        )
+        model_settings = ModelSettings.from_environment()
+        if project:
+            model_settings = replace(model_settings, model=project.model)
+        model = adapter or MetaRepairAdapter(model_settings)
         store = EvidenceStore(
             db,
             configuration.data_dir,
@@ -163,7 +177,13 @@ def create_app(
             ),
         )
         runtime_impl = runtime if runtime is not None else UnavailableRuntime()
-        if runtime is None and os.environ.get("FAULTLINE_RUNTIME") == "isolated":
+        snapshot_impl = snapshots or SnapshotManager(configuration.data_dir)
+        if project is not None and project_root is not None:
+            if runtime is None:
+                runtime_impl = ProjectRuntime(project_root, project)
+            if snapshots is None:
+                snapshot_impl = ProjectSnapshots(configuration.data_dir, project_root, project)
+        elif runtime is None and os.environ.get("FAULTLINE_RUNTIME") == "isolated":
             from app.isolated_runtime import IsolatedRuntime
 
             runtime_impl = IsolatedRuntime()
@@ -172,8 +192,10 @@ def create_app(
             db,
             model,
             runtime_impl,
-            snapshots or SnapshotManager(configuration.data_dir),
+            snapshot_impl,
             store,
+            project=project,
+            budgets=project_budgets(project) if project else None,
         )
         application.state.controller = Controller(configuration, db, worker, store)
         try:
@@ -272,9 +294,13 @@ def create_app(
         }
 
     @routes.get("/scenarios")
-    async def scenarios() -> dict[str, Any]:
+    async def scenarios(control: Control) -> dict[str, Any]:
         """List only server-owned scenario descriptions and permitted scope."""
-        return {"scenarios": [scenario.model_dump(mode="json") for scenario in REGISTRY.values()]}
+        return {
+            "scenarios": [
+                scenario.model_dump(mode="json") for scenario in control.worker.scenarios.values()
+            ]
+        }
 
     @routes.post("/jobs", status_code=202)
     async def create_job(

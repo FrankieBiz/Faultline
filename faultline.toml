@@ -3,12 +3,12 @@
 schema = 1
 
 [project]
-name = "sander"
+name = "FaultLine checkout API"
 stack = "python-fastapi"
-root = "."
+root = "apps/buggyshop-backend"
 setup_command = ""
 lockfiles = []
-dev_command = "uv run uvicorn app.main:app --host 127.0.0.1 --port {port}"
+dev_command = ["python3.13", "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "{port}"]
 url = "http://127.0.0.1:{port}"
 health = "/healthz"
 test_command = "uv run pytest -q --junitxml={report}"
@@ -42,7 +42,7 @@ max_attempts = 2
 
 [budgets]
 preflight = 45
-baseline = 20
+baseline = 40
 attempt = 75
 generation = 45
 verification = 20
@@ -56,3 +56,9 @@ name = "Service returns HTTP 200 on health check"
 target = "http://127.0.0.1:{port}/healthz"
 method = "GET"
 expected_status = 200
+
+# This scenario uses the same project runner as external repositories.
+[scenarios.checkout_api]
+title = "Checkout without a coupon"
+target_file = "app/routes/checkout.py"
+repro = "fixtures/repros/checkout-api.json"

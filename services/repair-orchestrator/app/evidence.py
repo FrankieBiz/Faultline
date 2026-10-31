@@ -21,6 +21,7 @@ _LIMITS = {
     "logs": 64 * 1024,
     "report": 64 * 1024,
     "proposal": 64 * 1024,
+    "repro_spec": 64 * 1024,
     "diff": 16 * 1024,
     "proof_bundle": 128 * 1024,
     "proof_bundle_md": 128 * 1024,

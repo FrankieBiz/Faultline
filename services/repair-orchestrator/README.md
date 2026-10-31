@@ -282,3 +282,16 @@ may skip environment-dependent browser cases on unprepared machines; those skips
 do not establish isolated runtime correctness. Real aggregate-limit tests, including
 memory and task hogs, live in `tests/test_resource_limits_cgroup.py`. Run them with
 `FAULTLINE_REQUIRE_ISOLATED_TESTS=1` to fail rather than skip.
+
+
+## Project execution
+
+`faultline run [scenario_name] [--config faultline.toml]` uses the same durable worker
+with a project-scoped scenario registry, immutable tracked-source exports, two
+fresh baseline sessions, contained Meta inference, and the general sandbox runtime.
+`--repro path.json --target path/to/source` selects an external ReproSpec;
+`--detect` measures without inference. See [the complete configuration and limits](../../docs/PROJECT_RUNNER.md).
+
+For HTTP admission, set `FAULTLINE_CONFIG` and optionally `FAULTLINE_SCENARIO`.
+Only the selected operator-owned configuration is admitted; HTTP callers cannot
+supply commands or paths. The default controller continues to serve the checkout demo.

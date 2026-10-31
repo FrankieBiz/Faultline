@@ -4,12 +4,13 @@ import asyncio
 import hashlib
 import json
 import shutil
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 from uuid import UUID, uuid4
 
 from app.policy import TARGET_FILE, PatchPolicy, PatchPolicyError
-from fixtures.provenance import FixtureManifest, verify_manifest
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 BACKEND_APP = "apps/buggyshop-backend/app/"
@@ -77,8 +78,10 @@ class SnapshotManager:
             raise PatchPolicyError(f"Git rejected the disposable snapshot operation{detail}")
         return stdout
 
-    async def manifest(self) -> FixtureManifest:
+    async def manifest(self) -> Mapping[str, Any]:
         """Verify pinned source identities before any baseline preparation."""
+        from fixtures.provenance import verify_manifest
+
         return await asyncio.to_thread(verify_manifest, self.repository_root)
 
     def _job_root(self, job_id: str) -> Path:
@@ -89,7 +92,7 @@ class SnapshotManager:
     async def create(
         self,
         job_id: str,
-        manifest: FixtureManifest,
+        manifest: Mapping[str, Any],
         *,
         diff: str | None = None,
         base_sha256: str | None = None,

@@ -17,6 +17,17 @@ The result is a **verified candidate with downloadable evidence**. FaultLine doe
 
 Recorded local workflow evidence; this screenshot does not represent a live Meta trial.
 
+## Run a configured repository
+
+`faultline run [scenario_name]` now executes named scenarios from `faultline.toml` or a CLI-supplied ReproSpec. It freezes tracked source, requires two matching isolated failures, requests a Meta patch for the selected file, verifies the candidate, and emits a checksummed proof after cleanup. The existing Inspector demo retains its checkout-specific regression suite.
+
+```bash
+uv run --project services/repair-orchestrator --python 3.13 --locked faultline run checkout_api --detect
+uv run --project services/repair-orchestrator --python 3.13 --locked faultline run checkout_api
+```
+
+See [project runner configuration and limits](docs/PROJECT_RUNNER.md) for external repositories, browser/HTTP steps, Meta credentials, and proof verification. This is a configurable local single-service runner, not a claim that every website works without setup.
+
 ## Run it
 
 Requires Linux with working unprivileged user namespaces and Bubblewrap (`bwrap`), cgroup v2 with a systemd user session (run from a desktop terminal or user service, not a bare SSH login), Git, Python 3.13 via `uv`, and Node.js 24+. On Fedora, if Bubblewrap is missing: `sudo dnf install bubblewrap`. The controller fails closed when its execution requirements, including enforced aggregate resource limits, are unavailable. Use a full `git clone`, not `--depth 1` or a ZIP download: the seeded fixture is pinned to a commit in this repository's history.
@@ -95,7 +106,7 @@ These results describe an authored corpus for one checkout route, not arbitrary 
 
 ## Scope and limits
 
-- One registered live scenario: `scripted_checkout_repair`, plus an authored evaluation corpus of ten defects and eleven candidate patches for the same route.
+- The default Inspector serves `scripted_checkout_repair`; the CLI and a configured controller accept project ReproSpecs. The authored evaluation corpus still covers ten defects and eleven candidate patches for the checkout route.
 - Pricing uses integer cents; coupons are `TENOFF` and `FIFTEEN`.
 - Additional chaos scenarios are explicitly authored previews, not live backend defects.
 - No continuous production monitoring, Sentry/GitHub integration, rollout, or automatic production deployment.

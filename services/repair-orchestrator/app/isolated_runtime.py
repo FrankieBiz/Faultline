@@ -338,6 +338,7 @@ class ManagedProcess:
         cwd: Path | None = None,
         env: dict[str, str] | None = None,
         pass_fds: tuple[int, ...] = (),
+        interactive: bool = False,
     ) -> ManagedProcess:
         read_fd, write_fd = os.pipe2(os.O_CLOEXEC)
         supervisor = Path(__file__).with_name("process_supervisor.py")
@@ -351,9 +352,10 @@ class ManagedProcess:
                 *args,
                 cwd=cwd,
                 env=env,
-                stdin=asyncio.subprocess.DEVNULL,
+                stdin=asyncio.subprocess.PIPE if interactive else asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                limit=2 * 1024 * 1024 if interactive else 65536,
                 start_new_session=True,
                 pass_fds=(read_fd, *pass_fds),
             )
@@ -381,8 +383,8 @@ class ManagedProcess:
 
         assert process.stdout is not None and process.stderr is not None
         owned.pumps = [
-            asyncio.create_task(drain(process.stdout, owned.stdout)),
             asyncio.create_task(drain(process.stderr, owned.stderr)),
+            *([] if interactive else [asyncio.create_task(drain(process.stdout, owned.stdout))]),
         ]
         return owned
 

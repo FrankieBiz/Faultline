@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import asyncio
 import http.client
 import json
 import os
@@ -124,7 +125,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         (
             "Linux Bubblewrap (bwrap) Sandbox",
             bwrap_path is not None,
-            bwrap_path or "Missing! Install via: sudo dnf/apt install bubblewrap",
+            bwrap_path or "Missing! Install via: sudo dnf install bubblewrap",
         )
     )
 
@@ -614,7 +615,8 @@ def cmd_init(args: argparse.Namespace) -> int:
     dest_file.write_text(toml_content)
     print(f"\n{GREEN}{BOLD}✓ Created {dest_file}{RESET}")
     print("Next steps:")
-    print("  1. Review faultline.toml to customize editable paths and invariants.")
+    print("  1. Review faultline.toml and add a [scenarios.NAME] target_file and repro.")
+    print("     Or run: faultline run --repro repro.json --target path/to/source")
     print("  2. Run `faultline doctor` to verify sandbox containment.")
     print("  3. Run `faultline status` to verify orchestrator connectivity.\n")
     return 0
@@ -1469,12 +1471,56 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_run(args: argparse.Namespace) -> int:
+    """Execute an operator-selected reproduction with durable sandbox evidence."""
+    from app.project import load_project
+    from app.run import run_project
+
+    try:
+        root, project = load_project(
+            Path(args.config),
+            args.scenario_name,
+            repro_file=Path(args.repro) if args.repro else None,
+            target_file=args.target,
+        )
+        data_dir = Path(args.data_dir).resolve() if args.data_dir else root / ".faultline/runs"
+        result = asyncio.run(run_project(root, project, data_dir, detect=args.detect))
+    except KeyboardInterrupt:
+        return 130
+    except (OSError, ValueError, RuntimeError) as exc:
+        # Validation errors may embed user input. Keep diagnostics local and do
+        # not expose provider responses or credentials in a traceback.
+        print(f"faultline run: {exc}", file=sys.stderr)
+        return 30
+    print(json.dumps(result, indent=2))
+    return OUTCOME_EXIT_CODES.get(result["outcome"], 30)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="faultline",
         description="FaultLine: Autonomous SRE and sandbox-verified repair platform.",
     )
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
+
+    p_run = subparsers.add_parser(
+        "run", help="Reproduce twice, repair with Meta, and verify in isolation"
+    )
+    p_run.add_argument(
+        "scenario_name", nargs="?", help="Configured scenario (optional when only one exists)"
+    )
+    p_run.add_argument(
+        "--config", default="faultline.toml", help="Operator-owned TOML configuration"
+    )
+    p_run.add_argument(
+        "--repro", help="JSON ReproSpec supplied directly instead of a configured scenario"
+    )
+    p_run.add_argument("--target", help="Existing project-relative target inside repair.editable")
+    p_run.add_argument("--data-dir", help="Durable database and proof directory")
+    p_run.add_argument(
+        "--detect", action="store_true", help="Run both baselines without requesting a patch"
+    )
+    p_run.set_defaults(func=cmd_run)
 
     # version
     p_ver = subparsers.add_parser("version", help="Print CLI and engine version")

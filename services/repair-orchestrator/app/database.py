@@ -57,7 +57,10 @@ class DatabaseError(Exception):
 class Database:
     """Store canonical typed records and a singleton quarantinable lease."""
 
-    def __init__(self, path: str | Path = "data/faultline.db") -> None:
+    def __init__(
+        self, path: str | Path = "data/faultline.db", *, scenario_ids: set[str] | None = None
+    ) -> None:
+        self.scenario_ids = set(REGISTRY) if scenario_ids is None else set(scenario_ids)
         self.path = str(path)
         if self.path != ":memory:":
             Path(self.path).parent.mkdir(parents=True, exist_ok=True)
@@ -312,7 +315,7 @@ class Database:
         repair_block_reason: str | None = None,
     ) -> OrchestratorJob:
         """Atomically persist admission, reserve the lease, and emit event one."""
-        if request.scenario_id not in REGISTRY:
+        if request.scenario_id not in self.scenario_ids:
             raise DatabaseError("unknown_scenario", 422)
         try:
             UUID(request.idempotency_key)

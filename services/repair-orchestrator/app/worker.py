@@ -28,6 +28,7 @@ from app.model_adapter import (
     RepairContext,
 )
 from app.policy import PatchPolicy, PatchPolicyError
+from app.project import ProjectPatchPolicy, ProjectRun
 from app.proof_bundle import ProofBundleCompiler
 from app.runtime import (
     REGRESSION_ASSERTIONS,
@@ -122,7 +123,10 @@ class RepairWorker:
         evidence: EvidenceStore,
         *,
         budgets: Budgets | None = None,
+        project: ProjectRun | None = None,
     ) -> None:
+        self.project = project
+        self.scenarios = {project.scenario.id: project.scenario} if project else dict(REGISTRY)
         self.database = database
         self.adapter = adapter
         self.runtime = runtime
@@ -139,7 +143,17 @@ class RepairWorker:
     async def start(self) -> None:
         """Reconcile crash leftovers and perform one separately counted probe."""
         await self.reconcile()
-        self.probe = await self.adapter.probe()
+        if self.project is not None and (
+            not self.adapter.settings.api_key or self.adapter.settings.provider != "meta"
+        ):
+            self.probe = ProbeResult(
+                False,
+                self.adapter.settings.provider,
+                self.adapter.settings.model,
+                "meta_credentials_required",
+            )
+        else:
+            self.probe = await self.adapter.probe()
         self.probe_time = utcnow().isoformat()
         self._task = asyncio.create_task(self._loop(), name="faultline-serial-worker")
 
@@ -297,9 +311,13 @@ class RepairWorker:
         if len(set(ids)) != len(ids) or not report.case_id:
             raise JobAbort(TerminalOutcome.INFRASTRUCTURE_ERROR, "invalid_assertion_manifest")
         if report.verdict == ExecutionVerdict.PASSED:
-            required = set(REGISTRY[job.scenario_id].expected_assertions)
+            required = set(self.scenarios[job.scenario_id].expected_assertions)
             if phase == "verification":
-                required.update(REGRESSION_ASSERTIONS)
+                required.update(
+                    REGRESSION_ASSERTIONS
+                    if self.project is None
+                    else self.scenarios[job.scenario_id].regression_assertions
+                )
             if not required <= set(ids) or not all(item.passed for item in report.assertions):
                 raise JobAbort(TerminalOutcome.INFRASTRUCTURE_ERROR, "incomplete_or_false_pass")
         # Redact individual string values, retaining valid strict JSON envelopes.
@@ -372,6 +390,8 @@ class RepairWorker:
             )
         except Exception:
             logger.exception("Evidence bundle compilation failed for job %s", job.id)
+            if self.project is not None:
+                raise ArtifactError("Project proof compilation failed") from None
             return
         for role, content_type, content in (
             ("proof_bundle", "application/json", bundle.model_dump_json().encode()),
@@ -389,6 +409,13 @@ class RepairWorker:
             job_id, deadline_at=utcnow() + timedelta(seconds=self.budgets.overall)
         )
         self._transition(job_id, JobStage.PREPARING)
+        if self.project is not None:
+            self.evidence.save(
+                job_id,
+                RuntimeArtifact(
+                    "repro_spec", "application/json", self.project.model_dump_json().encode()
+                ),
+            )
         try:
             manifest = await self._bounded(
                 job_id,
@@ -437,7 +464,39 @@ class RepairWorker:
             raise JobAbort(TerminalOutcome.INFRASTRUCTURE_ERROR, "runner_error")
         if report.verdict == ExecutionVerdict.PASSED:
             return TerminalOutcome.NO_FAILURE
-        if not matches_fingerprint(report, REGISTRY[job.scenario_id]):
+        if self.project is not None:
+            # execute() owns a new application + browser session each time. Its
+            # successful return confirms cleanup before either report is accepted.
+            second = await self._bounded(
+                job_id,
+                lambda: self._execution(
+                    job, "baseline", baseline, baseline_deadline - time.monotonic()
+                ),
+                baseline_deadline - time.monotonic(),
+                deadline,
+            )
+            if second.verdict in {ExecutionVerdict.ERROR, ExecutionVerdict.TIMED_OUT}:
+                raise JobAbort(TerminalOutcome.INFRASTRUCTURE_ERROR, "runner_error")
+
+            def signature(value: ExecutionReport) -> list[tuple[str, str, str]]:
+                return [(a.id, a.expected, a.observed) for a in value.assertions if not a.passed]
+
+            if (
+                report.case_id == second.case_id
+                or not signature(report)
+                or signature(report) != signature(second)
+            ):
+                return TerminalOutcome.NO_FAILURE
+            fingerprints = [
+                [o.message for o in r.observations if o.kind == ObservationKind.SERVER_EXCEPTION]
+                for r in (report, second)
+            ]
+            if fingerprints[0] != fingerprints[1]:
+                return TerminalOutcome.NO_FAILURE
+            expected = self.project.repro.fingerprint
+            if expected is not None and fingerprints[0] != [expected]:
+                return TerminalOutcome.UNEXPECTED_FAILURE
+        elif not matches_fingerprint(report, self.scenarios[job.scenario_id]):
             return TerminalOutcome.UNEXPECTED_FAILURE
         if job.requested_mode == JobMode.DETECT:
             return TerminalOutcome.DETECTED
@@ -447,7 +506,7 @@ class RepairWorker:
         # Independent gate findings from a rejected attempt guide the next proposal.
         feedback: AttemptFeedback | None = None
         final = TerminalOutcome.INVALID_PATCH
-        for number in (1, 2):
+        for number in range(1, (self.project.max_attempts if self.project else 2) + 1):
             if number == 2 and deadline - time.monotonic() < self.budgets.attempt:
                 break
             attempt_deadline = min(deadline, time.monotonic() + self.budgets.attempt)
@@ -479,6 +538,8 @@ class RepairWorker:
                     failure_traceback=report.raw_logs,
                     previous_gate=previous_gate,
                     feedback=feedback,
+                    target_file=self.scenarios[job.scenario_id].target_file,
+                    contract=self.project.repro.model_dump_json() if self.project else None,
                 )
                 requested = time.monotonic()
                 model = await self._bounded(
@@ -519,7 +580,8 @@ class RepairWorker:
                     self.database.save_attempt(attempt)
                     return TerminalOutcome.UNRESOLVED
                 self._transition(job_id, JobStage.PATCH_VALIDATION)
-                validation = PatchPolicy().validate(
+                policy = ProjectPatchPolicy(self.project) if self.project else PatchPolicy()
+                validation = policy.validate(
                     proposal.unified_diff,
                     baseline.source,
                     base_sha256=proposal.base_sha256,
