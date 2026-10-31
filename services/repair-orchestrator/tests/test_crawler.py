@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 from app import crawler_service
 from app.api import InspectorTranslator
 from app.cli import COLOR, PLAIN, build_parser
-from app.cli_crawl import crawl_command, render_event, render_report
+from app.cli_crawl import crawl_command, render_event, render_report, scan_command
 from app.crawler_service import CrawlError, run_crawl, validate_url
 from app.main import Settings, create_app
 
@@ -35,6 +35,7 @@ FAILURE_REPORT: dict[str, Any] = {
             "url": "http://127.0.0.1:3000/",
             "selector": 'a:has-text("Trail Mug") >> nth=0',
             "label": "Trail Mug",
+            "element": "link",
         },
         {
             "step": 3,
@@ -43,6 +44,7 @@ FAILURE_REPORT: dict[str, Any] = {
             "selector": "#email",
             "label": "Email",
             "value": "test@example.com",
+            "element": "field",
         },
         {
             "step": 4,
@@ -50,12 +52,38 @@ FAILURE_REPORT: dict[str, Any] = {
             "url": "http://127.0.0.1:3000/checkout",
             "selector": 'button:has-text("Place order")',
             "label": "Place order",
+            "element": "button",
         },
     ],
     "elements_explored": 20,
     "actions_taken": 3,
     "pages_visited": ["http://127.0.0.1:3000/", "http://127.0.0.1:3000/checkout"],
+    "screens_visited": [
+        {
+            "url": "http://127.0.0.1:3000/",
+            "path": "/",
+            "title": "Shop",
+            "elements": 9,
+            "forms": 0,
+            "first_step": 1,
+        },
+        {
+            "url": "http://127.0.0.1:3000/checkout",
+            "path": "/checkout",
+            "title": "Checkout",
+            "elements": 11,
+            "forms": 1,
+            "first_step": 2,
+        },
+    ],
     "duration_ms": 2100,
+    "reproduction_trail": [
+        "1. Open http://127.0.0.1:3000/",
+        '2. Click link "Trail Mug" on / [a:has-text("Trail Mug") >> nth=0]',
+        '3. Fill "Email" with "test@example.com" on /checkout [#email]',
+        '4. Click button "Place order" on /checkout [button:has-text("Place order")]'
+        " -> HTTP 500 on POST /api/checkout",
+    ],
     "failure": {
         "kind": "http_error",
         "message": "500 Internal Server Error",
@@ -78,6 +106,7 @@ CLEAN_REPORT: dict[str, Any] = {
     "pages_visited": ["http://127.0.0.1:3000/"],
     "duration_ms": 9000,
     "stop_reason": "max_actions",
+    "reproduction_trail": ["1. Open http://127.0.0.1:3000/"],
 }
 
 needs_node = pytest.mark.skipif(shutil.which("node") is None, reason="Node.js is not installed")
@@ -275,7 +304,17 @@ def test_crawl_endpoint_returns_the_report(
     monkeypatch.setattr(crawler_service, "run_crawl", fake)
     response = client.post("/api/crawl", json={"url": "http://127.0.0.1:3000"}, headers=HEADERS)
     assert response.status_code == 200
-    assert response.json() == FAILURE_REPORT
+    body = response.json()
+    assert body == {**FAILURE_REPORT, **crawler_service.telemetry(FAILURE_REPORT)}
+    assert body["elements_explored"] == 20
+    assert [screen["path"] for screen in body["screens_visited"]] == ["/", "/checkout"]
+    assert [(a["step"], a["action"], a["ok"]) for a in body["actions"]] == [
+        (2, "click", True),
+        (3, "fill", True),
+        (4, "click", False),
+    ]
+    assert body["failure"]["endpoint"] == "/api/checkout"
+    assert body["reproduction_trail"][-1].endswith("-> HTTP 500 on POST /api/checkout")
     assert calls == [("http://127.0.0.1:3000", {"max_actions": 15})]
 
     response = client.post(
@@ -587,7 +626,20 @@ HUD_EVENTS: list[dict[str, Any]] = [
         "trigger": {"kind": "Button", "label": "Place order", "page": "/checkout"},
         "fingerprint": "TypeError: x",
     },
-    {"type": "done", "steps": 4, "defect": True},
+    {
+        "type": "done",
+        "steps": 4,
+        "defect": True,
+        "telemetry": crawler_service.telemetry(
+            {
+                **FAILURE_REPORT,
+                "failure": {
+                    **FAILURE_REPORT["failure"],
+                    "response_body": '{"detail":"TypeError: x"}',
+                },
+            }
+        ),
+    },
 ]
 
 
@@ -607,7 +659,12 @@ def test_translator_maps_runner_events_to_the_hud_contract() -> None:
 
 def test_translator_reports_clean_errors_and_page_errors() -> None:
     assert InspectorTranslator().feed({"type": "report", "report": CLEAN_REPORT}) == [
-        {"type": "done", "steps": 1, "defect": False}
+        {
+            "type": "done",
+            "steps": 1,
+            "defect": False,
+            "telemetry": crawler_service.telemetry(CLEAN_REPORT),
+        }
     ]
     assert InspectorTranslator().feed(
         {"type": "report", "report": {"status": "error", "error": "Could not load"}}
@@ -764,3 +821,322 @@ def test_inspector_crawl_streams_a_real_chromium_defect(
         "trigger": {"kind": "Button", "label": "Place order", "page": "/"},
         "fingerprint": "orders table is locked",
     }
+
+
+# --- telemetry ----------------------------------------------------------------
+
+
+def test_telemetry_lists_actions_screens_and_the_failure() -> None:
+    summary = crawler_service.telemetry(FAILURE_REPORT)
+    assert summary["status"] == "failure"
+    assert summary["elements_explored"] == 20
+    assert summary["actions_taken"] == 3
+    assert summary["actions"][0] == {
+        "step": 2,
+        "action": "click",
+        "element": "link",
+        "label": "Trail Mug",
+        "selector": 'a:has-text("Trail Mug") >> nth=0',
+        "value": None,
+        "page": "/",
+        "ok": True,
+    }
+    assert summary["actions"][-1]["ok"] is False
+    assert summary["failure"] == FAILURE_REPORT["failure"]
+    assert summary["reproduction_trail"] == FAILURE_REPORT["reproduction_trail"]
+    assert "breadcrumbs" not in summary
+
+
+def test_telemetry_of_clean_and_older_reports() -> None:
+    clean = crawler_service.telemetry(CLEAN_REPORT)
+    assert clean["failure"] is None
+    assert clean["actions"] == []
+    assert clean["stop_reason"] == "max_actions"
+    # Reports without screens_visited fall back to pages_visited.
+    assert clean["screens_visited"] == [{"url": "http://127.0.0.1:3000/", "path": "/"}]
+    errored = crawler_service.telemetry({"status": "error", "error": "Could not load"})
+    assert (errored["failure"], errored["error"], errored["reproduction_trail"]) == (
+        None,
+        "Could not load",
+        [],
+    )
+
+
+# --- faultline scan / auto ----------------------------------------------------
+
+SCAN_EVENTS: list[dict[str, Any]] = [
+    {"type": "launch"},
+    {"type": "navigate", "step": 1, "url": "http://127.0.0.1:3000/"},
+    {**RUNNER_EVENTS[2], "title": "Shop", "total_elements": 9, "screens": 1},
+    RUNNER_EVENTS[3],
+    {
+        "type": "discovered",
+        "url": "http://127.0.0.1:3000/checkout",
+        "title": "Checkout",
+        "count": 11,
+        "buttons": 4,
+        "links": 6,
+        "forms": 1,
+        "total_elements": 20,
+        "screens": 2,
+    },
+    RUNNER_EVENTS[4],
+    RUNNER_EVENTS[5],
+]
+
+
+def _scan_args(*argv: str) -> Any:
+    return build_parser().parse_args(["scan", *argv])
+
+
+def _fake_crawl(monkeypatch: pytest.MonkeyPatch, report: dict[str, Any] = FAILURE_REPORT) -> None:
+    def fake(url: str, **kwargs: Any) -> dict[str, Any]:
+        for event in SCAN_EVENTS:
+            kwargs["on_event"](event)
+        return report
+
+    monkeypatch.setattr(crawler_service, "run_crawl", fake)
+
+
+class FakeEngine:
+    """Stands in for the controller API that ``app.cli._api_request`` reaches."""
+
+    def __init__(self, provider: str = "meta", status: str = "ready") -> None:
+        self.provider = provider
+        self.status = status
+        self.requests: list[tuple[str, str, dict[str, Any] | None]] = []
+        self.listened: list[Any] = []
+        self.down = False
+
+    def api(
+        self,
+        path: str,
+        method: str = "GET",
+        data: dict[str, Any] | None = None,
+        port: int = 9000,
+    ) -> dict[str, Any]:
+        self.requests.append((method, path, data))
+        if self.down:
+            return {"error": "Connection refused", "status": 0}
+        if path == "/api/faultline/scenarios":
+            return {
+                "scenarios": [
+                    {"id": "scripted_checkout_repair", "route": "POST /api/checkout"},
+                ]
+            }
+        if path == "/api/faultline/readiness":
+            return {
+                "status": self.status,
+                "model": {
+                    "provider": self.provider,
+                    "model": "muse-spark",
+                    "available": self.status == "ready",
+                    "reason": None if self.status == "ready" else "missing_api_key",
+                },
+            }
+        if path == "/api/faultline/jobs":
+            mode = "repair" if self.status == "ready" else "detect"
+            return {"job_id": "job-1", "state": "queued", "effective_mode": mode}
+        raise AssertionError(path)
+
+    def listen(self, args: Any) -> int:
+        self.listened.append(args)
+        return 0
+
+
+@pytest.fixture
+def engine(monkeypatch: pytest.MonkeyPatch) -> FakeEngine:
+    from app import cli
+
+    fake = FakeEngine()
+    monkeypatch.setattr(cli, "_api_request", fake.api)
+    monkeypatch.setattr(cli, "cmd_listen", fake.listen)
+    return fake
+
+
+def test_scan_and_auto_parse_with_one_command_defaults() -> None:
+    parser = build_parser()
+    scan = parser.parse_args(["scan", "http://127.0.0.1:3000"])
+    auto = parser.parse_args(["auto", "127.0.0.1:3000", "--yes", "--port", "9100"])
+    assert scan.func is auto.func
+    assert (scan.max_actions, scan.timeout, scan.yes, scan.no_repair, scan.json) == (
+        25,
+        90,
+        False,
+        False,
+        False,
+    )
+    assert (auto.yes, auto.port) == (True, 9100)
+    with pytest.raises(SystemExit):
+        parser.parse_args(["scan", "http://x", "--yes", "--no-repair"])
+
+
+def test_scan_hud_shows_exploration_and_the_bug(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], engine: FakeEngine
+) -> None:
+    _fake_crawl(monkeypatch)
+    assert scan_command(_scan_args("127.0.0.1:3000", "--no-repair"), PLAIN, port=9000) == 1
+    out = capsys.readouterr().out.splitlines()
+    assert out[:8] == [
+        "[Playwright] Launching Chromium...",
+        "[Playwright] Navigating to http://127.0.0.1:3000/...",
+        "[Playwright] Discovered 9 interactive elements across 1 screen.",
+        "[Playwright] Exercising buttons and forms...",
+        "[Playwright] Step 2: Clicking Trail Mug -> OK",
+        "[Playwright] Discovered 20 interactive elements across 2 screens.",
+        '[Playwright] Step 3: Filling Email with "test@example.com" -> OK',
+        "[Playwright] Step 4: Clicking Place order -> FAILED",
+    ]
+    assert out[8] == "[Playwright] 💥 BUG CAUGHT: HTTP 500 on POST /api/checkout"
+    assert out[9] == "Explored 20 elements on 2 screens with 3 actions."
+    text = "\n".join(out)
+    assert 'response  {"detail":"TypeError"}' in text
+    journey = text.split("Reproduction journey\n", 1)[1]
+    assert journey.startswith("  1. Open http://127.0.0.1:3000/\n")
+    assert '  4. Click button "Place order" on /checkout' in journey
+    assert text.endswith("Repair skipped. Run ./faultline run to repair it later.")
+    # --no-repair never contacts the engine.
+    assert engine.requests == []
+
+
+def test_scan_yes_dispatches_the_sandboxed_repair_and_streams_it(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], engine: FakeEngine
+) -> None:
+    _fake_crawl(monkeypatch)
+    assert scan_command(_scan_args("http://127.0.0.1:3000", "-y"), PLAIN, port=9123) == 0
+    out = capsys.readouterr().out
+    assert (
+        "Defect intercepted! Propose and verify patch with Meta in sandbox? [Y/n] y (--yes)" in out
+    )
+    assert "[FaultLine] Sandbox run job-1 started." in out
+    method, path, data = engine.requests[-1]
+    assert (method, path) == ("POST", "/api/faultline/jobs")
+    assert data is not None and data["scenario_id"] == "scripted_checkout_repair"
+    assert len(data["idempotency_key"]) == 32
+    assert [(args.job_id, args.port) for args in engine.listened] == [("job-1", 9123)]
+
+
+@pytest.mark.parametrize("answer,dispatched", [("", True), ("Y", True), ("n", False)])
+def test_scan_asks_on_a_terminal(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    engine: FakeEngine,
+    answer: str,
+    dispatched: bool,
+) -> None:
+    _fake_crawl(monkeypatch)
+    prompts: list[str] = []
+
+    def ask(prompt: str) -> str:
+        prompts.append(prompt)
+        return answer
+
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True, raising=False)
+    monkeypatch.setattr("builtins.input", ask)
+    code = scan_command(_scan_args("http://127.0.0.1:3000"), PLAIN, port=9000)
+    assert prompts == ["Defect intercepted! Propose and verify patch with Meta in sandbox? [Y/n] "]
+    assert code == (0 if dispatched else 1)
+    assert len(engine.listened) == (1 if dispatched else 0)
+    if not dispatched:
+        assert "Repair skipped." in capsys.readouterr().out
+
+
+def test_scan_without_a_terminal_does_not_dispatch(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], engine: FakeEngine
+) -> None:
+    _fake_crawl(monkeypatch)
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False, raising=False)
+    monkeypatch.setattr("builtins.input", lambda prompt: pytest.fail("prompted"))
+    assert scan_command(_scan_args("http://127.0.0.1:3000"), PLAIN, port=9000) == 1
+    assert "Re-run with --yes to repair." in capsys.readouterr().out
+    assert engine.listened == []
+
+
+@pytest.mark.parametrize(
+    "provider,status,expected",
+    [
+        (
+            "deterministic",
+            "ready",
+            "Propose and verify patch with the deterministic fallback (not a Meta model)"
+            " in sandbox? [Y/n]",
+        ),
+        (
+            "meta",
+            "detect_only",
+            "No model can propose a patch (missing_api_key). "
+            "Reproduce it in the sandbox anyway? [Y/n]",
+        ),
+    ],
+)
+def test_scan_names_the_engine_truthfully(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    engine: FakeEngine,
+    provider: str,
+    status: str,
+    expected: str,
+) -> None:
+    engine.provider, engine.status = provider, status
+    _fake_crawl(monkeypatch)
+    assert scan_command(_scan_args("http://x", "--yes"), PLAIN, port=9000) == 0
+    out = capsys.readouterr().out
+    assert expected in out
+    assert "with Meta" not in out
+
+
+def test_scan_explains_when_no_repair_can_run(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], engine: FakeEngine
+) -> None:
+    engine.down = True
+    _fake_crawl(monkeypatch)
+    assert scan_command(_scan_args("http://x", "--yes"), PLAIN, port=9555) == 1
+    out = capsys.readouterr().out
+    assert "The FaultLine engine is not reachable on port 9555" in out
+    assert "./faultline demo" in out
+
+    engine.down = False
+    uncovered = {
+        **FAILURE_REPORT,
+        "failure": {**FAILURE_REPORT["failure"], "url": "http://127.0.0.1:3000/api/cart"},
+    }
+    _fake_crawl(monkeypatch, uncovered)
+    assert scan_command(_scan_args("http://x", "--yes"), PLAIN, port=9000) == 1
+    assert "No repair scenario covers POST /api/cart yet." in capsys.readouterr().out
+
+    page_error = {
+        **FAILURE_REPORT,
+        "failure": {"kind": "page_error", "message": "TypeError: x", "step": 4},
+    }
+    _fake_crawl(monkeypatch, page_error)
+    engine.requests.clear()
+    assert scan_command(_scan_args("http://x", "--yes"), PLAIN, port=9000) == 1
+    assert "FaultLine repairs failing HTTP routes" in capsys.readouterr().out
+    assert engine.requests == []
+    assert engine.listened == []
+
+
+def test_scan_clean_and_json(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], engine: FakeEngine
+) -> None:
+    _fake_crawl(monkeypatch, CLEAN_REPORT)
+    assert scan_command(_scan_args("http://x"), PLAIN, port=9000) == 0
+    assert "No defect found." in capsys.readouterr().out
+
+    monkeypatch.setattr(crawler_service, "run_crawl", lambda url, **_: FAILURE_REPORT)
+    assert scan_command(_scan_args("http://x", "--json"), PLAIN, port=9000) == 1
+    body = json.loads(capsys.readouterr().out)
+    assert body["actions"][-1]["ok"] is False
+    assert body["reproduction_trail"] == FAILURE_REPORT["reproduction_trail"]
+    assert engine.requests == []
+
+
+def test_scan_rejects_bad_urls(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def fail(url: str, **_: Any) -> dict[str, Any]:
+        raise CrawlError("invalid_url", "URL must be an absolute http:// or https:// URL.")
+
+    monkeypatch.setattr(crawler_service, "run_crawl", fail)
+    assert scan_command(_scan_args("ftp://x"), PLAIN, port=9000) == 2
+    assert capsys.readouterr().out.startswith("faultline scan: URL must be")

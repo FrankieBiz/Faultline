@@ -5,14 +5,18 @@ import path from "node:path";
 import { chromium, expect, test, type Browser } from "@playwright/test";
 import {
   CrawlOptionsError,
+  displayPath,
   formatCrawlEvent,
+  formatReproductionTrail,
   isFailureResponse,
   labelOf,
+  normalizeUrl,
   primarySignal,
   runAutonomousCrawler,
   sampleValueFor,
   scoreClickable,
   shouldFill,
+  type Breadcrumb,
   type ClickableInfo,
   type CrawlEvent,
   type FieldInfo,
@@ -30,6 +34,7 @@ function clickable(overrides: Partial<ClickableInfo>): ClickableInfo {
     ariaLabel: "",
     value: "",
     href: "",
+    role: "",
     disabled: false,
     visible: true,
     inChrome: false,
@@ -58,6 +63,7 @@ function field(overrides: Partial<FieldInfo>): FieldInfo {
     max: "",
     firstOption: "",
     formHasNoRequired: false,
+    groupChecked: false,
     ...overrides,
   };
 }
@@ -114,6 +120,62 @@ test.describe("crawler heuristics", () => {
     expect(sampleValueFor(field({}))).toBe("test");
   });
 
+  test("fills address, postal, phone, and quantity fields the way a shopper would", () => {
+    // Exact autocomplete tokens win, including section-prefixed ones.
+    expect(sampleValueFor(field({ autocomplete: "address-level2", label: "Town or address" }))).toBe("Springfield");
+    expect(sampleValueFor(field({ autocomplete: "shipping postal-code" }))).toBe("62704");
+    expect(sampleValueFor(field({ autocomplete: "given-name" }))).toBe("Alex");
+    expect(sampleValueFor(field({ autocomplete: "address-line1" }))).toBe("123 Main St");
+    // camelCase and snake_case names split into words.
+    expect(sampleValueFor(field({ name: "billingPostalCode" }))).toBe("62704");
+    expect(sampleValueFor(field({ name: "contact_phone" }))).toBe("555-010-0199");
+    expect(sampleValueFor(field({ label: "Email address" }))).toBe("test@example.com");
+    expect(sampleValueFor(field({ label: "Street address" }))).toBe("123 Main St");
+    // Whole words only: "Message" is not an age, "Account" is not a count.
+    expect(sampleValueFor(field({ label: "Message" }))).toBe("Testing from FaultLine.");
+    expect(sampleValueFor(field({ label: "Account" }))).toBe("test");
+    // A quantity is a small order, kept inside min/max.
+    expect(sampleValueFor(field({ type: "number", name: "quantity", min: "1", max: "10" }))).toBe("2");
+    expect(sampleValueFor(field({ type: "number", name: "qty", max: "1" }))).toBe("1");
+  });
+
+  test("answers each required radio group once", () => {
+    expect(shouldFill(field({ type: "radio", required: true }))).toBe(true);
+    expect(shouldFill(field({ type: "radio", required: true, groupChecked: true }))).toBe(false);
+    expect(shouldFill(field({ type: "radio", formHasNoRequired: true }))).toBe(false);
+  });
+
+  test("explores script-driven product cards like links and keeps hash routes", () => {
+    expect(score({ tag: "div", role: "link", text: "Trail Mug $24" })).toBe(30);
+    expect(score({ tag: "div", text: "Trail Mug", href: `${ORIGIN}/product/trail-mug` })).toBe(30);
+    expect(score({ tag: "div", text: "Partner", href: "https://example.com/" })).toBeNull();
+    expect(normalizeUrl(`${ORIGIN}/#/cart`)).toBe(`${ORIGIN}/#/cart`);
+    expect(normalizeUrl(`${ORIGIN}/faq#shipping`)).toBe(`${ORIGIN}/faq`);
+    expect(displayPath(`${ORIGIN}/checkout?step=2`, ORIGIN)).toBe("/checkout?step=2");
+    expect(displayPath("https://example.com/x", ORIGIN)).toBe("https://example.com/x");
+  });
+
+  test("writes the reproduction trail as numbered steps naming the defect", () => {
+    const crumbs: Breadcrumb[] = [
+      { step: 1, action: "navigate", url: `${ORIGIN}/` },
+      { step: 2, action: "click", url: `${ORIGIN}/`, selector: 'a:has-text("Widget")', label: "Widget", element: "link" },
+      { step: 3, action: "fill", url: `${ORIGIN}/checkout`, selector: "#email", label: "Email", value: "test@example.com", element: "field" },
+      { step: 4, action: "select", url: `${ORIGIN}/checkout`, selector: "#country", label: "Country", value: "US", element: "field" },
+      { step: 5, action: "check", url: `${ORIGIN}/checkout`, selector: "#terms", label: "I agree", value: "checked", element: "field" },
+      { step: 6, action: "click", url: `${ORIGIN}/checkout`, selector: 'button:has-text("Place order")', label: "Place order", element: "button" },
+    ];
+    const failure = { kind: "http_error" as const, message: "500", status: 500, method: "POST", endpoint: "/api/checkout", step: 6, console_errors: [], related: [] };
+    expect(formatReproductionTrail(crumbs, ORIGIN, failure)).toEqual([
+      `1. Open ${ORIGIN}/`,
+      '2. Click link "Widget" on / [a:has-text("Widget")]',
+      '3. Fill "Email" with "test@example.com" on /checkout [#email]',
+      '4. Select "US" in "Country" on /checkout [#country]',
+      '5. Check "I agree" on /checkout [#terms]',
+      '6. Click button "Place order" on /checkout [button:has-text("Place order")] -> HTTP 500 on POST /api/checkout',
+    ]);
+    expect(formatReproductionTrail(crumbs.slice(0, 1), ORIGIN)).toEqual([`1. Open ${ORIGIN}/`]);
+  });
+
   test("fills required fields and leaves optional ones in a required form empty", () => {
     expect(shouldFill(field({ required: true }))).toBe(true);
     expect(shouldFill(field({ name: "coupon" }))).toBe(false);
@@ -152,7 +214,9 @@ test.describe("crawler heuristics", () => {
 
   test("formats HUD lines", () => {
     expect(formatCrawlEvent({ type: "launch" })).toBe("[Playwright] Launching Chromium...");
-    expect(formatCrawlEvent({ type: "discovered", url: ORIGIN, count: 8, buttons: 5, links: 3, forms: 0 })).toBe("[Playwright] Discovered 8 interactive elements.");
+    const discovered = { type: "discovered", url: ORIGIN, title: "Shop", count: 8, buttons: 5, links: 3, forms: 0 } as const;
+    expect(formatCrawlEvent({ ...discovered, total_elements: 8, screens: 1 })).toBe("[Playwright] Discovered 8 interactive elements across 1 screen.");
+    expect(formatCrawlEvent({ ...discovered, total_elements: 21, screens: 3 })).toBe("[Playwright] Discovered 21 interactive elements across 3 screens.");
     expect(
       formatCrawlEvent({
         type: "action",
@@ -184,6 +248,7 @@ test.describe("crawler heuristics", () => {
 class FixtureShop {
   healthy = false;
   readonly hits: string[] = [];
+  readonly orders: Record<string, string>[] = [];
   private server: Server | undefined;
   origin = "";
 
@@ -252,6 +317,39 @@ class FixtureShop {
         return html(200, this.page("Boundary", `<button onclick="console.error('The above error occurred in <Cart>; error boundary caught it')">Open cart</button>`));
       case "GET /broken":
         return html(500, "<p>Internal Server Error</p>");
+      case "GET /cards":
+        return html(
+          200,
+          `<title>Cards</title><main><div role="link" tabindex="0" onclick="location.href='/product/widget'"><h2>Widget</h2><p>$12</p></div></main>`,
+        );
+      case "GET /hub":
+        return html(200, `<title>Hub</title><a href="/hub/about">About</a> <a href="/hub/order">Order form</a>`);
+      case "GET /hub/about":
+        return html(200, `<title>About</title><p>No links here.</p>`);
+      case "GET /hub/order":
+        return html(
+          200,
+          `<title>Order</title><form id="o">
+             <label for="full">Full name</label><input id="full" name="fullName" autocomplete="name" required>
+             <label for="mail">Email address</label><input id="mail" name="contactEmail" required>
+             <label for="phone">Phone</label><input id="phone" name="contact_phone" required>
+             <label for="street">Street</label><input id="street" name="street" autocomplete="shipping address-line1" required>
+             <label for="zip">Postal code</label><input id="zip" name="billingPostalCode" required>
+             <label for="qty">Quantity</label><input id="qty" name="quantity" type="number" min="1" max="5" required>
+             <label><input type="radio" name="speed" value="standard" required> Standard</label>
+             <label><input type="radio" name="speed" value="express"> Express</label>
+             <label for="notes">Notes</label><textarea id="notes" name="notes"></textarea>
+             <button type="submit">Send order</button></form>
+           <script>
+             document.getElementById('o').addEventListener('submit', async (event) => {
+               event.preventDefault();
+               await fetch('/api/order', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(Object.fromEntries(new FormData(event.target)))});
+             });
+           </script>`,
+        );
+      case "POST /api/order":
+        this.orders.push(JSON.parse(body || "{}") as Record<string, string>);
+        return json(500, { detail: "KeyError: 'speed'" });
       default:
         return html(404, "not found");
     }
@@ -316,6 +414,13 @@ test.describe("runAutonomousCrawler in Chromium", () => {
     expect(report.failure.step).toBe(7);
     expect(report.actions_taken).toBe(6);
     expect(report.pages_visited).toEqual([`${shop.origin}/`, `${shop.origin}/product/widget`, `${shop.origin}/checkout`]);
+    expect(report.screens_visited.map(({ path, title, first_step }) => [path, title, first_step])).toEqual([
+      ["/", "Home", 1],
+      ["/product/widget", "Widget", 2],
+      ["/checkout", "Checkout", 4],
+    ]);
+    expect(report.reproduction_trail.at(-1)).toBe('7. Click button "Place order" on /checkout [button:has-text("Place order")] -> HTTP 500 on POST /api/checkout');
+    expect(report.reproduction_trail[0]).toBe(`1. Open ${shop.origin}/`);
     // Destructive and external controls were never exercised.
     expect(shop.hits).not.toContain("POST /api/logout");
     expect(events[0]).toEqual({ type: "launch" });
@@ -328,6 +433,47 @@ test.describe("runAutonomousCrawler in Chromium", () => {
       submit: true,
       ok: false,
     });
+  });
+
+  test("clicks script-driven product cards through to the checkout failure", async () => {
+    const report = await runAutonomousCrawler({ url: `${shop.origin}/cards`, browser });
+    expect(report.status).toBe("failure");
+    if (report.status !== "failure") return;
+    expect(report.failure).toMatchObject({ status: 500, endpoint: "/api/checkout" });
+    expect(report.breadcrumbs[1]).toMatchObject({ action: "click", element: "link", label: "Widget $12" });
+    expect(report.screens_visited.map((screen) => screen.path)).toEqual(["/cards", "/product/widget", "/checkout"]);
+  });
+
+  test("jumps to unvisited screens and fills every required field realistically", async () => {
+    const events: CrawlEvent[] = [];
+    const report = await runAutonomousCrawler({ url: `${shop.origin}/hub`, browser, onEvent: (event) => events.push(event) });
+    expect(report.status).toBe("failure");
+    if (report.status !== "failure") return;
+    expect(report.failure).toMatchObject({ kind: "http_error", status: 500, method: "POST", endpoint: "/api/order" });
+    // About is a dead end, so the crawler opens the linked order form directly.
+    expect(report.breadcrumbs.slice(0, 3).map(({ action, url, label }) => [action, url, label ?? null])).toEqual([
+      ["navigate", `${shop.origin}/hub`, null],
+      ["click", `${shop.origin}/hub`, "About"],
+      ["navigate", `${shop.origin}/hub/order`, null],
+    ]);
+    expect(shop.orders).toEqual([
+      {
+        fullName: "Alex Tester",
+        contactEmail: "test@example.com",
+        contact_phone: "555-010-0199",
+        street: "123 Main St",
+        billingPostalCode: "62704",
+        quantity: "2",
+        speed: "standard",
+        // The optional notes stay empty.
+        notes: "",
+      },
+    ]);
+    expect(report.screens_visited.map((screen) => screen.path)).toEqual(["/hub", "/hub/about", "/hub/order"]);
+    const lastScan = events.filter((event) => event.type === "discovered").at(-1);
+    expect(lastScan).toMatchObject({ screens: 3, title: "Order" });
+    expect(lastScan?.type === "discovered" && lastScan.total_elements).toBe(report.elements_explored);
+    expect(report.reproduction_trail.at(-1)).toMatch(/^\d+\. Click button "Send order" on \/hub\/order .* -> HTTP 500 on POST \/api\/order$/);
   });
 
   test("replaying the breadcrumbs reproduces the same failure", async () => {

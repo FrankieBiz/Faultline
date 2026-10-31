@@ -1,9 +1,11 @@
 """Controller routes for the autonomous crawler.
 
-``POST /api/crawl`` runs a crawl and returns the runner's CrawlReport.
+``POST /api/crawl`` runs a crawl and returns the runner's CrawlReport merged
+with its structured telemetry (``crawler_service.telemetry``).
 ``POST /api/faultline/crawl`` streams the same crawl to the Inspector HUD as
 NDJSON in its event vocabulary (``scan``, ``step``, ``defect``, ``done``,
 ``error``; see ``CrawlEvent`` in ``web/inspector-ui/src/lib/faultline-api.ts``).
+The closing ``done`` event carries the telemetry as ``telemetry``.
 """
 
 from __future__ import annotations
@@ -145,8 +147,9 @@ class InspectorTranslator:
     def _report(self, report: dict[str, Any]) -> list[dict[str, Any]]:
         steps = len(report.get("breadcrumbs", []))
         status = report.get("status")
+        summary = crawler_service.telemetry(report)
         if status == "clean":
-            return [{"type": "done", "steps": steps, "defect": False}]
+            return [{"type": "done", "steps": steps, "defect": False, "telemetry": summary}]
         if status != "failure":
             return [{"type": "error", "message": str(report.get("error") or "The crawl failed.")}]
         failure: dict[str, Any] = report.get("failure", {})
@@ -175,7 +178,7 @@ class InspectorTranslator:
                 },
                 "fingerprint": _fingerprint(failure),
             },
-            {"type": "done", "steps": steps, "defect": True},
+            {"type": "done", "steps": steps, "defect": True, "telemetry": summary},
         ]
 
 
@@ -187,11 +190,12 @@ def build_crawl_router(dependencies: Sequence[params.Depends]) -> APIRouter:
 
     @router.post("/api/crawl")
     def crawl(body: CrawlRequest) -> dict[str, Any]:
-        """Crawl a URL in headless Chromium until something breaks; return the CrawlReport."""
+        """Crawl a URL in headless Chromium until something breaks; return report and telemetry."""
         if not busy.acquire(blocking=False):
             raise DatabaseError("crawl_in_progress", 409)
         try:
-            return crawler_service.run_crawl(body.url, max_actions=body.max_actions)
+            report = crawler_service.run_crawl(body.url, max_actions=body.max_actions)
+            return {**report, **crawler_service.telemetry(report)}
         except crawler_service.CrawlError as exc:
             raise DatabaseError(exc.code, _ERROR_STATUS.get(exc.code, 502)) from exc
         finally:

@@ -4,6 +4,7 @@ The runner is invoked as ``node tools/browser-runner/dist/cli.js --crawl URL
 --ndjson``. It prints one JSON event per line and ends with
 ``{"type": "report", "report": {...}}``. Progress events are forwarded to an
 optional callback as they arrive, so a terminal HUD can render them live.
+``telemetry`` condenses a report into the structured summary the API serves.
 """
 
 from __future__ import annotations
@@ -50,6 +51,55 @@ def validate_url(url: str) -> str:
     if parsed.scheme not in ("http", "https") or not parsed.hostname:
         raise CrawlError("invalid_url", "URL must be an absolute http:// or https:// URL.")
     return candidate
+
+
+def _path(url: str) -> str:
+    parsed = urllib.parse.urlsplit(url)
+    return (parsed.path or "/") + (f"?{parsed.query}" if parsed.query else "")
+
+
+def telemetry(report: dict[str, Any]) -> dict[str, Any]:
+    """Structured crawl telemetry: what was explored, every action and its outcome.
+
+    ``actions`` lists the interactions (navigation excluded) in order; the
+    action that triggered the defect has ``ok: false``. ``failure`` is null
+    for clean and errored crawls. ``screens_visited`` falls back to
+    ``pages_visited`` for reports from runners that predate screen tracking.
+    """
+    failure = report.get("failure") if report.get("status") == "failure" else None
+    failing_step = failure.get("step") if isinstance(failure, dict) else None
+    actions = [
+        {
+            "step": crumb.get("step"),
+            "action": crumb.get("action"),
+            "element": crumb.get("element"),
+            "label": crumb.get("label"),
+            "selector": crumb.get("selector"),
+            "value": crumb.get("value"),
+            "page": _path(str(crumb.get("url", ""))),
+            "ok": crumb.get("step") != failing_step,
+        }
+        for crumb in report.get("breadcrumbs", [])
+        if crumb.get("action") != "navigate"
+    ]
+    screens = report.get("screens_visited")
+    if not isinstance(screens, list):
+        screens = [{"url": url, "path": _path(url)} for url in report.get("pages_visited", [])]
+    summary: dict[str, Any] = {
+        "status": report.get("status"),
+        "target_url": report.get("target_url"),
+        "elements_explored": report.get("elements_explored", 0),
+        "screens_visited": screens,
+        "actions_taken": report.get("actions_taken", len(actions)),
+        "actions": actions,
+        "failure": failure,
+        "reproduction_trail": report.get("reproduction_trail", []),
+        "duration_ms": report.get("duration_ms"),
+    }
+    for key in ("stop_reason", "error"):
+        if key in report:
+            summary[key] = report[key]
+    return summary
 
 
 def ensure_runner(runner: Path = RUNNER_CLI) -> str:

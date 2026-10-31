@@ -4,9 +4,12 @@
  * `runAutonomousCrawler` needs no expected statuses or scripted steps. It
  * loads the page, discovers interactive elements, fills required form fields
  * with realistic sample values, and clicks through same-origin controls in a
- * shopping-funnel order (content links, add-to-cart, checkout, commit
- * buttons), skipping destructive controls such as Remove or Log out. After
- * every action it waits for the page to settle and checks for:
+ * shopping-funnel order (content links and product cards, add-to-cart,
+ * checkout, commit buttons), skipping destructive controls such as Remove or
+ * Log out. When a screen has nothing left to try, it moves on to the most
+ * promising same-origin screen it has seen linked but not yet visited (cart
+ * and checkout first). After every action it waits for the page to settle and
+ * checks for:
  *
  * - HTTP 5xx responses, and 400/422 from fetch/XHR or documents;
  * - uncaught page errors (including unhandled promise rejections);
@@ -14,7 +17,8 @@
  * - `console.error` output, such as React error-boundary reports.
  *
  * The first action that triggers any of these halts the crawl with a report
- * naming the failure and the breadcrumb trail that reproduces it. Otherwise
+ * naming the failure, the breadcrumb trail that reproduces it, and the same
+ * trail as numbered plain-language steps (`reproduction_trail`). Otherwise
  * the crawl stops cleanly after `maxActions`, the time budget, or when no
  * unexplored control is left.
  */
@@ -27,6 +31,8 @@ export const DEFAULT_MAX_ACTIONS = 15;
 export const MAX_CRAWL_ACTIONS = 100;
 export const DEFAULT_CRAWL_TIMEOUT_MS = 60_000;
 export const MAX_CRAWL_TIMEOUT_MS = 300_000;
+/** Screens the crawler will jump to from its frontier; bounds sprawling sites. */
+const MAX_SCREENS = 30;
 /** Bound on one click or fill. */
 const ACTION_TIMEOUT_MS = 3_000;
 /** The page counts as settled once no request has been in flight for this long. */
@@ -35,8 +41,9 @@ const QUIET_MS = 400;
 const SETTLE_CAP_MS = 5_000;
 const MAX_BODY_BYTES = 4 * 1024;
 const MAX_LABEL_CHARS = 80;
-/** Elements the crawler can click. */
-const CLICKABLE_CSS = 'a[href], button, [role="button"], input[type="submit"], input[type="button"]';
+/** Elements the crawler can click, including script-driven cards (`onclick`, `data-href`, `role=link`). */
+const CLICKABLE_CSS =
+  'a[href], button, [role="button"], input[type="submit"], input[type="button"], [role="link"], [role="tab"], [role="menuitem"], [data-href], [onclick], summary';
 /** Elements the crawler can fill. */
 const FIELD_CSS = "input, textarea, select";
 /** 4xx statuses that signal a defect when an application request receives them. */
@@ -57,7 +64,11 @@ export interface Breadcrumb {
   label?: string;
   /** Value typed or selected. */
   value?: string;
+  /** Kind of element an interaction targeted. */
+  element?: ElementKind;
 }
+
+export type ElementKind = "button" | "link" | "field";
 
 export type SignalKind = "http_error" | "page_error" | "request_failed" | "console_error";
 
@@ -86,6 +97,19 @@ export interface CrawlFailure extends CrawlSignal {
 
 export type StopReason = "max_actions" | "timeout" | "exhausted";
 
+/** One distinct screen (URL) the crawler explored. */
+export interface ScreenVisit {
+  url: string;
+  /** Path, query, and any hash route, e.g. `/checkout`. */
+  path: string;
+  title: string;
+  /** Interactive elements found the first time the screen was scanned. */
+  elements: number;
+  forms: number;
+  /** Breadcrumb step that reached the screen. */
+  first_step: number;
+}
+
 interface CrawlSummary {
   target_url: string;
   breadcrumbs: Breadcrumb[];
@@ -94,26 +118,44 @@ interface CrawlSummary {
   /** Clicks, fills, selections, and checks performed (navigation excluded). */
   actions_taken: number;
   pages_visited: string[];
+  /** Every screen scanned, in the order first reached. */
+  screens_visited: ScreenVisit[];
   duration_ms: number;
 }
 
-export type CrawlReport =
+type ReportBody =
   | (CrawlSummary & { status: "failure"; failure: CrawlFailure })
   | (CrawlSummary & { status: "clean"; stop_reason: StopReason })
   | (CrawlSummary & { status: "error"; error: string });
+
+/** A crawl's outcome; `reproduction_trail` numbers the breadcrumbs as plain-language steps. */
+export type CrawlReport = ReportBody & { reproduction_trail: string[] };
 
 /** Progress events for live displays, emitted in order. */
 export type CrawlEvent =
   | { type: "launch" }
   | { type: "navigate"; step: number; url: string }
-  | { type: "discovered"; url: string; count: number; buttons: number; links: number; forms: number }
+  | {
+      type: "discovered";
+      url: string;
+      title: string;
+      /** Interactive elements on this screen. */
+      count: number;
+      buttons: number;
+      links: number;
+      forms: number;
+      /** Distinct elements discovered so far across every screen. */
+      total_elements: number;
+      /** Screens scanned so far, this one included. */
+      screens: number;
+    }
   | {
       type: "action";
       step: number;
       action: Exclude<CrawlAction, "navigate">;
       /** Page the action ran on. */
       url: string;
-      element: "button" | "link" | "field";
+      element: ElementKind;
       /** True for a button that submits a form. */
       submit: boolean;
       label: string;
@@ -154,8 +196,10 @@ export interface ClickableInfo {
   text: string;
   ariaLabel: string;
   value: string;
-  /** Absolute URL for links, otherwise empty. */
+  /** Absolute URL for links and `data-href` cards, otherwise empty. */
   href: string;
+  /** ARIA role attribute, e.g. `link` for a clickable product card. */
+  role: string;
   disabled: boolean;
   visible: boolean;
   /** Inside header, nav, or footer: global chrome explored after content. */
@@ -183,8 +227,10 @@ export interface FieldInfo {
   max: string;
   /** For selects, the first option with a non-empty value. */
   firstOption: string;
-  /** True when the field's form declares no required fields; such forms are filled entirely. */
+  /** True when the field's form (or, for a field outside any form, its page) declares no required fields; such fields are all filled. */
   formHasNoRequired: boolean;
+  /** For radios, whether any radio in the same group is already checked. */
+  groupChecked: boolean;
 }
 
 const DESTRUCTIVE = /\b(log ?out|sign ?out|delete|remove|clear|cancel|reset|unsubscribe|deactivate|empty cart)\b/i;
@@ -193,11 +239,22 @@ const CHECKOUT = /\b(check ?out|proceed|continue|next)\b/i;
 const ADD = /\b(add to (cart|bag|basket)|add)\b/i;
 const CART_PATH = /\/(checkout|cart|basket|bag)\b/i;
 
-/** Strips the fragment so in-page anchors do not count as new pages. */
+/** Strips the fragment so in-page anchors do not count as new pages; hash routes (`#/cart`, `#!/cart`) are kept. */
 export function normalizeUrl(raw: string): string {
   const url = new URL(raw);
-  url.hash = "";
+  if (!/^#!?\//.test(url.hash)) url.hash = "";
   return url.toString();
+}
+
+/** Same-origin pages are shown by path (`/checkout`); other URLs in full. */
+export function displayPath(raw: string, origin: string): string {
+  try {
+    const url = new URL(raw);
+    if (url.origin !== origin) return raw;
+    return `${url.pathname}${url.search}${/^#!?\//.test(url.hash) ? url.hash : ""}`;
+  } catch {
+    return raw;
+  }
 }
 
 /** Display name for an element: visible words, then accessible name, then value. */
@@ -222,7 +279,8 @@ export function scoreClickable(info: ClickableInfo, context: { origin: string; v
   if (DESTRUCTIVE.test(name)) return null;
 
   let score: number;
-  if (info.tag === "a") {
+  // Anchors and `data-href` cards navigate; judge them by their destination.
+  if (info.tag === "a" || info.href) {
     let target: URL;
     try {
       target = new URL(info.href);
@@ -239,33 +297,87 @@ export function scoreClickable(info: ClickableInfo, context: { origin: string; v
     score = 40;
   } else if (ADD.test(name)) {
     score = 25;
+  } else if (info.role === "link") {
+    // A script-driven product card: explore it like a content link.
+    score = 30;
   } else {
     score = info.submit ? 20 : 10;
   }
   return info.inChrome ? score - 35 : score;
 }
 
+/** Values for standard `autocomplete` tokens, which name a field exactly. */
+const AUTOCOMPLETE_VALUES: Readonly<Record<string, string>> = {
+  name: "Alex Tester",
+  "given-name": "Alex",
+  "additional-name": "J",
+  "family-name": "Tester",
+  nickname: "alex",
+  username: "faultline-tester",
+  email: "test@example.com",
+  tel: "555-010-0199",
+  "tel-national": "555-010-0199",
+  organization: "FaultLine QA",
+  "street-address": "123 Main St",
+  "address-line1": "123 Main St",
+  "address-line2": "Apt 4",
+  "address-level2": "Springfield",
+  "address-level1": "IL",
+  country: "US",
+  "country-name": "United States",
+  "postal-code": "62704",
+  "cc-name": "Alex Tester",
+  "cc-number": "4242 4242 4242 4242",
+  "cc-exp": "12/30",
+  "cc-exp-month": "12",
+  "cc-exp-year": "2030",
+  "cc-csc": "123",
+  bday: "1990-01-15",
+  url: "https://example.com",
+};
+
+/** Naming hints, tried in order against the field's words; earlier entries win. */
 const NAMED_VALUES: ReadonlyArray<readonly [RegExp, string]> = [
-  [/e-?mail/, "test@example.com"],
-  [/phone|tel|mobile/, "555-010-0199"],
-  [/zip|postal|postcode/, "62704"],
-  [/city|town/, "Springfield"],
-  [/state|province|region/, "IL"],
-  [/country/, "United States"],
-  [/address|street/, "123 Main St"],
-  [/card.?number|cc-number|cardnumber/, "4242 4242 4242 4242"],
-  [/cvc|cvv|security code/, "123"],
-  [/expir|exp-date|cc-exp/, "12/30"],
-  [/first.?name|given/, "Alex"],
-  [/last.?name|family|surname/, "Tester"],
-  [/user.?name|login/, "faultline-tester"],
-  [/company|organi[sz]ation/, "FaultLine QA"],
-  [/name/, "Alex Tester"],
-  [/coupon|promo|discount|voucher/, "SAVE10"],
-  [/search|query/, "test"],
-  [/qty|quantity|amount|count/, "1"],
-  [/age/, "30"],
+  [/\be ?mail\b/, "test@example.com"],
+  [/\b(phone|tel|telephone|mobile|cell)\b/, "555-010-0199"],
+  [/\b(zip|postal|post ?code|zip ?code)\b/, "62704"],
+  [/\b(city|town|locality)\b/, "Springfield"],
+  [/\b(state|province|region|county)\b/, "IL"],
+  [/\bcountry\b/, "United States"],
+  [/\b(card ?number|cc ?number|card ?no)\b/, "4242 4242 4242 4242"],
+  [/\b(cvc|cvv|csc|security ?code)\b/, "123"],
+  [/\b(expiry|expiration|expires|exp ?date|cc ?exp)\b/, "12/30"],
+  [/\b(address|street|addr|line ?1)\b/, "123 Main St"],
+  [/\b(first ?name|given ?name|fname)\b/, "Alex"],
+  [/\b(last ?name|family ?name|surname|lname)\b/, "Tester"],
+  [/\b(user ?name|login|handle)\b/, "faultline-tester"],
+  [/\b(company|organi[sz]ation|business)\b/, "FaultLine QA"],
+  [/\bname\b/, "Alex Tester"],
+  [/\b(coupon|promo|discount|voucher|gift ?code)\b/, "SAVE10"],
+  [/\b(search|query|keyword)\b/, "test"],
+  [/\b(qty|quantity|amount|count|units)\b/, "1"],
+  [/\bage\b/, "30"],
+  [/\b(message|comment|comments|note|notes|feedback|description)\b/, "Testing from FaultLine."],
 ];
+
+/** Splits names such as `shipping_postalCode` into lower-case words: `shipping postal code`. */
+function hintWords(...hints: string[]): string {
+  return hints
+    .join(" ")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[^A-Za-z0-9]+/g, " ")
+    .toLowerCase()
+    .trim();
+}
+
+function clampNumber(value: number, field: Pick<FieldInfo, "min" | "max">): string {
+  const min = Number.parseFloat(field.min);
+  const max = Number.parseFloat(field.max);
+  let result = value;
+  if (Number.isFinite(max) && result > max) result = max;
+  if (Number.isFinite(min) && result < min) result = min;
+  return String(result);
+}
 
 /**
  * Realistic sample value for a text-like field, chosen from its type and
@@ -294,30 +406,32 @@ export function sampleValueFor(field: Pick<FieldInfo, "tag" | "type" | "id" | "n
       return "2026-W03";
     case "color":
       return "#3366ff";
-    case "number":
-    case "range": {
-      const min = Number.parseFloat(field.min);
-      const max = Number.parseFloat(field.max);
-      let value = 10;
-      if (Number.isFinite(max) && value > max) value = max;
-      if (Number.isFinite(min) && value < min) value = min;
-      return String(value);
-    }
   }
-  const hints = [field.autocomplete, field.name, field.id, field.label, field.placeholder].join(" ").toLowerCase();
+  const hints = hintWords(field.name, field.id, field.label, field.placeholder);
+  if (type === "number" || type === "range") {
+    // A realistic order quantity, otherwise a mid-sized number; both within min/max.
+    return clampNumber(/\b(qty|quantity|count|units|items)\b/.test(hints) ? 2 : 10, field);
+  }
+  // `autocomplete` may hold a section and type prefix: "shipping postal-code".
+  const token = field.autocomplete.toLowerCase().trim().split(/\s+/).at(-1) ?? "";
+  const exact = AUTOCOMPLETE_VALUES[token];
+  if (exact) return exact;
+  const words = `${hintWords(field.autocomplete)} ${hints}`;
   for (const [pattern, value] of NAMED_VALUES) {
-    if (pattern.test(hints)) return value;
+    if (pattern.test(words)) return value;
   }
   return field.tag === "textarea" ? "Testing from FaultLine." : "test";
 }
 
-const UNFILLABLE_TYPES = new Set(["hidden", "submit", "button", "reset", "image", "file", "radio"]);
+const UNFILLABLE_TYPES = new Set(["hidden", "submit", "button", "reset", "image", "file"]);
 
 /** Whether the crawler should fill this field before clicking on. */
 export function shouldFill(field: FieldInfo): boolean {
   if (field.disabled || field.readOnly || !field.visible) return false;
   if (UNFILLABLE_TYPES.has(field.type)) return false;
   if (field.type === "checkbox") return field.required && !field.checked;
+  // One choice per required radio group: the first radio of an unanswered group.
+  if (field.type === "radio") return field.required && !field.groupChecked;
   if (!field.empty) return false;
   if (field.tag === "select") return field.required && field.firstOption !== "";
   // Optional fields stay empty: an optional coupon or promo box would otherwise
@@ -372,7 +486,7 @@ export function formatCrawlEvent(event: CrawlEvent): string | null {
     case "navigate":
       return `[Playwright] Navigating to ${event.url}...`;
     case "discovered":
-      return `[Playwright] Discovered ${event.count} interactive elements.`;
+      return `[Playwright] Discovered ${event.total_elements} interactive elements across ${event.screens} ${event.screens === 1 ? "screen" : "screens"}.`;
     case "action": {
       const value = event.action === "fill" || event.action === "select" ? ` with ${JSON.stringify(event.value)}` : "";
       const result = event.ok || !event.failure ? "OK" : `💥 ${describeSignal(event.failure)}`;
@@ -381,6 +495,39 @@ export function formatCrawlEvent(event: CrawlEvent): string | null {
     case "report":
       return null;
   }
+}
+
+/**
+ * The breadcrumbs as numbered plain-language steps a person can follow, with
+ * each element's selector in brackets and the failing step naming the defect.
+ */
+export function formatReproductionTrail(breadcrumbs: readonly Breadcrumb[], origin: string, failure?: CrawlFailure): string[] {
+  return breadcrumbs.map((crumb) => {
+    const page = displayPath(crumb.url, origin);
+    const label = JSON.stringify(crumb.label ?? "");
+    const value = JSON.stringify(crumb.value ?? "");
+    let line: string;
+    switch (crumb.action) {
+      case "navigate":
+        line = `Open ${crumb.url}`;
+        break;
+      case "click":
+        line = `Click ${crumb.element ?? "element"} ${label} on ${page}`;
+        break;
+      case "fill":
+        line = `Fill ${label} with ${value} on ${page}`;
+        break;
+      case "select":
+        line = `Select ${value} in ${label} on ${page}`;
+        break;
+      case "check":
+        line = `Check ${label} on ${page}`;
+        break;
+    }
+    const target = crumb.selector ? ` [${crumb.selector}]` : "";
+    const outcome = failure?.step === crumb.step ? ` -> ${describeSignal(failure)}` : "";
+    return `${crumb.step}. ${line}${target}${outcome}`;
+  });
 }
 
 function endpointOf(raw: string): string {
@@ -489,6 +636,7 @@ class PageMonitor {
 }
 
 interface Discovery {
+  title: string;
   clickables: ClickableInfo[];
   fields: FieldInfo[];
   forms: number;
@@ -503,6 +651,15 @@ async function discover(page: Page): Promise<Discovery> {
       const tag = el.tagName.toLowerCase();
       const input = el as HTMLInputElement;
       const button = el as HTMLButtonElement;
+      let href = tag === "a" ? (el as HTMLAnchorElement).href : "";
+      const dataHref = el.getAttribute("data-href");
+      if (!href && dataHref) {
+        try {
+          href = new URL(dataHref, location.href).toString();
+        } catch {
+          href = "";
+        }
+      }
       return {
         index,
         tag,
@@ -511,7 +668,8 @@ async function discover(page: Page): Promise<Discovery> {
         text: (el.innerText ?? "").replace(/\s+/g, " ").trim(),
         ariaLabel: (el.getAttribute("aria-label") ?? "").trim(),
         value: tag === "input" ? input.value : "",
-        href: tag === "a" ? (el as HTMLAnchorElement).href : "",
+        href,
+        role: (el.getAttribute("role") ?? "").toLowerCase(),
         disabled: button.disabled === true || el.getAttribute("aria-disabled") === "true",
         visible: rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none",
         inChrome: el.closest("header, nav, footer") !== null,
@@ -531,6 +689,11 @@ async function discover(page: Page): Promise<Discovery> {
       const form = el.form;
       const firstOption =
         tag === "select" ? (Array.from(el.options).find((option) => option.value !== "")?.value ?? "") : "";
+      const radio = tag === "input" && (el.getAttribute("type") ?? "").toLowerCase() === "radio";
+      const group =
+        radio && el.name
+          ? Array.from((form ?? document).querySelectorAll<HTMLInputElement>('input[type="radio"]')).filter((other) => other.name === el.name)
+          : [el];
       return {
         index,
         tag,
@@ -540,7 +703,8 @@ async function discover(page: Page): Promise<Discovery> {
         label: (labels.join(" ") || el.getAttribute("aria-label") || "").replace(/\s+/g, " ").trim(),
         placeholder: el.getAttribute("placeholder") ?? "",
         autocomplete: el.getAttribute("autocomplete") ?? "",
-        required: el.required === true,
+        // A required radio makes its whole group required.
+        required: radio ? group.some((other) => other.required) : el.required === true,
         empty: (el.value ?? "") === "",
         checked: tag === "input" ? el.checked === true : false,
         disabled: el.disabled === true || el.closest("fieldset:disabled") !== null,
@@ -549,11 +713,12 @@ async function discover(page: Page): Promise<Discovery> {
         min: el.getAttribute("min") ?? "",
         max: el.getAttribute("max") ?? "",
         firstOption,
-        formHasNoRequired: form !== null && form.querySelector("[required]") === null,
+        formHasNoRequired: (form ?? document).querySelector("[required]") === null,
+        groupChecked: radio ? group.some((other) => other.checked) : false,
       };
     }),
   );
-  return { clickables, fields, forms: await page.locator("form").count() };
+  return { title: await page.title(), clickables, fields, forms: await page.locator("form").count() };
 }
 
 /**
@@ -593,6 +758,7 @@ function clickableSelectors(info: ClickableInfo): string[] {
   if (info.text && info.text.length <= MAX_LABEL_CHARS) selectors.push(`${info.tag}:has-text(${JSON.stringify(info.text)})`);
   if (info.ariaLabel) selectors.push(`${info.tag}[aria-label=${JSON.stringify(info.ariaLabel)}]`);
   if (info.tag === "a" && info.href) selectors.push(`a[href=${JSON.stringify(new URL(info.href).pathname)}]`);
+  if (info.tag !== "a" && info.href && info.text) selectors.push(`${info.tag}[data-href]:has-text(${JSON.stringify(info.text.slice(0, MAX_LABEL_CHARS))})`);
   return selectors;
 }
 
@@ -645,6 +811,9 @@ export async function runAutonomousCrawler(options: CrawlOptions): Promise<Crawl
   const visited = new Set<string>();
   const tried = new Set<string>();
   const seenElements = new Set<string>();
+  const screens = new Map<string, ScreenVisit>();
+  /** Same-origin screens linked from explored ones, by best link score. */
+  const frontier = new Map<string, number>();
   let actionsTaken = 0;
 
   const summary = (): CrawlSummary => ({
@@ -653,9 +822,12 @@ export async function runAutonomousCrawler(options: CrawlOptions): Promise<Crawl
     elements_explored: seenElements.size,
     actions_taken: actionsTaken,
     pages_visited: [...visited],
+    screens_visited: [...screens.values()],
     duration_ms: Math.round(performance.now() - startedAt),
   });
-  const finish = (report: CrawlReport): CrawlReport => {
+  const finish = (body: ReportBody): CrawlReport => {
+    const failure = body.status === "failure" ? body.failure : undefined;
+    const report: CrawlReport = { ...body, reproduction_trail: formatReproductionTrail(body.breadcrumbs, start.origin, failure) };
     emit({ type: "report", report });
     return report;
   };
@@ -738,14 +910,35 @@ export async function runAutonomousCrawler(options: CrawlOptions): Promise<Crawl
           await monitor.settle(page, Math.min(SETTLE_CAP_MS, Math.max(0, remaining())));
           continue;
         }
-        const { clickables, fields, forms } = discovery;
+        const { title, clickables, fields, forms } = discovery;
         const identity = (info: ClickableInfo) => `${pageUrl}|click|${info.tag}|${info.text}|${info.ariaLabel}|${info.href}`;
         for (const info of clickables) seenElements.add(identity(info));
         for (const field of fields) seenElements.add(`${pageUrl}|field|${field.tag}|${fieldLabel(field)}`);
+        for (const info of clickables) {
+          if (!info.href) continue;
+          const score = scoreClickable(info, { origin: start.origin, visited });
+          if (score === null) continue;
+          const target = normalizeUrl(info.href);
+          frontier.set(target, Math.max(score, frontier.get(target) ?? -Infinity));
+        }
         if (announced !== pageUrl) {
           announced = pageUrl;
           const links = clickables.filter((info) => info.tag === "a").length;
-          emit({ type: "discovered", url: pageUrl, count: clickables.length + fields.length, buttons: clickables.length - links, links, forms });
+          const count = clickables.length + fields.length;
+          if (!screens.has(pageUrl)) {
+            screens.set(pageUrl, { url: pageUrl, path: displayPath(pageUrl, start.origin), title, elements: count, forms, first_step: breadcrumbs.length });
+          }
+          emit({
+            type: "discovered",
+            url: pageUrl,
+            title,
+            count,
+            buttons: clickables.length - links,
+            links,
+            forms,
+            total_elements: seenElements.size,
+            screens: screens.size,
+          });
         }
 
         const field = fields.find((candidate) => shouldFill(candidate) && !tried.has(`${pageUrl}|field|${candidate.index}|${fieldLabel(candidate)}`));
@@ -758,7 +951,7 @@ export async function runAutonomousCrawler(options: CrawlOptions): Promise<Crawl
           } catch {
             continue;
           }
-          const action: "fill" | "select" | "check" = field.type === "checkbox" ? "check" : field.tag === "select" ? "select" : "fill";
+          const action: "fill" | "select" | "check" = field.type === "checkbox" || field.type === "radio" ? "check" : field.tag === "select" ? "select" : "fill";
           const value = action === "check" ? "checked" : action === "select" ? field.firstOption : sampleValueFor(field);
           const before = monitor.signals.length;
           try {
@@ -771,7 +964,7 @@ export async function runAutonomousCrawler(options: CrawlOptions): Promise<Crawl
           }
           actionsTaken += 1;
           const step = breadcrumbs.length + 1;
-          breadcrumbs.push({ step, action, url: pageUrl, selector, label: fieldLabel(field), value });
+          breadcrumbs.push({ step, action, url: pageUrl, selector, label: fieldLabel(field), value, element: "field" });
           await monitor.settle(page, Math.min(SETTLE_CAP_MS, Math.max(0, remaining())));
           failure = failureSince(before, step);
           emit({ type: "action", step, action, url: pageUrl, element: "field", submit: false, label: fieldLabel(field), selector, value, ok: !failure, ...(failure ? { failure } : {}) });
@@ -785,6 +978,16 @@ export async function runAutonomousCrawler(options: CrawlOptions): Promise<Crawl
           .sort((a, b) => b.score - a.score || a.info.index - b.info.index);
         const next = ranked[0];
         if (!next) {
+          // Nothing left on this screen: jump to the best unvisited screen linked so far.
+          const jump = [...frontier.entries()]
+            .filter(([url]) => !visited.has(url))
+            .sort((a, b) => b[1] - a[1])[0];
+          if (jump && screens.size < MAX_SCREENS) {
+            frontier.delete(jump[0]);
+            failure = await navigate(jump[0]);
+            if (failure) return halt(failure);
+            continue;
+          }
           if (returnedHome || pageUrl === normalizeUrl(start.toString())) {
             return finish({ status: "clean", ...summary(), stop_reason: "exhausted" });
           }
@@ -803,6 +1006,7 @@ export async function runAutonomousCrawler(options: CrawlOptions): Promise<Crawl
           continue;
         }
         const label = labelOf(next.info);
+        const element: ElementKind = next.info.tag === "a" || next.info.href || next.info.role === "link" ? "link" : "button";
         const before = monitor.signals.length;
         try {
           await page.locator(selector).click({ timeout: Math.max(1, Math.min(ACTION_TIMEOUT_MS, remaining())) });
@@ -811,11 +1015,10 @@ export async function runAutonomousCrawler(options: CrawlOptions): Promise<Crawl
         }
         actionsTaken += 1;
         const step = breadcrumbs.length + 1;
-        breadcrumbs.push({ step, action: "click", url: pageUrl, selector, label });
+        breadcrumbs.push({ step, action: "click", url: pageUrl, selector, label, element });
         await page.waitForLoadState("domcontentloaded", { timeout: Math.max(1, Math.min(SETTLE_CAP_MS, remaining())) }).catch(() => undefined);
         await monitor.settle(page, Math.min(SETTLE_CAP_MS, Math.max(0, remaining())));
         failure = failureSince(before, step);
-        const element = next.info.tag === "a" ? "link" : "button";
         emit({ type: "action", step, action: "click", url: pageUrl, element, submit: next.info.submit, label, selector, ok: !failure, ...(failure ? { failure } : {}) });
         if (failure) return halt(failure);
       }

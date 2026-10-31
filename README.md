@@ -136,16 +136,47 @@ also run twice and may change the target's state. Exit codes are **0** for pass,
 transport errors can stop after the first session. This checks HTTP behavior and
 does not perform repairs or require sandbox prerequisites.
 
-To hunt for a defect without stating any expectation, point the crawler at a page:
+To hunt for a defect without stating any expectation, paste a URL:
 
 ```bash
-faultline crawl http://127.0.0.1:3000     # alias: faultline break
+faultline scan http://127.0.0.1:3000      # alias: faultline auto
 ```
 
-Headless Chromium discovers links, buttons, and forms on the same origin. It fills
-required fields with sample values (`test@example.com`, `123 Main St`), leaves
-optional ones such as coupon boxes empty, and clicks in shopping-funnel order. It
-skips destructive controls like Remove or Log out. The first action that triggers
+```text
+[Playwright] Navigating to http://127.0.0.1:3000/...
+[Playwright] Discovered 9 interactive elements across 1 screen.
+[Playwright] Exercising buttons and forms...
+[Playwright] Step 2: Clicking Trail Mug -> OK
+[Playwright] Discovered 17 interactive elements across 2 screens.
+[Playwright] Step 3: Clicking Add to cart -> OK
+[Playwright] Step 4: Clicking Go to checkout -> OK
+[Playwright] Discovered 30 interactive elements across 3 screens.
+[Playwright] Step 5: Filling Name with "Alex Tester" -> OK
+[Playwright] Step 6: Filling Email with "test@example.com" -> OK
+[Playwright] Step 7: Filling Address with "123 Main St" -> OK
+[Playwright] Step 8: Clicking Place order -> FAILED
+[Playwright] 💥 BUG CAUGHT: HTTP 500 on POST /api/checkout
+```
+
+The scan prints the evidence and the numbered reproduction journey, then asks
+`Defect intercepted! Propose and verify patch with Meta in sandbox? [Y/n]`. On yes
+it starts the sandbox run for the scenario covering that route on the running
+engine (`--port`, default `$FAULTLINE_PORT` or 9000) and streams it with the
+`listen` HUD. The prompt names Meta only when readiness reports the Meta provider;
+otherwise it names the fallback or offers detection only. `--yes` dispatches
+without asking (required when stdin is not a terminal), and `--no-repair` only
+reports. Defects with no covering scenario, page errors, and an unreachable engine
+are explained instead of dispatched. Defaults are 25 actions and 90 seconds.
+
+`faultline crawl URL` (alias `break`) runs the same crawl without the repair offer.
+Headless Chromium discovers links, buttons, script-driven product cards, and forms
+on the same origin. When a screen has nothing left to try, it opens the most
+promising unvisited screen it has seen linked (cart and checkout first). It fills
+required fields with realistic values chosen from `autocomplete` tokens and field
+names (`Alex Tester`, `test@example.com`, `123 Main St`, `62704`, `555-010-0199`, a
+quantity of 2 within the field's limits, the first choice of a required radio
+group), leaves optional ones such as coupon boxes empty, and clicks in
+shopping-funnel order. It skips destructive controls like Remove or Log out. The first action that triggers
 an HTTP 5xx, a 400/422 on a fetch or page load, an uncaught page error, or a
 `console.error` stops the crawl. The report gives the endpoint, response body,
 stack, and the breadcrumb selectors that reproduce the failure. Against the seeded
@@ -153,8 +184,13 @@ store it stops at **Place order** with `HTTP 500 on POST /api/checkout`. Exit co
 are **0** clean (after `--max-actions`, default 15, or nothing left to try), **1**
 defect found or crawl failure, and **2** invalid input. `--json` prints only the
 report. The orchestrator exposes the same crawl as an authenticated
-`POST /api/crawl` with body `{"url": "...", "max_actions": 15}`. The Inspector's
-**Unleash Autonomous Agent** button streams it live through `POST /api/faultline/crawl`.
+`POST /api/crawl` with body `{"url": "...", "max_actions": 15}`. Its reply adds
+structured telemetry to the report: `elements_explored`, `screens_visited` (path,
+title, element and form counts, the step that reached it), `actions` (each
+interaction with `ok`), `failure` (null when clean), and `reproduction_trail`
+(numbered plain-language steps with selectors). The Inspector's **Unleash
+Autonomous Agent** button streams it live through `POST /api/faultline/crawl`,
+whose closing `done` event carries the same telemetry.
 
 Then, inside any Next.js, Vite, Express, or FastAPI repository:
 
@@ -215,6 +251,7 @@ Static AST inspection and Git worktrees are policy and source-management tools; 
 | --- | --- |
 | `faultline init` | Detects the stack and writes a reviewable `faultline.toml` |
 | `faultline check` | Gates a running service on declared HTTP invariants, each measured in two fresh sessions; `--repair` asks for a sandbox-verified candidate without touching source |
+| `faultline scan URL` | Paste a URL: explores every same-origin screen, fills forms, catches the first defect, prints its reproduction journey, and offers to propose and verify a patch in the sandbox; alias `faultline auto` |
 | `faultline crawl URL` | Clicks through a site in headless Chromium until something breaks, then prints the failure and its reproduction breadcrumbs; alias `faultline break` |
 | `faultline doctor` | Checks sandbox prerequisites, the Meta key, and service health |
 | `faultline run [scenario]` | Freezes tracked source, needs two matching isolated failures, requests a Meta patch, verifies it, and writes a checksummed proof to `.faultline/runs`; `--detect` stops before the model call |
@@ -270,13 +307,13 @@ These results describe an authored corpus for one checkout route, not arbitrary 
 | Suite | Tests |
 | --- | ---: |
 | Backend, scripts, and fixtures (pytest) | 286 |
-| Repair orchestrator and CLI (pytest) | 755 |
-| Browser runner unit tests | 117 |
-| **Unit and integration total** (`make check`) | **1,158** |
+| Repair orchestrator and CLI (pytest) | 769 |
+| Browser runner unit tests | 123 |
+| **Unit and integration total** (`make check`) | **1,178** |
 | Inspector browser tests (Playwright) | 39 |
 | Storefront browser test (Playwright) | 1 |
 | **Browser total** (`make browser`) | **40** |
-| **All automated tests** | **1,198** |
+| **All automated tests** | **1,218** |
 
 `make check` also runs Ruff lint and format checks, strict mypy, fixture and corpus provenance, the storefront, runner, and Inspector builds, and both Python distribution builds. `make integration` exercises real isolated Chromium and cgroup enforcement, and `make evaluate` runs the corpus.
 

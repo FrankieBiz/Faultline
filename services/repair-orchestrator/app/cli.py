@@ -1621,6 +1621,13 @@ def cmd_crawl(args: argparse.Namespace) -> int:
     return crawl_command(args, _palette(args))
 
 
+def cmd_scan(args: argparse.Namespace) -> int:
+    """Crawl a URL, show any defect's reproduction journey, and offer a sandboxed repair."""
+    from app.cli_crawl import scan_command
+
+    return scan_command(args, _palette(args), port=_orchestrator_port(args))
+
+
 def cmd_demo(args: argparse.Namespace) -> int:
     """Connect to the complete demo, or launch it with the existing session supervisor."""
     from app import cli_demo
@@ -1797,6 +1804,38 @@ def build_parser() -> argparse.ArgumentParser:
     p_crawl.add_argument("--json", action="store_true", help="Emit exactly one JSON report")
     output_flags(p_crawl)
     p_crawl.set_defaults(func=cmd_crawl)
+
+    p_scan = subparsers.add_parser(
+        "scan",
+        aliases=["auto"],
+        help="Paste a URL: explore every screen, catch defects, and offer a sandboxed repair",
+    )
+    p_scan.add_argument("url", metavar="URL", help="Site to scan, e.g. http://127.0.0.1:3000")
+    p_scan.add_argument(
+        "--max-actions",
+        type=_bounded_int(1, 100),
+        default=25,
+        help="Clicks and fills before stopping clean (1-100, default 25)",
+    )
+    p_scan.add_argument(
+        "--timeout",
+        type=_bounded_int(1, 300),
+        default=90,
+        help="Crawl budget in seconds (1-300, default 90)",
+    )
+    repair_choice = p_scan.add_mutually_exclusive_group()
+    repair_choice.add_argument(
+        "-y", "--yes", action="store_true", help="Dispatch the sandboxed repair without asking"
+    )
+    repair_choice.add_argument(
+        "--no-repair", action="store_true", help="Report the defect without offering a repair"
+    )
+    p_scan.add_argument(
+        "--json", action="store_true", help="Emit exactly one JSON report with telemetry"
+    )
+    orchestrator_port_flag(p_scan)
+    output_flags(p_scan)
+    p_scan.set_defaults(func=cmd_scan)
 
     p_check = subparsers.add_parser("check", help="Gate on a running project's HTTP invariants")
     p_check.add_argument("--config", default="faultline.toml")
