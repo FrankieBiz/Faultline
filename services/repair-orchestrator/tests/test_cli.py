@@ -1880,9 +1880,10 @@ def test_url_check_bad_options_are_usage_errors(flags: tuple[str, str]) -> None:
 
 
 @pytest.fixture
-def demo_ports(monkeypatch: pytest.MonkeyPatch) -> tuple[int, ...]:
+def demo_ports(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[int, ...]:
     from app import cli_demo
 
+    monkeypatch.setattr("app.cli.REPOSITORY_ROOT", tmp_path)
     for name in cli_demo.PORT_NAMES:
         monkeypatch.delenv(name, raising=False)
     return cli_demo.DEFAULT_PORTS

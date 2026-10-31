@@ -1,5 +1,12 @@
 # Agent handoff state
 
+## October 31: one-command CLI integration (codex-streamline-cli)
+
+- Integrated both implementation commits. Full real-stack smoke passed on temporary ports: cold launch, reconnect, owned restart while the original CLI waited, and Ctrl+C cleanup releasing all four ports. The existing `sander` stack on default ports remained active and was recognized read-only.
+- Isolated `demo_ports` tests to a temporary repository root after running pytest alongside cold startup exposed two tests contending for the real installation lock. The requested CLI suite then passed **208 tests** while a separate process deliberately held the real installation lock.
+- Independent subprocess HTTP checks passed for GET success/failure, POST with expected 201, JSON output, and invalid-scheme rejection; completed probes used distinct session IDs without cookie carryover.
+- Final coordinator `make check` exited **0**: **286 backend/script + 709 orchestrator + 96 runner = 1,091** tests, lint/format, strict typing, provenance, frontend/runner builds, and both Python distribution builds.
+
 ## October 31: concurrent demo launch fix (cli-one-command-worker child)
 
 - **Root cause:** process discovery alone admitted two simultaneous cold starts before either had spawned its launcher, causing concurrent Next builds. Parent reproduced the race during full-stack smoke; child regression tests reproduced both missing lock enforcement and stale-snapshot admission before the fix.
