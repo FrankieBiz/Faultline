@@ -56,4 +56,29 @@ test.describe("parseCliArgs", () => {
   test("returns help", () => {
     expect(parseCliArgs(["--help"])).toEqual({ kind: "help" });
   });
+
+  test("parses --crawl with defaults and bounds", () => {
+    expect(parseCliArgs(["--crawl", "http://127.0.0.1:3000"])).toEqual({
+      kind: "crawl",
+      url: "http://127.0.0.1:3000",
+      maxActions: 15,
+      timeoutMs: 60_000,
+      ndjson: false,
+    });
+    expect(parseCliArgs(["--crawl", "http://x", "--max-actions", "40", "--timeout-ms", "120000", "--ndjson"])).toEqual({
+      kind: "crawl",
+      url: "http://x",
+      maxActions: 40,
+      timeoutMs: 120_000,
+      ndjson: true,
+    });
+  });
+
+  test("rejects invalid crawl input and checkout flags mixed with --crawl", () => {
+    expect(() => parseCliArgs(["--crawl", "http://x", "--max-actions", "0"])).toThrow(CliUsageError);
+    expect(() => parseCliArgs(["--crawl", "http://x", "--max-actions", "1.5"])).toThrow(CliUsageError);
+    expect(() => parseCliArgs(["--crawl", "http://x", "--timeout-ms", "999999"])).toThrow(CliUsageError);
+    expect(() => parseCliArgs(["--crawl", "http://x", "--base-url", "http://x"])).toThrow(/cannot be combined/);
+    expect(() => parseCliArgs(["--base-url", "http://x", "--ndjson"])).toThrow(/require --crawl/);
+  });
 });

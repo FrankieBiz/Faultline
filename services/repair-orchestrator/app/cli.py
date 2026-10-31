@@ -115,6 +115,19 @@ def _port_arg(value: str) -> int:
     return port
 
 
+def _bounded_int(low: int, high: int) -> Any:
+    def parse(value: str) -> int:
+        try:
+            number = int(value)
+        except ValueError:
+            number = low - 1
+        if not low <= number <= high:
+            raise argparse.ArgumentTypeError(f"{value} is not a whole number from {low} to {high}")
+        return number
+
+    return parse
+
+
 def _process_listens_on(pid: str, port: int) -> bool:
     try:
         argv = Path(f"/proc/{pid}/cmdline").read_bytes().decode(errors="replace").split("\x00")
@@ -1601,6 +1614,13 @@ def cmd_test(args: argparse.Namespace) -> int:
     return int(result["exit_code"])
 
 
+def cmd_crawl(args: argparse.Namespace) -> int:
+    """Click through a site in headless Chromium until a control breaks something."""
+    from app.cli_crawl import crawl_command
+
+    return crawl_command(args, _palette(args))
+
+
 def cmd_demo(args: argparse.Namespace) -> int:
     """Connect to the complete demo, or launch it with the existing session supervisor."""
     from app import cli_demo
@@ -1755,6 +1775,28 @@ def build_parser() -> argparse.ArgumentParser:
     p_test.add_argument("--json", action="store_true", help="Emit exactly one JSON result")
     output_flags(p_test)
     p_test.set_defaults(func=cmd_test)
+
+    p_crawl = subparsers.add_parser(
+        "crawl",
+        aliases=["break"],
+        help="Point headless Chromium at a URL and click until something breaks",
+    )
+    p_crawl.add_argument("url", metavar="URL", help="Site to crawl, e.g. http://127.0.0.1:3000")
+    p_crawl.add_argument(
+        "--max-actions",
+        type=_bounded_int(1, 100),
+        default=15,
+        help="Clicks and fills before stopping clean (1-100, default 15)",
+    )
+    p_crawl.add_argument(
+        "--timeout",
+        type=_bounded_int(1, 300),
+        default=60,
+        help="Crawl budget in seconds (1-300, default 60)",
+    )
+    p_crawl.add_argument("--json", action="store_true", help="Emit exactly one JSON report")
+    output_flags(p_crawl)
+    p_crawl.set_defaults(func=cmd_crawl)
 
     p_check = subparsers.add_parser("check", help="Gate on a running project's HTTP invariants")
     p_check.add_argument("--config", default="faultline.toml")

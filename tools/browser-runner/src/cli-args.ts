@@ -6,10 +6,12 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { parseArgs } from "node:util";
+import { DEFAULT_CRAWL_TIMEOUT_MS, DEFAULT_MAX_ACTIONS, MAX_CRAWL_ACTIONS, MAX_CRAWL_TIMEOUT_MS } from "./crawler.js";
 import { MAX_TIMEOUT_MS, type CheckoutScenarioOptions } from "./oracle.js";
 
 /** Usage text printed for `--help` and argument errors. */
 export const USAGE = `Usage: faultline-browser-runner --base-url <url> [options]
+       faultline-browser-runner --crawl <url> [--max-actions <n>] [--timeout-ms <ms>] [--ndjson]
 
 Runs the trusted checkout scenario once and writes a canonical ExecutionReport.
 
@@ -27,7 +29,16 @@ Options:
   --execution-id <id>      Execution ID (default: a fresh UUID)
   -h, --help               Show this help
 
-Exit codes: 0 passed, 1 assertion failed, 2 runner/infrastructure error, 3 timed out.`;
+Autonomous crawl:
+  --crawl <url>            Click through the site in headless Chromium until a
+                           control triggers an HTTP 5xx/400/422, an uncaught
+                           error, or console.error; no expectations needed
+  --max-actions <n>        Interactions before stopping clean, 1-${MAX_CRAWL_ACTIONS} (default: ${DEFAULT_MAX_ACTIONS})
+  --timeout-ms <ms>        Crawl budget, 1000-${MAX_CRAWL_TIMEOUT_MS} (default: ${DEFAULT_CRAWL_TIMEOUT_MS})
+  --ndjson                 Print one JSON event per line, ending with {"type":"report"}
+
+Exit codes: 0 passed, 1 assertion failed, 2 runner/infrastructure error, 3 timed out.
+Crawl exit codes: 0 clean, 1 defect found, 2 runner/infrastructure error.`;
 
 /** Raised for invalid command-line input; the CLI exits with code 2. */
 export class CliUsageError extends Error {
@@ -40,6 +51,7 @@ export class CliUsageError extends Error {
 /** Parsed CLI invocation. */
 export type CliCommand =
   | { kind: "help" }
+  | { kind: "crawl"; url: string; maxActions: number; timeoutMs: number; ndjson: boolean }
   | { kind: "run"; scenario: CheckoutScenarioOptions & { artifactsDir: string; executionId: string }; outputJson: string };
 
 function parseTimeout(raw: string | undefined): number | undefined {
@@ -47,6 +59,14 @@ function parseTimeout(raw: string | undefined): number | undefined {
   if (!/^\d+$/.test(raw)) throw new CliUsageError(`--timeout-ms must be a whole number of milliseconds; received "${raw}".`);
   const value = Number(raw);
   if (value > MAX_TIMEOUT_MS) throw new CliUsageError(`--timeout-ms cannot exceed ${MAX_TIMEOUT_MS}.`);
+  return value;
+}
+
+function parseBoundedInteger(flag: string, raw: string | undefined, min: number, max: number): number | undefined {
+  if (raw === undefined) return undefined;
+  if (!/^\d+$/.test(raw)) throw new CliUsageError(`${flag} must be a whole number; received "${raw}".`);
+  const value = Number(raw);
+  if (value < min || value > max) throw new CliUsageError(`${flag} must be from ${min} to ${max}.`);
   return value;
 }
 
@@ -71,6 +91,9 @@ export function parseCliArgs(argv: readonly string[], cwd: string = process.cwd(
         "artifacts-dir": { type: "string" },
         "timeout-ms": { type: "string" },
         "execution-id": { type: "string" },
+        crawl: { type: "string" },
+        "max-actions": { type: "string" },
+        ndjson: { type: "boolean" },
         help: { type: "boolean", short: "h" },
       },
     }));
@@ -79,6 +102,22 @@ export function parseCliArgs(argv: readonly string[], cwd: string = process.cwd(
   }
 
   if (values.help) return { kind: "help" };
+
+  if (values.crawl !== undefined) {
+    const checkoutOnly = ["base-url", "case-id", "coupon", "output-json", "artifacts-dir", "execution-id"] as const;
+    const conflict = checkoutOnly.find((name) => values[name] !== undefined);
+    if (conflict) throw new CliUsageError(`--${conflict} cannot be combined with --crawl.`);
+    return {
+      kind: "crawl",
+      url: values.crawl,
+      maxActions: parseBoundedInteger("--max-actions", values["max-actions"], 1, MAX_CRAWL_ACTIONS) ?? DEFAULT_MAX_ACTIONS,
+      timeoutMs: parseBoundedInteger("--timeout-ms", values["timeout-ms"], 1_000, MAX_CRAWL_TIMEOUT_MS) ?? DEFAULT_CRAWL_TIMEOUT_MS,
+      ndjson: values.ndjson === true,
+    };
+  }
+  if (values["max-actions"] !== undefined || values.ndjson) {
+    throw new CliUsageError("--max-actions and --ndjson require --crawl.");
+  }
 
   const baseUrl = values["base-url"];
   if (!baseUrl) throw new CliUsageError("--base-url is required.");

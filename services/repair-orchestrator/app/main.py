@@ -23,6 +23,7 @@ from sse_starlette import ServerSentEvent
 from sse_starlette.sse import EventSourceResponse
 
 from app import live_store
+from app.api import build_crawl_router
 from app.database import MAX_EVENT_SEQUENCE, TERMINAL_STATES, Database, DatabaseError
 from app.evidence import ArtifactError, EvidenceStore
 from app.model_adapter import MetaRepairAdapter, ModelSettings
@@ -573,6 +574,7 @@ def create_app(
         )
 
     application.include_router(routes)
+    application.include_router(build_crawl_router([Depends(authorize)]))
     return application
 
 

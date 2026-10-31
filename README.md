@@ -136,6 +136,25 @@ also run twice and may change the target's state. Exit codes are **0** for pass,
 transport errors can stop after the first session. This checks HTTP behavior and
 does not perform repairs or require sandbox prerequisites.
 
+To hunt for a defect without stating any expectation, point the crawler at a page:
+
+```bash
+faultline crawl http://127.0.0.1:3000     # alias: faultline break
+```
+
+Headless Chromium discovers links, buttons, and forms on the same origin. It fills
+required fields with sample values (`test@example.com`, `123 Main St`), leaves
+optional ones such as coupon boxes empty, and clicks in shopping-funnel order. It
+skips destructive controls like Remove or Log out. The first action that triggers
+an HTTP 5xx, a 400/422 on a fetch or page load, an uncaught page error, or a
+`console.error` stops the crawl. The report gives the endpoint, response body,
+stack, and the breadcrumb selectors that reproduce the failure. Against the seeded
+store it stops at **Place order** with `HTTP 500 on POST /api/checkout`. Exit codes
+are **0** clean (after `--max-actions`, default 15, or nothing left to try), **1**
+defect found or crawl failure, and **2** invalid input. `--json` prints only the
+report. The orchestrator exposes the same crawl as an authenticated
+`POST /api/crawl` with body `{"url": "...", "max_actions": 15}`.
+
 Then, inside any Next.js, Vite, Express, or FastAPI repository:
 
 ```bash
@@ -195,6 +214,7 @@ Static AST inspection and Git worktrees are policy and source-management tools; 
 | --- | --- |
 | `faultline init` | Detects the stack and writes a reviewable `faultline.toml` |
 | `faultline check` | Gates a running service on declared HTTP invariants, each measured in two fresh sessions; `--repair` asks for a sandbox-verified candidate without touching source |
+| `faultline crawl URL` | Clicks through a site in headless Chromium until something breaks, then prints the failure and its reproduction breadcrumbs; alias `faultline break` |
 | `faultline doctor` | Checks sandbox prerequisites, the Meta key, and service health |
 | `faultline run [scenario]` | Freezes tracked source, needs two matching isolated failures, requests a Meta patch, verifies it, and writes a checksummed proof to `.faultline/runs`; `--detect` stops before the model call |
 | `faultline listen [job]` | Streams a job's stages as a live HUD with a cyan spinner and progress bar for in-flight work; `--plain` gives one line per stage for CI logs |
@@ -249,13 +269,13 @@ These results describe an authored corpus for one checkout route, not arbitrary 
 | Suite | Tests |
 | --- | ---: |
 | Backend, scripts, and fixtures (pytest) | 286 |
-| Repair orchestrator and CLI (pytest) | 709 |
-| Browser runner unit tests | 96 |
-| **Unit and integration total** (`make check`) | **1,091** |
+| Repair orchestrator and CLI (pytest) | 747 |
+| Browser runner unit tests | 117 |
+| **Unit and integration total** (`make check`) | **1,150** |
 | Inspector browser tests (Playwright) | 37 |
 | Storefront browser test (Playwright) | 1 |
 | **Browser total** (`make browser`) | **38** |
-| **All automated tests** | **1,129** |
+| **All automated tests** | **1,188** |
 
 `make check` also runs Ruff lint and format checks, strict mypy, fixture and corpus provenance, the storefront, runner, and Inspector builds, and both Python distribution builds. `make integration` exercises real isolated Chromium and cgroup enforcement, and `make evaluate` runs the corpus.
 

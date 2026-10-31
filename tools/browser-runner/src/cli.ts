@@ -6,12 +6,17 @@
  * JSON, and exits with the contract's code for the run outcome. Stdout
  * carries a short human-readable summary only; the report file is the
  * machine channel.
+ *
+ * `--crawl <url>` instead runs the autonomous crawler and prints its
+ * progress and CrawlReport on stdout (one JSON event per line with
+ * `--ndjson`).
  */
 
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { CliUsageError, USAGE, parseCliArgs } from "./cli-args.js";
+import { CliUsageError, USAGE, parseCliArgs, type CliCommand } from "./cli-args.js";
 import { EXIT_CODES, type ExecutionReport } from "./contracts.js";
+import { CrawlOptionsError, describeSignal, formatCrawlEvent, runAutonomousCrawler, type CrawlEvent, type CrawlReport } from "./crawler.js";
 import { ScenarioOptionsError, executeCheckoutScenario, type ScenarioRun } from "./oracle.js";
 
 const INFRASTRUCTURE_EXIT = EXIT_CODES.infrastructure_error;
@@ -40,6 +45,40 @@ function printSummary(run: ScenarioRun, outputJson: string): void {
   process.stdout.write(`${lines.join("\n")}\n`);
 }
 
+const CRAWL_EXIT_CODES: Readonly<Record<CrawlReport["status"], number>> = { clean: 0, failure: 1, error: INFRASTRUCTURE_EXIT };
+
+/** Runs the autonomous crawler, streaming progress as text or NDJSON on stdout. */
+async function crawl(command: Extract<CliCommand, { kind: "crawl" }>): Promise<number> {
+  const onEvent = (event: CrawlEvent): void => {
+    if (command.ndjson) {
+      process.stdout.write(`${JSON.stringify(event)}\n`);
+      return;
+    }
+    const line = formatCrawlEvent(event);
+    if (line) process.stdout.write(`${line}\n`);
+  };
+  let report: CrawlReport;
+  try {
+    report = await runAutonomousCrawler({ url: command.url, maxActions: command.maxActions, timeoutMs: command.timeoutMs, onEvent });
+  } catch (error) {
+    if (error instanceof CrawlOptionsError) {
+      process.stderr.write(`${error.message}\n`);
+      return INFRASTRUCTURE_EXIT;
+    }
+    throw error;
+  }
+  if (!command.ndjson) {
+    const verdict =
+      report.status === "failure"
+        ? `Defect intercepted at step ${report.failure.step}: ${describeSignal(report.failure)}`
+        : report.status === "clean"
+          ? `Clean: no failure after ${report.actions_taken} actions (${report.stop_reason}).`
+          : `Crawl error: ${report.error}`;
+    process.stdout.write(`${verdict}\n${JSON.stringify(report, null, 2)}\n`);
+  }
+  return CRAWL_EXIT_CODES[report.status];
+}
+
 async function main(): Promise<number> {
   let command;
   try {
@@ -56,6 +95,7 @@ async function main(): Promise<number> {
     process.stdout.write(`${USAGE}\n`);
     return 0;
   }
+  if (command.kind === "crawl") return crawl(command);
 
   let run: ScenarioRun;
   try {
