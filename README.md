@@ -83,10 +83,17 @@ make setup
 ### 3. Launch the demo stack
 
 ```bash
-./scripts/start-demo.sh
+./faultline demo
 ```
 
-Then open the **Inspector at <http://127.0.0.1:4000>**.
+This opens the **Inspector at <http://127.0.0.1:4000>**. If the complete demo is
+already healthy, it prints `FaultLine demo stack is already active` and connects.
+Otherwise it runs the existing `scripts/start-demo.sh` launcher in the foreground;
+Ctrl+C stops that session. Use `--no-open` to print the URL without opening a browser,
+or `--restart` to restart a demo owned by this installation's identifiable launcher.
+Foreign services, partial stacks without `--restart`, and restarts of other worktrees
+are refused. Other-port stacks are preserved; use a separate worktree if one is
+already using this installation's build files.
 
 | Service | URL |
 | --- | --- |
@@ -98,7 +105,7 @@ Then open the **Inspector at <http://127.0.0.1:4000>**.
 The launcher binds every service to loopback, generates a session control credential if needed, and keeps job history. If a port is taken, it reports the owner instead of killing it. Ctrl+C stops only the processes it started. To use other ports:
 
 ```bash
-BUGGYSHOP_API_PORT=8400 FAULTLINE_PORT=9400 BUGGYSHOP_PORT=3400 INSPECTOR_PORT=4400 ./scripts/start-demo.sh
+BUGGYSHOP_API_PORT=8400 FAULTLINE_PORT=9400 BUGGYSHOP_PORT=3400 INSPECTOR_PORT=4400 ./faultline demo
 FAULTLINE_INSPECTOR_URL=http://127.0.0.1:4400 ./scripts/rehearse-demo.sh
 ```
 
@@ -112,6 +119,21 @@ The root `faultline` launcher resolves its own installation through symlinks and
 mkdir -p ~/.local/bin
 ln -sf "$(pwd)/faultline" ~/.local/bin/faultline
 ```
+
+To test any running HTTP service without project configuration:
+
+```bash
+faultline test http://localhost:3000
+faultline test http://localhost:8000/healthz --method GET --status 200 --json
+```
+
+The command sends the request in two fresh sessions, without a request body or
+redirect following. Both must match the expected status to pass. Non-GET requests
+also run twice and may change the target's state. Exit codes are **0** for pass,
+**1** for failure (including flaky or unreachable), **2** for invalid input, and
+**130** for interruption. `--json` emits one result with the actual session count;
+transport errors can stop after the first session. This checks HTTP behavior and
+does not perform repairs or require sandbox prerequisites.
 
 Then, inside any Next.js, Vite, Express, or FastAPI repository:
 
@@ -224,13 +246,13 @@ These results describe an authored corpus for one checkout route, not arbitrary 
 | Suite | Tests |
 | --- | ---: |
 | Backend, scripts, and fixtures (pytest) | 286 |
-| Repair orchestrator and CLI (pytest) | 665 |
+| Repair orchestrator and CLI (pytest) | 703 |
 | Browser runner unit tests | 96 |
-| **Unit and integration total** (`make check`) | **1,047** |
+| **Unit and integration total** (`make check`) | **1,085** |
 | Inspector browser tests (Playwright) | 32 |
 | Storefront browser test (Playwright) | 1 |
 | **Browser total** (`make browser`) | **33** |
-| **All automated tests** | **1,080** |
+| **All automated tests** | **1,118** |
 
 `make check` also runs Ruff lint and format checks, strict mypy, fixture and corpus provenance, the storefront, runner, and Inspector builds, and both Python distribution builds. `make integration` exercises real isolated Chromium and cgroup enforcement, and `make evaluate` runs the corpus.
 

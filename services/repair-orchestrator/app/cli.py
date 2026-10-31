@@ -1520,6 +1520,151 @@ def cmd_check(args: argparse.Namespace) -> int:
     return int(result["exit_code"])
 
 
+def cmd_test(args: argparse.Namespace) -> int:
+    """Check one URL with the same fresh-session HTTP engine as configured invariants."""
+    from pydantic import ValidationError
+
+    from app.probes import ProbeRequest, run_check
+
+    result: dict[str, Any] = {
+        "schema": 1,
+        "command": "test",
+        "passed": False,
+        "sessions": [],
+        "errors": [],
+        "exit_code": 2,
+    }
+    try:
+        invariant = ProbeRequest.model_validate(
+            {"url": args.url, "method": args.method, "expected_status": args.status}
+        ).invariant()
+    except (ValueError, ValidationError) as exc:
+        message = (
+            "; ".join(f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in exc.errors())
+            if isinstance(exc, ValidationError)
+            else str(exc)
+        )
+        result["errors"].append(message)
+    else:
+        try:
+            record = asyncio.run(
+                run_check(
+                    invariant,
+                    port=None,
+                    live_store_url="",
+                    scenarios={},
+                    redact=lambda _: "[omitted]",
+                )
+            )
+            passed = (
+                record.outcome == "no_failure"
+                and len(record.sessions) == 2
+                and all(
+                    session.error is None
+                    and len(session.assertions) == 1
+                    and all(assertion.passed for assertion in session.assertions)
+                    for session in record.sessions
+                )
+            )
+            result.update(
+                passed=passed,
+                method=record.method,
+                url=record.url,
+                expected_status=invariant.expected_status,
+                outcome=record.outcome,
+                reason=record.reason,
+                sessions=[s.model_dump() for s in record.sessions],
+                exit_code=0 if passed else 1,
+            )
+        except KeyboardInterrupt:
+            result.update(exit_code=130, errors=["Interrupted"])
+        except (OSError, ValueError, RuntimeError) as exc:
+            result.update(exit_code=1, errors=[f"Probe could not complete ({type(exc).__name__})"])
+    if args.json:
+        print(json.dumps(result, ensure_ascii=True))
+    else:
+        c = _palette(args)
+        verdict = "PASS" if result["passed"] else "FAIL"
+        color = c.green if result["passed"] else c.red
+        print(f"{color}faultline test: {verdict}{c.reset}")
+        if "outcome" in result:
+            statuses = ", ".join(
+                str(s["status"]) if s["status"] is not None else "no response"
+                for s in result["sessions"]
+            )
+            print(
+                f"{result['method']} {result['url']} — expected HTTP {args.status}; got {statuses}"
+            )
+            print(_describe_check(result))
+        for error in result["errors"]:
+            print("error: " + error)
+    return int(result["exit_code"])
+
+
+def cmd_demo(args: argparse.Namespace) -> int:
+    """Connect to the complete demo, or launch it with the existing session supervisor."""
+    from app import cli_demo
+
+    c = _palette(args)
+    ports = tuple(
+        _env_port(name, default)
+        for name, default in zip(cli_demo.PORT_NAMES, cli_demo.DEFAULT_PORTS, strict=True)
+    )
+    if len(set(ports)) != 4:
+        print("faultline demo: Demo ports must be distinct.", file=sys.stderr)
+        return 2
+    root = REPOSITORY_ROOT.resolve()
+    url = f"http://127.0.0.1:{ports[3]}"
+
+    def ready() -> None:
+        print(f"{c.bold}FaultLine Inspector{c.reset}  {c.cyan}{url}{c.reset}")
+        if not args.no_open:
+            if not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
+                print("No graphical display detected; open the URL above in a browser.")
+            else:
+                try:
+                    opened = webbrowser.open(url)
+                except webbrowser.Error:
+                    opened = False
+                if not opened:
+                    print("Could not launch a browser; open the URL above.")
+
+    try:
+        snapshot = cli_demo.processes()
+        stack = cli_demo.inspect_stack(ports, snapshot)
+        if stack.foreign:
+            occupied = ", ".join(map(str, sorted(stack.foreign)))
+            raise RuntimeError(
+                f"Foreign or unidentifiable service on demo port(s): {occupied}. "
+                "Stop its owner or choose free demo ports; no process was stopped."
+            )
+        if stack.active and not args.restart:
+            print("FaultLine demo stack is already active")
+            ready()
+            return 0
+        if stack.occupied:
+            if not args.restart:
+                occupied = ", ".join(map(str, sorted(stack.occupied)))
+                raise RuntimeError(
+                    f"Partial or unhealthy FaultLine demo stack (occupied ports: {occupied}). "
+                    "Wait for startup, or use --restart from its owning installation."
+                )
+            cli_demo.stop_stack(root, ports, stack, snapshot)
+            snapshot = cli_demo.processes()
+        cli_demo.ensure_build_unused(root, snapshot)
+        print(f"{c.cyan}Starting FaultLine demo stack...{c.reset}", flush=True)
+        previous_handler = signal.signal(signal.SIGTERM, _raise_interrupt)
+        try:
+            return cli_demo.start_demo(root, ports, ready)
+        finally:
+            signal.signal(signal.SIGTERM, previous_handler)
+    except KeyboardInterrupt:
+        return 130
+    except (OSError, RuntimeError) as exc:
+        print(f"{c.red}faultline demo: {exc}{c.reset}", file=sys.stderr)
+        return 1
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     """Execute an operator-selected reproduction with durable sandbox evidence."""
     from app.project import load_project
@@ -1572,6 +1717,29 @@ def build_parser() -> argparse.ArgumentParser:
             type=_port_arg,
             help=f"BuggyShop API port (default $BUGGYSHOP_API_PORT or {DEFAULT_STORE_API_PORT})",
         )
+
+    p_demo = subparsers.add_parser("demo", help="Start or connect to the full local demo stack")
+    p_demo.add_argument(
+        "--restart", action="store_true", help="Restart this installation's owned demo"
+    )
+    p_demo.add_argument(
+        "--no-open", action="store_true", help="Do not open the Inspector in a browser"
+    )
+    output_flags(p_demo)
+    p_demo.set_defaults(func=cmd_demo)
+
+    p_test = subparsers.add_parser("test", help="Test a URL twice without faultline.toml")
+    p_test.add_argument("url", metavar="URL", help="Absolute http:// or https:// URL")
+    p_test.add_argument(
+        "--method",
+        type=str.upper,
+        default="GET",
+        choices=("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"),
+    )
+    p_test.add_argument("--status", type=int, default=200, help="Expected HTTP status (100-599)")
+    p_test.add_argument("--json", action="store_true", help="Emit exactly one JSON result")
+    output_flags(p_test)
+    p_test.set_defaults(func=cmd_test)
 
     p_check = subparsers.add_parser("check", help="Gate on a running project's HTTP invariants")
     p_check.add_argument("--config", default="faultline.toml")

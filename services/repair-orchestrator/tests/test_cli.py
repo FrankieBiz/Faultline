@@ -7,6 +7,7 @@ import http.client
 import json
 import os
 import queue
+import shlex
 import signal
 import socket
 import subprocess
@@ -1778,3 +1779,475 @@ def test_control_token_lookup_matches_the_port_in_a_process_command_line() -> No
         finally:
             process.kill()
     assert not _process_listens_on("999999999", 9412)
+
+
+# --- One-command demo and config-free HTTP tests ---------------------------------------------
+
+
+def _command(*argv: str) -> int:
+    args = build_parser().parse_args(argv)
+    return int(args.func(args))
+
+
+@pytest.mark.parametrize(
+    "route,status,code,description",
+    [
+        ("/", 200, 0, "every assertion passed in both sessions"),
+        ("/fail", 200, 1, "failed the same way in both sessions"),
+        ("/flaky", 200, 1, "flaky"),
+        ("/fail", 500, 0, "every assertion passed in both sessions"),
+    ],
+)
+def test_url_check_real_sessions_without_config(
+    live_http: tuple[str, list[str]],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    route: str,
+    status: int,
+    code: int,
+    description: str,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    # Deliberately malformed: this command must never load the project's configuration.
+    (tmp_path / "faultline.toml").write_text("not TOML")
+    with patch("app.cli_check.sandbox_readiness", side_effect=AssertionError("not a repair")):
+        assert _command("test", live_http[0] + route, "--status", str(status), "--plain") == code
+    out = capsys.readouterr().out
+    assert description in out and "\x1b" not in out
+    assert len(live_http[1]) == 2 and len(set(live_http[1])) == 2
+
+
+def test_url_check_non_get_and_json(
+    live_http: tuple[str, list[str]],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert _command("test", live_http[0], "--method", "post", "--json") == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["method"] == "POST" and result["expected_status"] == 200
+    assert result["passed"] and result["exit_code"] == 0
+    assert len(result["sessions"]) == 2
+    assert all(s["requests"][0]["method"] == "POST" for s in result["sessions"])
+    assert all(s["excerpt"] == "[omitted]" for s in result["sessions"])
+
+
+def test_url_check_no_response_is_truthful(capsys: pytest.CaptureFixture[str]) -> None:
+    with socket.socket() as reserved:
+        reserved.bind(("127.0.0.1", 0))  # bound but not listening; cannot be reused by another test
+        url = f"http://127.0.0.1:{reserved.getsockname()[1]}"
+        assert _command("test", url, "--json") == 1
+    result = json.loads(capsys.readouterr().out)
+    assert not result["passed"] and result["outcome"] == "infrastructure_error"
+    assert len(result["sessions"]) == 1
+    assert result["sessions"][0]["status"] is None
+    assert result["sessions"][0]["error"] == "ConnectError"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "ftp://example.com",
+        "example.com",
+        "http://",
+        "http://user:password@localhost",
+        "http://localhost:99999",
+        "http://localhost/#fragment",
+        "http://localhost/{port}",
+    ],
+)
+def test_url_check_rejects_invalid_targets(url: str, capsys: pytest.CaptureFixture[str]) -> None:
+    with patch("app.probes.run_check", new_callable=AsyncMock) as run:
+        assert _command("test", url, "--json") == 2
+    run.assert_not_called()
+    result = json.loads(capsys.readouterr().out)
+    assert result["errors"] and result["sessions"] == []
+    assert "password" not in json.dumps(result)
+
+
+@pytest.mark.parametrize("status", ["99", "600", "-1"])
+def test_url_check_rejects_invalid_status(status: str, capsys: pytest.CaptureFixture[str]) -> None:
+    with patch("app.probes.run_check", new_callable=AsyncMock) as run:
+        assert _command("test", "https://example.com", "--status", status, "--json") == 2
+    run.assert_not_called()
+    assert json.loads(capsys.readouterr().out)["errors"]
+
+
+@pytest.mark.parametrize("flags", [("--method", "TRACE"), ("--status", "abc")])
+def test_url_check_bad_options_are_usage_errors(flags: tuple[str, str]) -> None:
+    with pytest.raises(SystemExit) as error:
+        _command("test", "https://example.com", *flags)
+    assert error.value.code == 2
+
+
+@pytest.fixture
+def demo_ports(monkeypatch: pytest.MonkeyPatch) -> tuple[int, ...]:
+    from app import cli_demo
+
+    for name in cli_demo.PORT_NAMES:
+        monkeypatch.delenv(name, raising=False)
+    return cli_demo.DEFAULT_PORTS
+
+
+def _demo_snapshot(root: Path, ports: tuple[int, ...], *, count: int = 4) -> dict[int, Any]:
+    from app import cli_demo
+
+    script = root / "scripts/start-demo.sh"
+    script.parent.mkdir(parents=True, exist_ok=True)
+    script.touch()
+    launcher = cli_demo.Process(100, 1, "start", root, ("bash", str(script)), frozenset())
+    snapshot = {100: launcher}
+    for index, port in enumerate(ports[:count]):
+        argv = (
+            ("uvicorn", "app.main:app", "--port", str(port))
+            if index < 2
+            else ("next-server (v16.0.0)",)
+        )
+        pid = 101 + index
+        snapshot[pid] = cli_demo.Process(
+            pid, 100, "start", root / cli_demo.SERVICE_DIRS[index], argv, frozenset({port})
+        )
+    return snapshot
+
+
+@pytest.mark.parametrize("no_open", [False, True])
+def test_demo_connects_existing_stack(
+    tmp_path: Path,
+    demo_ports: tuple[int, ...],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    no_open: bool,
+) -> None:
+    snapshot = _demo_snapshot(tmp_path, demo_ports)
+    monkeypatch.setenv("DISPLAY", ":test")
+    with (
+        patch("app.cli_demo.processes", return_value=snapshot),
+        patch("app.cli_demo._occupied", return_value=True),
+        patch("app.cli_demo._healthy", return_value=True),
+        patch("app.cli_demo.start_demo") as start,
+        patch("app.cli_demo.stop_stack") as stop,
+        patch("app.cli.webbrowser.open", return_value=True) as browser,
+    ):
+        assert _command("demo", *(["--no-open"] if no_open else [])) == 0
+    start.assert_not_called()
+    stop.assert_not_called()
+    assert browser.call_count == (0 if no_open else 1)
+    if not no_open:
+        browser.assert_called_once_with("http://127.0.0.1:4000")
+    assert "FaultLine demo stack is already active\n" in capsys.readouterr().out
+
+
+def test_demo_start_uses_env_ports_and_opens_when_ready(
+    tmp_path: Path,
+    demo_ports: tuple[int, ...],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app import cli_demo
+
+    ports = (8400, 9400, 3400, 4400)
+    for name, port in zip(cli_demo.PORT_NAMES, ports, strict=True):
+        monkeypatch.setenv(name, str(port))
+    monkeypatch.setenv("DISPLAY", ":test")
+
+    def start(root: Path, selected: tuple[int, ...], ready: Any) -> int:
+        assert root == tmp_path and selected == ports
+        ready()
+        return 0
+
+    with (
+        patch("app.cli.REPOSITORY_ROOT", tmp_path),
+        patch("app.cli_demo.processes", return_value={}),
+        patch("app.cli_demo._occupied", return_value=False),
+        patch("app.cli_demo.start_demo", side_effect=start) as launch,
+        patch("app.cli.webbrowser.open", return_value=True) as browser,
+    ):
+        assert _command("demo") == 0
+    launch.assert_called_once()
+    browser.assert_called_once_with("http://127.0.0.1:4400")
+
+
+@pytest.mark.parametrize("restart", [False, True])
+def test_demo_foreign_collision_never_stops_or_starts(
+    tmp_path: Path,
+    demo_ports: tuple[int, ...],
+    capsys: pytest.CaptureFixture[str],
+    restart: bool,
+) -> None:
+    # Real unrelated listener, bound to an ephemeral demo API port.
+    with socket.socket() as server:
+        server.bind(("127.0.0.1", 0))
+        server.listen()
+        with (
+            patch.dict(os.environ, {"BUGGYSHOP_API_PORT": str(server.getsockname()[1])}),
+            patch("app.cli_demo.start_demo") as start,
+            patch("app.cli_demo.stop_stack") as stop,
+        ):
+            assert _command("demo", "--no-open", *(["--restart"] if restart else [])) == 1
+        assert server.fileno() >= 0
+    start.assert_not_called()
+    stop.assert_not_called()
+    assert "Foreign or unidentifiable service" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("healthy,count", [(True, 2), (False, 4)])
+def test_demo_partial_or_unhealthy_is_not_active(
+    tmp_path: Path,
+    demo_ports: tuple[int, ...],
+    capsys: pytest.CaptureFixture[str],
+    healthy: bool,
+    count: int,
+) -> None:
+    snapshot = _demo_snapshot(tmp_path, demo_ports, count=count)
+    with (
+        patch("app.cli_demo.processes", return_value=snapshot),
+        patch("app.cli_demo._occupied", side_effect=lambda p: p in demo_ports[:count]),
+        patch("app.cli_demo._healthy", return_value=healthy),
+        patch("app.cli_demo.start_demo") as start,
+    ):
+        assert _command("demo", "--no-open") == 1
+    start.assert_not_called()
+    assert "Partial or unhealthy" in capsys.readouterr().err
+    assert "already active" not in capsys.readouterr().out
+
+
+def test_demo_restart_refuses_other_worktree(
+    tmp_path: Path,
+    demo_ports: tuple[int, ...],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    snapshot = _demo_snapshot(tmp_path / "other", demo_ports)
+    with (
+        patch("app.cli.REPOSITORY_ROOT", tmp_path),
+        patch("app.cli_demo.processes", return_value=snapshot),
+        patch("app.cli_demo._occupied", return_value=True),
+        patch("app.cli_demo._healthy", return_value=True),
+        patch("app.cli_demo.start_demo") as start,
+        patch("app.cli_demo.signal.pidfd_send_signal") as kill,
+    ):
+        assert _command("demo", "--restart", "--no-open") == 1
+    kill.assert_not_called()
+    start.assert_not_called()
+    assert "another worktree" in capsys.readouterr().err
+
+
+def test_demo_restart_stops_then_launches(
+    tmp_path: Path,
+    demo_ports: tuple[int, ...],
+) -> None:
+    snapshot = _demo_snapshot(tmp_path, demo_ports)
+    events: list[str] = []
+
+    def launch(*args: object) -> int:
+        events.append("start")
+        return 0
+
+    with (
+        patch("app.cli.REPOSITORY_ROOT", tmp_path),
+        patch("app.cli_demo.processes", side_effect=[snapshot, {}]),
+        patch("app.cli_demo._occupied", return_value=True),
+        patch("app.cli_demo._healthy", return_value=True),
+        patch("app.cli_demo.stop_stack", side_effect=lambda *a: events.append("stop")),
+        patch("app.cli_demo.start_demo", side_effect=launch),
+    ):
+        assert _command("demo", "--restart", "--no-open") == 0
+    assert events == ["stop", "start"]
+
+
+def test_demo_rejects_duplicate_ports(
+    demo_ports: tuple[int, ...], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("INSPECTOR_PORT", "3000")
+    with patch("app.cli_demo.processes") as scan:
+        assert _command("demo", "--no-open") == 2
+    scan.assert_not_called()
+
+
+def test_demo_other_port_stack_prevents_rebuilding_same_worktree(
+    tmp_path: Path,
+    demo_ports: tuple[int, ...],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    snapshot = _demo_snapshot(tmp_path, (8400, 9400, 3400, 4400))
+    with (
+        patch("app.cli.REPOSITORY_ROOT", tmp_path),
+        patch("app.cli_demo.processes", return_value=snapshot),
+        patch("app.cli_demo._occupied", return_value=False),
+        patch("app.cli_demo.start_demo") as start,
+    ):
+        assert _command("demo", "--no-open") == 1
+    start.assert_not_called()
+    assert "no build was started" in capsys.readouterr().err
+
+
+def test_demo_start_launcher_and_cleanup_on_interrupt(
+    tmp_path: Path, demo_ports: tuple[int, ...]
+) -> None:
+    from app import cli_demo
+
+    process = MagicMock()
+    process.__enter__.return_value = process
+    process.poll.return_value = None
+    process.wait.side_effect = [KeyboardInterrupt, 143]
+    ready = MagicMock()
+    stack = cli_demo.Stack(frozenset(demo_ports), (), tmp_path, frozenset(), True)
+    with (
+        patch("app.cli_demo.subprocess.Popen", return_value=process) as launch,
+        patch("app.cli_demo.processes", return_value={}),
+        patch("app.cli_demo.inspect_stack", return_value=stack),
+    ):
+        with pytest.raises(KeyboardInterrupt):
+            cli_demo.start_demo(tmp_path, demo_ports, ready)
+    assert launch.call_args.args[0] == ["bash", str(tmp_path / "scripts/start-demo.sh")]
+    assert launch.call_args.kwargs["start_new_session"] is True
+    assert launch.call_args.kwargs["env"]["INSPECTOR_PORT"] == "4000"
+    ready.assert_called_once()
+    process.terminate.assert_called_once()
+
+
+def test_demo_launcher_exit_and_timeout(tmp_path: Path, demo_ports: tuple[int, ...]) -> None:
+    from app import cli_demo
+
+    process = MagicMock()
+    process.__enter__.return_value = process
+    process.poll.return_value = 7
+    ready = MagicMock()
+    with patch("app.cli_demo.subprocess.Popen", return_value=process):
+        with pytest.raises(RuntimeError, match="code 7"):
+            cli_demo.start_demo(tmp_path, demo_ports, ready)
+        process.poll.return_value = None
+        with patch("app.cli_demo.START_TIMEOUT", 0):
+            with pytest.raises(RuntimeError, match="timed out"):
+                cli_demo.start_demo(tmp_path, demo_ports, ready)
+    ready.assert_not_called()
+    process.terminate.assert_called_once()
+
+
+def test_demo_stop_real_owned_launcher_preserves_unrelated_process(tmp_path: Path) -> None:
+    from app import cli_demo
+
+    root = tmp_path / "demo"
+    backend = root / cli_demo.SERVICE_DIRS[0]
+    backend.mkdir(parents=True)
+    script = root / "scripts/start-demo.sh"
+    script.parent.mkdir()
+    # No real service, build, credential or default port: the listener chooses an ephemeral port.
+    # A uvicorn-style argv is needed to identify the listener. Once the port is known,
+    # a second small exec retains the socket and includes its real port in argv.
+    code = (
+        "import os,socket,sys; s=socket.socket(); s.bind(('127.0.0.1',0)); s.listen(); "
+        "s.set_inheritable(True); port=s.getsockname()[1]; "
+        "os.execv(sys.executable,[sys.executable,'-c',"
+        "'import time; print('+str(port)+',flush=True); time.sleep(60)',"
+        "'uvicorn','app.main:app','--port',str(port)])"
+    )
+    script.write_text(
+        "#!/bin/bash\n"
+        "child=''\n"
+        'cleanup() { trap - TERM EXIT; kill -TERM "$child" 2>/dev/null || true; '
+        'wait "$child" 2>/dev/null || true; exit 0; }\n'
+        "trap cleanup TERM EXIT\n"
+        f"(cd {shlex.quote(str(backend))}; exec {shlex.quote(sys.executable)} "
+        f"-c {shlex.quote(code)}) &\n"
+        'child=$!\nwait "$child"\n'
+    )
+    with (
+        subprocess.Popen(
+            ["bash", str(script)],
+            cwd=root,
+            stdout=subprocess.PIPE,
+            text=True,
+            start_new_session=True,
+        ) as launcher,
+        subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(60)"],
+            cwd=tmp_path,
+            start_new_session=True,
+        ) as unrelated,
+    ):
+        try:
+            assert launcher.stdout is not None
+            port = int(launcher.stdout.readline())
+            # A single occupied service exercises partial-stack ownership and cleanup.
+            ports = (port,)
+            snapshot = cli_demo.processes()
+            stack = cli_demo.inspect_stack(ports, snapshot)
+            assert stack.root == root and stack.occupied == frozenset({port})
+            assert not stack.foreign and not stack.active
+            owners = stack.owners
+            assert owners and all(p.parent == launcher.pid for p in owners)
+            cli_demo.stop_stack(root, ports, stack, snapshot)
+            assert launcher.wait(timeout=3) == 0
+            assert unrelated.poll() is None
+            assert not cli_demo._occupied(port)
+            current = cli_demo.processes()
+            assert all(p.pid not in current for p in owners)
+        finally:
+            # Only this test's own subprocess handles are ever signaled.
+            if launcher.poll() is None:
+                launcher.terminate()
+                launcher.wait(timeout=5)
+            unrelated.terminate()
+            unrelated.wait(timeout=5)
+
+
+@pytest.mark.parametrize("case", ["orphan", "extra-port", "other-launcher", "stale"])
+def test_demo_restart_ownership_refusals_never_signal(
+    tmp_path: Path,
+    demo_ports: tuple[int, ...],
+    case: str,
+) -> None:
+    from dataclasses import replace
+
+    from app import cli_demo
+
+    snapshot = _demo_snapshot(tmp_path, demo_ports)
+    if case == "orphan":
+        del snapshot[100]
+    elif case == "extra-port":
+        snapshot[101] = replace(snapshot[101], ports=frozenset({demo_ports[0], 12345}))
+    elif case == "other-launcher":
+        snapshot[200] = replace(snapshot[100], pid=200)
+    with (
+        patch("app.cli_demo._occupied", return_value=True),
+        patch("app.cli_demo._healthy", return_value=True),
+    ):
+        stack = cli_demo.inspect_stack(demo_ports, snapshot)
+    # A harmless real file descriptor stands in for the pidfd in the stale-identity case.
+    with (
+        patch("app.cli_demo.os.pidfd_open", side_effect=lambda _: os.open(os.devnull, os.O_RDONLY)),
+        patch("app.cli_demo._read_process", return_value=None),
+        patch("app.cli_demo.signal.pidfd_send_signal") as signal_process,
+    ):
+        with pytest.raises(RuntimeError):
+            cli_demo.stop_stack(tmp_path, demo_ports, stack, snapshot)
+    signal_process.assert_not_called()
+
+
+def test_demo_connect_rejects_mixed_installations(
+    tmp_path: Path, demo_ports: tuple[int, ...]
+) -> None:
+    from dataclasses import replace
+
+    from app import cli_demo
+
+    snapshot = _demo_snapshot(tmp_path / "one", demo_ports)
+    other = _demo_snapshot(tmp_path / "two", demo_ports)
+    snapshot[104] = replace(other[104], parent=1)
+    with patch("app.cli_demo._occupied", return_value=True):
+        stack = cli_demo.inspect_stack(demo_ports, snapshot)
+    assert not stack.active and stack.foreign == frozenset(demo_ports)
+
+
+def test_demo_health_requires_real_identity() -> None:
+    from app import cli_demo
+
+    connection = MagicMock()
+    response = connection.getresponse.return_value
+    response.status = 200
+    response.read.return_value = b'{"status":"ok","app":"foreign"}'
+    with patch("app.cli_demo.http.client.HTTPConnection", return_value=connection):
+        assert not cli_demo._healthy(0, 12345)
+        response.read.return_value = b'{"status":"ok","app":"buggyshop-api"}'
+        assert cli_demo._healthy(0, 12345)
+        response.status = 503
+        assert not cli_demo._healthy(2, 12345)
+    assert connection.close.call_count == 3
