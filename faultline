@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-ROOT="$(git rev-parse --show-toplevel 2>/dev/null || echo "/home/frankbiz/orca/workspaces/Faultline/sander")"
-exec uv run --project "$ROOT/services/repair-orchestrator" --python 3.13 python -m app.cli "$@"
+# Resolve the installation, including a symlink placed on PATH; retain the caller's cwd.
+SOURCE="$(readlink -f -- "${BASH_SOURCE[0]}")"
+ROOT="$(cd -- "$(dirname -- "$SOURCE")" && pwd)"
+exec uv run --project "$ROOT/services/repair-orchestrator" --python 3.13 --locked --no-env-file python -m app.cli "$@"

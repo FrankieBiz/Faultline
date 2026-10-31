@@ -150,6 +150,11 @@ def load_project(
             if not url.startswith(prefix + "/"):
                 raise ValueError("invariant target must use the configured loopback service")
             request = {"method": rule.get("method", "GET"), "path": url[len(prefix) :]}
+            if "json" in rule:
+                body = rule["json"]
+                if isinstance(body, str) and body.startswith("@"):
+                    body = json.loads(contained_path(config.parent, body[1:]).read_text())
+                request["body"] = body
             checks = [{"status": rule["expected_status"]}]
         else:
             request = dict(request)

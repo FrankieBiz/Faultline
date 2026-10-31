@@ -26,6 +26,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from app.cli_init import detect_project_stack as detect_project_stack
+from app.cli_init import generate_faultline_toml as generate_faultline_toml
+
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 TARGET_FILE = REPOSITORY_ROOT / "apps" / "buggyshop-backend" / "app" / "routes" / "checkout.py"
 SEEDED_FILE = REPOSITORY_ROOT / "fixtures" / "seeds" / "checkout_seeded.py"
@@ -115,6 +118,9 @@ def cmd_version(args: argparse.Namespace) -> int:
 
 def cmd_doctor(args: argparse.Namespace) -> int:
     """Check system requirements: bubblewrap, cgroups v2, Node, uv, and models."""
+    from app.cli_check import sandbox_readiness
+
+    readiness = sandbox_readiness()
     print(f"\n{BOLD}FaultLine Doctor: System Diagnostic Report{RESET}\n")
 
     checks: list[tuple[str, bool, str]] = []
@@ -200,7 +206,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         )
     )
 
-    all_ok = True
+    all_ok = readiness["prerequisites_available"]
     for name, passed, detail in checks:
         icon = f"{GREEN}✓{RESET}" if passed else f"{RED}✗{RESET}"
         status_text = f"{GREEN}PASS{RESET}" if passed else f"{YELLOW}WARN{RESET}"
@@ -211,7 +217,10 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
     print(f"\n{DIM}{'─' * 60}{RESET}")
     if all_ok:
-        msg = f"{GREEN}{BOLD}Result: System is ready for reproduction and verification.{RESET}\n"
+        msg = (
+            f"{GREEN}{BOLD}Result: Sandbox prerequisites found; "
+            f"runner enforcement preflight is still required.{RESET}\n"
+        )
         print(msg)
         return 0
     else:
@@ -455,146 +464,6 @@ def revert_to_seeded() -> dict[str, Any]:
     }
 
 
-def detect_project_stack(target_dir: Path) -> dict[str, Any]:
-    """Detect project type, stack, commands, and test runners."""
-    info: dict[str, Any] = {
-        "name": target_dir.name or "my-service",
-        "stack": "custom",
-        "setup_command": "",
-        "lockfiles": [],
-        "dev_command": "",
-        "health": "/healthz",
-        "test_command": "",
-        "editable": [],
-    }
-
-    has_pyproject = (target_dir / "pyproject.toml").exists()
-    has_reqs = (target_dir / "requirements.txt").exists()
-    has_uv_lock = (target_dir / "uv.lock").exists()
-    has_poetry = (target_dir / "poetry.lock").exists()
-    has_pkg_json = (target_dir / "package.json").exists()
-    has_next_config = (
-        (target_dir / "next.config.js").exists()
-        or (target_dir / "next.config.ts").exists()
-        or (target_dir / "next.config.mjs").exists()
-    )
-
-    if has_uv_lock:
-        info["lockfiles"].append("uv.lock")
-        info["setup_command"] = "uv sync --locked"
-    elif has_poetry:
-        info["lockfiles"].append("poetry.lock")
-        info["setup_command"] = "poetry install"
-    elif has_reqs:
-        info["setup_command"] = "pip install -r requirements.txt"
-
-    is_fastapi = (target_dir / "apps" / "buggyshop-backend").exists() or (
-        target_dir / "app" / "main.py"
-    ).exists()
-    if is_fastapi:
-        info["stack"] = "python-fastapi"
-        info["dev_command"] = "uv run uvicorn app.main:app --host 127.0.0.1 --port {port}"
-        info["health"] = "/healthz"
-        info["test_command"] = "uv run pytest -q --junitxml={report}"
-        info["editable"] = ["app/**/*.py"]
-    elif (target_dir / "manage.py").exists():
-        info["stack"] = "python-django"
-        info["dev_command"] = "python manage.py runserver 127.0.0.1:{port}"
-        info["health"] = "/healthz"
-        info["test_command"] = "python manage.py test"
-        info["editable"] = ["**/*.py"]
-    elif has_next_config:
-        info["stack"] = "node-next"
-        info["dev_command"] = "npm run dev -- -p {port}"
-        info["health"] = "/"
-        info["test_command"] = "npm test"
-        info["editable"] = ["src/**/*.{ts,tsx,js,jsx}", "app/**/*.{ts,tsx,js,jsx}"]
-    elif has_pyproject or has_reqs:
-        info["stack"] = "python-generic"
-        info["dev_command"] = "python -m http.server {port}"
-        info["health"] = "/"
-        info["test_command"] = "pytest"
-        info["editable"] = ["src/**/*.py", "app/**/*.py"]
-    elif has_pkg_json:
-        info["stack"] = "node-generic"
-        info["dev_command"] = "npm start"
-        info["health"] = "/"
-        info["test_command"] = "npm test"
-        info["editable"] = ["src/**/*.{js,ts}"]
-
-    return info
-
-
-def generate_faultline_toml(info: dict[str, Any]) -> str:
-    """Generate an annotated faultline.toml configuration."""
-    lockfiles_str = json.dumps(info.get("lockfiles", ["uv.lock"]))
-    editable_str = json.dumps(info.get("editable", ["app/**/*.py"]))
-    health_path = info.get("health", "/healthz")
-    setup_cmd = info.get("setup_command", "uv sync --locked")
-    dev_cmd = info.get("dev_command", "uv run uvicorn app.main:app --host 127.0.0.1 --port {port}")
-    test_cmd = info.get("test_command", "uv run pytest -q --junitxml={report}")
-
-    return f"""#:schema ./.faultline/schema-v1.json
-# FaultLine Configuration Schema v1
-schema = 1
-
-[project]
-name = "{info["name"]}"
-stack = "{info["stack"]}"
-root = "."
-setup_command = "{setup_cmd}"
-lockfiles = {lockfiles_str}
-dev_command = "{dev_cmd}"
-url = "http://127.0.0.1:{{port}}"
-health = "{health_path}"
-test_command = "{test_cmd}"
-
-[repair]
-editable = {editable_str}
-context = []
-max_files = 1
-max_diff_bytes = 16384
-max_source_bytes = 32768
-max_changed_lines = 100
-
-[repair.imports]
-allow = ["typing.cast", "fastapi.HTTPException"]
-deny = []
-
-[sandbox]
-engine = "bwrap"
-
-[sandbox.limits]
-mode = "cgroup-v2-scope"
-memory_max_bytes = 536870912
-memory_swap_max_bytes = 0
-tasks_max = 64
-cpu_quota_percent = 100
-
-[model]
-provider = "meta"
-model = "muse-spark-1.3"
-max_attempts = 2
-
-[budgets]
-preflight = 45
-baseline = 20
-attempt = 75
-generation = 45
-verification = 20
-work = 170
-cleanup = 10
-overall = 180
-
-[[invariants.rule]]
-id = "service_health"
-name = "Service returns HTTP 200 on health check"
-target = "http://127.0.0.1:{{port}}{health_path}"
-method = "GET"
-expected_status = 200
-"""
-
-
 def cmd_init(args: argparse.Namespace) -> int:
     """Initialize a repository with faultline.toml configuration."""
     target_dir = Path.cwd()
@@ -605,7 +474,12 @@ def cmd_init(args: argparse.Namespace) -> int:
         return 0
 
     print(f"\n{BOLD}FaultLine Initializer: Analyzing repository at {target_dir}...{RESET}")
-    info = detect_project_stack(target_dir)
+    try:
+        info = detect_project_stack(target_dir)
+        toml_content = generate_faultline_toml(info)
+    except (OSError, ValueError, SyntaxError) as exc:
+        print(f"faultline init: {exc}", file=sys.stderr)
+        return 1
     print(f"  Detected Project: {CYAN}{info['name']}{RESET}")
     print(f"  Detected Stack:   {GREEN}{info['stack']}{RESET}")
     if info["dev_command"]:
@@ -613,7 +487,6 @@ def cmd_init(args: argparse.Namespace) -> int:
     if info["test_command"]:
         print(f"  Test Command:     {info['test_command']}")
 
-    toml_content = generate_faultline_toml(info)
     dest_file.write_text(toml_content)
     print(f"\n{GREEN}{BOLD}✓ Created {dest_file}{RESET}")
     print("Next steps:")
@@ -1480,6 +1353,29 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_check(args: argparse.Namespace) -> int:
+    """Check a running project's declared HTTP invariants, optionally proposing repairs."""
+    from app.cli_check import check_project
+
+    result = asyncio.run(
+        check_project(Path(args.config).resolve(), port=args.port, repair=args.repair)
+    )
+    if args.json:
+        print(json.dumps(result, ensure_ascii=True))
+    else:
+        # This command is deliberately plain for both interactive and CI use.
+        print("faultline check: " + ("PASS" if result["passed"] else "FAIL"))
+        if result["sandbox"]:
+            print("sandbox: " + result["sandbox"]["status"] + " (repair preflight required)")
+        for check in result["checks"]:
+            print(f"{'PASS' if check['passed'] else 'FAIL'} {check['id']}: {check['reason']}")
+            if args.repair:
+                print("  repair: " + check["repair"]["status"] + "; live source unchanged")
+        for error in result["errors"]:
+            print("error: " + error)
+    return int(result["exit_code"])
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     """Execute an operator-selected reproduction with durable sandbox evidence."""
     from app.project import load_project
@@ -1511,6 +1407,18 @@ def build_parser() -> argparse.ArgumentParser:
         description="FaultLine: Autonomous SRE and sandbox-verified repair platform.",
     )
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
+
+    p_check = subparsers.add_parser("check", help="Gate on a running project's HTTP invariants")
+    p_check.add_argument("--config", default="faultline.toml")
+    p_check.add_argument("--port", type=int, help="Live service port to substitute for {port}")
+    p_check.add_argument(
+        "--repair",
+        action="store_true",
+        help="Propose isolated candidates for reproduced failures; never apply",
+    )
+    p_check.add_argument("--json", action="store_true", help="Emit exactly one JSON result")
+    p_check.add_argument("--plain", action="store_true", help="Print without ANSI escapes")
+    p_check.set_defaults(func=cmd_check)
 
     p_run = subparsers.add_parser(
         "run", help="Reproduce twice, repair with Meta, and verify in isolation"

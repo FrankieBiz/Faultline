@@ -4,14 +4,20 @@ from __future__ import annotations
 
 import argparse
 import http.client
+import json
+import os
 import queue
 import signal
+import subprocess
+import threading
+import tomllib
 import urllib.error
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -21,6 +27,7 @@ from app.cli import (
     _pump_events,
     apply_patch_for_job,
     build_parser,
+    cmd_check,
     cmd_dashboard,
     cmd_diff,
     cmd_doctor,
@@ -180,7 +187,7 @@ def test_detect_project_stack(tmp_path: Path) -> None:
     info = detect_project_stack(tmp_path)
     assert info["stack"] == "python-fastapi"
     assert "uvicorn" in info["dev_command"]
-    assert "pytest" in info["test_command"]
+    assert info["test_command"] == ""  # No invented test dependency.
     assert "uv.lock" in info["lockfiles"]
 
     toml = generate_faultline_toml(info)
@@ -190,6 +197,7 @@ def test_detect_project_stack(tmp_path: Path) -> None:
 
 def test_cmd_init_creates_config(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """Test faultline init generates faultline.toml in target directory."""
+    (tmp_path / "package.json").write_text('{"scripts":{"start":"node server.js"}}')
     with patch("pathlib.Path.cwd", return_value=tmp_path):
         args = argparse.Namespace(force=False)
         ret = cmd_init(args)
@@ -757,3 +765,681 @@ def test_cmd_dashboard_launches_inspector(
     assert "Started as pid 4242" in out
     assert "kill 4242" in out
     assert (tmp_path / "data" / "inspector.log").exists()
+
+
+@pytest.fixture
+def live_http() -> Iterator[tuple[str, list[str]]]:
+    seen: list[str] = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            seen.append(self.headers.get("X-Faultline-Case-Id", ""))
+            status = 500 if self.path == "/fail" else 200
+            if self.path == "/flaky":
+                status = 500 if len(seen) % 2 else 200
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"ok":true,"sum":3}')
+
+        def do_POST(self) -> None:
+            body = self.rfile.read(int(self.headers["Content-Length"]))
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format: str, *args: Any) -> None:
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}", seen
+    finally:
+        server.shutdown()
+        thread.join()
+        server.server_close()
+
+
+def _config(tmp_path: Path, url: str, route: str = "/") -> Path:
+    path = tmp_path / "faultline.toml"
+    path.write_text(f'''schema = 1
+[project]
+name = "test"
+dev_command = ["node", "server.js", "{{port}}"]
+url = "{url}"
+[[invariants.rule]]
+id = "health"
+target = "{url}{route}"
+expected_status = 200
+''')
+    return path
+
+
+def _check(path: Path, *flags: str) -> int:
+    args = build_parser().parse_args(["check", "--config", str(path), *flags])
+    return cmd_check(args)
+
+
+@pytest.fixture
+def ready_sandbox() -> Iterator[MagicMock]:
+    with patch(
+        "app.cli_check.sandbox_readiness",
+        return_value={
+            "prerequisites_available": True,
+            "runtime_ready": None,
+            "status": "unverified",
+        },
+    ) as ready:
+        yield ready
+
+
+@pytest.mark.parametrize(
+    "route,code,outcome",
+    [("/", 0, "no_failure"), ("/fail", 1, "detected"), ("/flaky", 1, "no_failure")],
+)
+def test_check_real_http_two_sessions(
+    tmp_path: Path,
+    live_http: tuple[str, list[str]],
+    ready_sandbox: MagicMock,
+    capsys: pytest.CaptureFixture[str],
+    route: str,
+    code: int,
+    outcome: str,
+) -> None:
+    url, seen = live_http
+    config = _config(tmp_path, url, route)
+    with patch("app.cli_check.run_project", new_callable=AsyncMock) as runner:
+        assert _check(config, "--json", "--plain") == code
+    runner.assert_not_called()
+    result = json.loads(capsys.readouterr().out)
+    assert result["checks"][0]["outcome"] == outcome
+    assert result["exit_code"] == code
+    assert len(seen) == 2 and seen[0] != seen[1]
+    assert result["source_applied"] is False
+    assert result["sandbox"]["runtime_ready"] is None
+
+
+def test_check_json_assertions_and_body(
+    tmp_path: Path,
+    live_http: tuple[str, list[str]],
+    ready_sandbox: MagicMock,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    url, _ = live_http
+    path = _config(tmp_path, url)
+    path.write_text(f'''schema = 1
+[project]
+dev_command = "node server.js"
+url = "{url}"
+[[invariants.rule]]
+id = "echo"
+request = {{path = "/echo", method = "POST", json = {{value = 3}}}}
+assert = [{{status = 200}}, {{path = "$.value", equals = 3}}]
+''')
+    assert _check(path, "--json") == 0
+    result = json.loads(capsys.readouterr().out)
+    assert all(len(s["assertions"]) == 2 for s in result["checks"][0]["sessions"])
+    path.write_text(path.read_text().replace("equals = 3", "equals = 4"))
+    assert _check(path, "--plain") == 1
+    out = capsys.readouterr().out
+    assert "FAIL echo" in out and "\x1b" not in out
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "",
+        "schema = ",
+        "schema = 2",
+        "schema = true",
+        'schema = 1\n[project]\ndev_command="node app.js"',
+        'schema = 1\n[project]\ndev_command=""',
+        'schema = 1\n[project]\ndev_command="node app.js"\n[invariants]\nrule="bad"',
+    ],
+)
+def test_check_malformed_empty_schema_fails_before_http(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    text: str,
+) -> None:
+    path = tmp_path / "faultline.toml"
+    path.write_text(text)
+    with patch("app.cli_check.run_check", new_callable=AsyncMock) as probe:
+        assert _check(path, "--json") == 1
+    probe.assert_not_called()
+    result = json.loads(capsys.readouterr().out)
+    assert result["errors"] and not result["checks"]
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        "\n[unknown]\nx=1",
+        '\n[sandbox]\nengine="docker"',
+        '\n[model]\nprovider="other"',
+        "\n[budgets]\nbaseline=-1",
+        "\n[sandbox.limits]\ntasks_max=100",
+        "\n[repair]\neditable=[]",
+    ],
+)
+def test_check_rejects_invalid_envelope(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    extra: str,
+) -> None:
+    path = _config(tmp_path, "http://127.0.0.1:1")
+    path.write_text(path.read_text() + extra)
+    assert _check(path, "--json") == 1
+    assert json.loads(capsys.readouterr().out)["errors"]
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        ("expected_status = 200", 'expected_status = "200"'),
+        ("expected_status = 200", "expected_status = true"),
+        ("expected_status = 200", "expected_statuz = 200"),
+        (
+            "expected_status = 200",
+            'expected_status = 200\nrequest={path="/"}\nassert=[{status=200}]',
+        ),
+        ("[[invariants.rule]]", "[invariants.rule]"),
+    ],
+)
+def test_check_rejects_rule_errors(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    change: tuple[str, str],
+) -> None:
+    path = _config(tmp_path, "http://127.0.0.1:1")
+    path.write_text(path.read_text().replace(*change))
+    assert _check(path, "--json") == 1
+    assert json.loads(capsys.readouterr().out)["errors"]
+
+
+def test_check_missing_file_and_unreachable_target(
+    tmp_path: Path,
+    ready_sandbox: MagicMock,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert _check(tmp_path / "missing.toml", "--json") == 1
+    assert json.loads(capsys.readouterr().out)["errors"]
+    # Reserve then release a real local port, avoiding assumptions about port 8000.
+    server = ThreadingHTTPServer(("127.0.0.1", 0), BaseHTTPRequestHandler)
+    port = server.server_port
+    server.server_close()
+    path = _config(tmp_path, f"http://127.0.0.1:{port}")
+    with patch("app.cli_check.run_project", new_callable=AsyncMock) as runner:
+        assert _check(path, "--json", "--repair") == 1
+    runner.assert_not_called()
+    result = json.loads(capsys.readouterr().out)
+    assert result["checks"][0]["outcome"] == "infrastructure_error"
+    assert result["checks"][0]["repair"]["status"] == "not_reproduced"
+
+
+def test_check_missing_sandbox_fails_even_when_http_passes(
+    tmp_path: Path,
+    live_http: tuple[str, list[str]],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    path = _config(tmp_path, live_http[0])
+    with patch("app.cli_check.shutil.which", return_value=None):
+        assert _check(path, "--json") == 1
+    result = json.loads(capsys.readouterr().out)
+    assert result["checks"][0]["passed"] is True
+    assert result["sandbox"]["status"] == "unavailable"
+    assert result["errors"]
+
+
+def test_check_port_substitution_and_plain(
+    tmp_path: Path,
+    live_http: tuple[str, list[str]],
+    ready_sandbox: MagicMock,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    port = live_http[0].rsplit(":", 1)[1]
+    path = _config(tmp_path, "http://127.0.0.1:{port}")
+    assert _check(path, "--plain") == 1
+    assert "port_required" in capsys.readouterr().out
+    assert _check(path, "--port", port, "--plain") == 0
+    output = capsys.readouterr().out
+    assert "PASS health" in output and "\x1b" not in output
+    assert _check(path, "--port", "0", "--json") == 1
+    assert json.loads(capsys.readouterr().out)["errors"]
+
+
+@pytest.mark.parametrize(
+    "outcome,cleanup,proof,status",
+    [
+        ("verified", "succeeded", "/proof", "verified_candidate"),
+        ("verified", "failed", "/proof", "unresolved"),
+        ("verified", "succeeded", None, "unresolved"),
+        ("no_failure", "succeeded", None, "unresolved"),
+        ("invalid_patch", "succeeded", None, "unresolved"),
+    ],
+)
+def test_check_repair_preserves_failed_exit_and_never_applies(
+    tmp_path: Path,
+    live_http: tuple[str, list[str]],
+    ready_sandbox: MagicMock,
+    capsys: pytest.CaptureFixture[str],
+    outcome: str,
+    cleanup: str,
+    proof: str | None,
+    status: str,
+) -> None:
+    path = _config(tmp_path, "http://127.0.0.1:{port}", "/fail")
+    path.write_text(
+        path.read_text() + '\n[repair]\neditable=["server.js"]\ntarget_file="server.js"\n'
+    )
+    source = tmp_path / "server.js"
+    source.write_text("original")
+    port = live_http[0].rsplit(":", 1)[1]
+
+    async def run(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        print("runner diagnostic")
+        assert kwargs == {"detect": False}
+        assert args[1].scenario.target_file == "server.js"
+        return {"outcome": outcome, "cleanup": cleanup, "proof_bundle": proof}
+
+    with patch("app.cli_check.run_project", side_effect=run) as runner:
+        assert _check(path, "--port", port, "--repair", "--json") == 1
+    runner.assert_called_once()
+    captured = capsys.readouterr()
+    result = json.loads(captured.out)
+    assert "runner diagnostic" in captured.err
+    assert result["checks"][0]["repair"]["status"] == status
+    assert result["source_applied"] is False
+    assert source.read_text() == "original"
+
+
+@pytest.mark.parametrize(
+    "route,readiness,status",
+    [
+        ("/", True, "not_needed"),
+        ("/fail", True, "unsupported"),
+        ("/fail", False, "unavailable"),
+        ("/flaky", True, "not_reproduced"),
+    ],
+)
+def test_check_repair_is_selective(
+    tmp_path: Path,
+    live_http: tuple[str, list[str]],
+    ready_sandbox: MagicMock,
+    capsys: pytest.CaptureFixture[str],
+    route: str,
+    readiness: bool,
+    status: str,
+) -> None:
+    path = _config(tmp_path, live_http[0], route)
+    ready_sandbox.return_value["prerequisites_available"] = readiness
+    with patch("app.cli_check.run_project", new_callable=AsyncMock) as runner:
+        code = _check(path, "--json", "--repair")
+    runner.assert_not_called()
+    result = json.loads(capsys.readouterr().out)
+    assert result["checks"][0]["repair"]["status"] == status
+    assert code == (0 if route == "/" else 1)
+
+
+@pytest.mark.parametrize("router", ["app", "pages", "src/app", "src/pages"])
+@pytest.mark.parametrize(
+    "manager,lock",
+    [
+        ("npm", "package-lock.json"),
+        ("pnpm", "pnpm-lock.yaml"),
+        ("yarn", "yarn.lock"),
+        ("bun", "bun.lock"),
+    ],
+)
+def test_init_next_templates_validate_runtime(
+    tmp_path: Path,
+    router: str,
+    manager: str,
+    lock: str,
+) -> None:
+    from app.cli_check import validate_config
+    from app.project import load_project
+
+    folder = tmp_path / router
+    folder.mkdir(parents=True)
+    (folder / "page.tsx").write_text("export default function Page() { return null; }")
+    (tmp_path / lock).touch()
+    (tmp_path / "package.json").write_text(
+        json.dumps(
+            {
+                "dependencies": {"next": "16"},
+                "scripts": {"dev": "next dev"},
+                "packageManager": f"{manager}@2.0.0",
+            }
+        )
+    )
+    info = detect_project_stack(tmp_path)
+    assert info["stack"] == "node-next"
+    assert info["router"] == ("app" if router.endswith("app") else "pages")
+    assert f"{router}/**/*.tsx" in info["editable"]
+    assert info["lockfiles"] == [lock]
+    assert info["dev_command"].startswith(f"env PORT={{port}} {manager} run dev")
+    config = tmp_path / "faultline.toml"
+    config.write_text(generate_faultline_toml(info))
+    validate_config(config)
+    config.write_text(
+        config.read_text()
+        + f'''\n[scenarios.home]
+target_file="{router}/page.tsx"
+[scenarios.home.repro]
+id="home"
+steps=[{{action="request",id="r",path="/",method="GET"}},{{action="assert",id="a",source="r",check={{status=200}}}}]
+'''
+    )
+    _, run = load_project(config)
+    assert run.command(1234)[0:2] == ["env", "PORT=1234"]
+    assert "schema-v1.json" not in config.read_text()
+
+
+@pytest.mark.parametrize("framework", ["react", "vue", "svelte"])
+@pytest.mark.parametrize("typescript", [False, True])
+def test_init_vite_language_and_scripts(tmp_path: Path, framework: str, typescript: bool) -> None:
+    from app.cli_check import validate_config
+
+    deps = {"vite": "1", framework: "1"}
+    if typescript:
+        deps["typescript"] = "1"
+    (tmp_path / "package.json").write_text(
+        json.dumps({"devDependencies": deps, "scripts": {"dev": "vite", "test": "vitest run"}})
+    )
+    info = detect_project_stack(tmp_path)
+    assert info["stack"] == f"node-vite-{framework}"
+    assert info["language"] == ("typescript" if typescript else "javascript")
+    assert "--strictPort" in info["dev_command"]
+    assert info["test_command"] == "npm run test"
+    path = tmp_path / "faultline.toml"
+    path.write_text(generate_faultline_toml(info))
+    validate_config(path)
+
+
+@pytest.mark.parametrize(
+    "framework,dep,source",
+    [
+        ("fastapi", "fastapi>=0.1", "from fastapi import FastAPI\napi=FastAPI()"),
+        ("starlette", "starlette", "from starlette.applications import Starlette\napi=Starlette()"),
+        ("flask", "Flask[async]", "from flask import Flask\napi=Flask(__name__)"),
+    ],
+)
+@pytest.mark.parametrize("manifest", ["pyproject.toml", "requirements.txt"])
+def test_init_python_entrypoints_and_dependencies(
+    tmp_path: Path,
+    framework: str,
+    dep: str,
+    source: str,
+    manifest: str,
+) -> None:
+    from app.cli_check import validate_config
+
+    content = (
+        f'[project]\nname="test"\ndependencies=["{dep}"]' if manifest == "pyproject.toml" else dep
+    )
+    (tmp_path / manifest).write_text(content)
+    if manifest == "pyproject.toml":
+        (tmp_path / "uv.lock").touch()
+    # Dependency-only detection clearly discloses its conventional fallback.
+    info = detect_project_stack(tmp_path)
+    assert info["stack"] == f"python-{framework}"
+    assert any("dependencies only" in note for note in info["notes"])
+    path = tmp_path / "faultline.toml"
+    path.write_text(generate_faultline_toml(info))
+    validate_config(path)
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app/main.py").write_text(source)
+    info = detect_project_stack(tmp_path)
+    assert "app.main:api" in info["dev_command"]
+    assert info["health"] == "/"
+    assert info["dev_command"].startswith(
+        "uv run" if manifest == "pyproject.toml" else ".venv/bin/python"
+    )
+    path.write_text(generate_faultline_toml(info))
+    validate_config(path)
+
+
+def test_init_django_express_and_generic_node(tmp_path: Path) -> None:
+    (tmp_path / "manage.py").touch()
+    info = detect_project_stack(tmp_path)
+    assert info["stack"] == "python-django"
+    assert "manage.py runserver 127.0.0.1:{port} --noreload" in info["dev_command"]
+    (tmp_path / "package.json").write_text(
+        '{"dependencies":{"express":"5"},"scripts":{"start":"node api.js"}}'
+    )
+    info = detect_project_stack(tmp_path)
+    assert info["stack"] == "node-express"
+    assert info["dev_command"] == "env PORT={port} npm run start"
+    (tmp_path / "package.json").write_text('{"main":"index.js"}')
+    (tmp_path / "index.js").touch()
+    info = detect_project_stack(tmp_path)
+    assert info["stack"] == "node-generic"
+    assert info["dev_command"] == "env PORT={port} node index.js"
+
+
+def test_init_quotes_toml_and_does_not_overwrite(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "package.json").write_text('{"scripts":{"dev":"node app.js"}}')
+    info = detect_project_stack(tmp_path)
+    info["name"] = 'quoted "name" \\ path\nnew line 🐈'
+    info["dev_command"] = 'node "space in name.js"'
+    content = generate_faultline_toml(info)
+    assert tomllib.loads(content)["project"]["name"] == info["name"]
+    dest = tmp_path / "faultline.toml"
+    dest.write_text("keep me")
+    with patch("pathlib.Path.cwd", return_value=tmp_path):
+        assert cmd_init(argparse.Namespace(force=False)) == 0
+        assert dest.read_text() == "keep me"
+        assert cmd_init(argparse.Namespace(force=True)) == 0
+    assert tomllib.loads(dest.read_text())["schema"] == 1
+
+
+@pytest.mark.parametrize(
+    "file,content",
+    [
+        ("package.json", "[]"),
+        ("package.json", "{"),
+        ("pyproject.toml", "broken = ["),
+        ("main.py", "syntax error !!!"),
+    ],
+)
+def test_init_bad_project_reports_error_without_partial_config(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    file: str,
+    content: str,
+) -> None:
+    (tmp_path / file).write_text(content)
+    with patch("pathlib.Path.cwd", return_value=tmp_path):
+        assert cmd_init(argparse.Namespace(force=False)) == 1
+    assert "faultline init:" in capsys.readouterr().err
+    assert not (tmp_path / "faultline.toml").exists()
+
+
+def test_init_empty_project_refuses_fake_service(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with patch("pathlib.Path.cwd", return_value=tmp_path):
+        assert cmd_init(argparse.Namespace(force=False)) == 1
+    assert "No runnable service entrypoint" in capsys.readouterr().err
+    assert not (tmp_path / "faultline.toml").exists()
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["init", "check", "run", "dashboard", "listen", "doctor", "apply", "revert", "verify"],
+)
+def test_root_launcher_uses_install_location_and_forwards_args(
+    tmp_path: Path, command: str
+) -> None:
+    from app.cli import REPOSITORY_ROOT
+
+    shim = tmp_path / "uv"
+    shim.write_text(
+        "#!/usr/bin/env python3\nimport json,os,sys\n"
+        'print(json.dumps({"argv":sys.argv[1:],"cwd":os.getcwd()}))\n'
+    )
+    shim.chmod(0o755)
+    launcher = tmp_path / "faultline"
+    launcher.symlink_to(REPOSITORY_ROOT / "faultline")
+    args = [command, "--config", "with spaces.toml", "--plain"]
+    result = subprocess.run(
+        [str(launcher), *args],
+        cwd=tmp_path,
+        env={**os.environ, "PATH": str(tmp_path) + os.pathsep + os.environ["PATH"]},
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    output = json.loads(result.stdout)
+    assert output["argv"] == [
+        "run",
+        "--project",
+        str(REPOSITORY_ROOT / "services/repair-orchestrator"),
+        "--python",
+        "3.13",
+        "--locked",
+        "--no-env-file",
+        "python",
+        "-m",
+        "app.cli",
+        *args,
+    ]
+    assert output["cwd"] == str(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "metadata,lock,command",
+    [
+        ({}, "# yarn lockfile v1\n", "yarn install --frozen-lockfile"),
+        ({}, "__metadata:\n  version: 8\n", "yarn install --immutable"),
+        ({"packageManager": "yarn@1.22.22"}, "", "yarn install --frozen-lockfile"),
+        ({"packageManager": "yarn@4.0.0"}, "", "yarn install --immutable"),
+    ],
+)
+def test_init_yarn_lock_versions(
+    tmp_path: Path, metadata: dict[str, str], lock: str, command: str
+) -> None:
+    (tmp_path / "package.json").write_text(
+        json.dumps({**metadata, "scripts": {"start": "node app.js"}})
+    )
+    (tmp_path / "yarn.lock").write_text(lock)
+    assert detect_project_stack(tmp_path)["setup_command"] == command
+
+
+@pytest.mark.parametrize(
+    "content", ["project=1", "project=[]", '[project]\ndependencies="fastapi"']
+)
+def test_init_invalid_pyproject_table(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], content: str
+) -> None:
+    (tmp_path / "pyproject.toml").write_text(content)
+    with patch("pathlib.Path.cwd", return_value=tmp_path):
+        assert cmd_init(argparse.Namespace(force=False)) == 1
+    assert "faultline init:" in capsys.readouterr().err
+    assert not (tmp_path / "faultline.toml").exists()
+
+
+def test_check_selects_failed_scenario_only(
+    tmp_path: Path,
+    live_http: tuple[str, list[str]],
+    ready_sandbox: MagicMock,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    path = tmp_path / "faultline.toml"
+    path.write_text("""schema=1
+[project]
+dev_command=["node","server.js","{port}"]
+url="http://127.0.0.1:{port}"
+[repair]
+editable=["server.js"]
+[scenarios.healthy]
+target_file="server.js"
+[scenarios.healthy.repro]
+steps=[{action="request",id="r",method="GET",path="/"},{action="assert",id="a",source="r",check={status=200}}]
+[scenarios.broken]
+target_file="server.js"
+[scenarios.broken.repro]
+steps=[{action="request",id="r",method="GET",path="/fail"},{action="assert",id="a",source="r",check={status=200}}]
+""")
+    port = live_http[0].rsplit(":", 1)[1]
+    with patch("app.cli_check.run_project", new_callable=AsyncMock) as runner:
+        runner.return_value = {
+            "outcome": "invalid_patch",
+            "cleanup": "succeeded",
+            "proof_bundle": None,
+        }
+        assert _check(path, "--port", port, "--json", "--repair") == 1
+    runner.assert_called_once()
+    assert runner.call_args.args[1].scenario.id == "broken"
+    checks = json.loads(capsys.readouterr().out)["checks"]
+    assert [c["repair"]["status"] for c in checks] == ["not_needed", "unresolved"]
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        '\n[[invariants.rule]]\nid="health"\ntarget="http://127.0.0.1:1/"\nexpected_status=200',
+        '\n[invariants]\ntest="pytest"',
+        "\n[sandbox.limits]\nmemory_swap_max_bytes=false",
+        "\n[scenarios.bad]\ntitle=1",
+        "\n[scenarios.bad]\nrepro=1",
+    ],
+)
+def test_check_rejects_duplicates_unsupported_and_invalid_scenarios(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    extra: str,
+) -> None:
+    path = _config(tmp_path, "http://127.0.0.1:1")
+    path.write_text(path.read_text() + extra)
+    with patch("app.cli_check.run_check", new_callable=AsyncMock) as probe:
+        assert _check(path, "--json") == 1
+    probe.assert_not_called()
+    assert json.loads(capsys.readouterr().out)["errors"]
+
+
+def test_check_repair_runner_error_is_structured(
+    tmp_path: Path,
+    live_http: tuple[str, list[str]],
+    ready_sandbox: MagicMock,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    path = _config(tmp_path, "http://127.0.0.1:{port}", "/fail")
+    path.write_text(
+        path.read_text() + '\n[repair]\neditable=["server.js"]\ntarget_file="server.js"'
+    )
+    with patch("app.cli_check.run_project", side_effect=RuntimeError("preflight unavailable")):
+        assert _check(path, "--port", live_http[0].rsplit(":", 1)[1], "--repair", "--json") == 1
+    result = json.loads(capsys.readouterr().out)
+    assert result["checks"][0]["repair"] == {"status": "error", "reason": "preflight unavailable"}
+
+
+def test_target_rule_body_is_preserved_in_sandbox_oracle(tmp_path: Path) -> None:
+    from app.project import load_project
+    from app.repro import RequestStep
+
+    path = _config(tmp_path, "http://127.0.0.1:{port}", "/echo")
+    path.write_text(
+        path.read_text().replace(
+            "expected_status = 200", 'expected_status = 200\nmethod="POST"\njson={value=3}'
+        )
+        + """
+[repair]
+editable=["server.js"]
+[scenarios.echo]
+target_file="server.js"
+[scenarios.echo.repro]
+steps=[{action="request",id="r",method="GET",path="/"},{action="assert",id="a",source="r",check={status=200}}]
+"""
+    )
+    _, run = load_project(path)
+    request = next(
+        s for s in run.repro.steps if isinstance(s, RequestStep) and s.id.startswith("invariant.")
+    )
+    assert request.body == {"value": 3}

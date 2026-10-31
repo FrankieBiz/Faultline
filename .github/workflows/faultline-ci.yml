@@ -1,0 +1,76 @@
+name: FaultLine PR gate
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  invariants:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '24'
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          enable-cache: true
+      - run: uv python install 3.13
+      # This Ubuntu runner installs prerequisites, not a claim of delegated cgroups.
+      # Real repair still requires ProjectRuntime's namespace/cgroup enforcement probes.
+      - name: Install sandbox diagnostic prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap
+          test -f /sys/fs/cgroup/cgroup.controllers
+          command -v systemd-run
+      - name: Check deterministic local service
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture="$RUNNER_TEMP/faultline-gate"
+          mkdir -p "$fixture"
+          cat > "$fixture/server.mjs" <<'JS'
+          import http from 'node:http';
+          const server = http.createServer((request, response) => {
+            response.writeHead(request.url === '/health' ? 200 : 404, {'Content-Type': 'application/json'});
+            response.end(JSON.stringify({status: 'ok', sum: 2 + 3}));
+          });
+          server.listen(8765, '127.0.0.1');
+          JS
+          cat > "$fixture/faultline.toml" <<'TOML'
+          schema = 1
+          [project]
+          name = "deterministic CI service"
+          dev_command = ["node", "server.mjs"]
+          url = "http://127.0.0.1:8765"
+          health = "/health"
+          [[invariants.rule]]
+          id = "healthy_sum"
+          request = {method = "GET", path = "/health"}
+          assert = [{status = 200}, {path = "$.status", equals = "ok"}, {path = "$.sum", equals = 5}]
+          TOML
+          node "$fixture/server.mjs" > "$fixture/server.log" 2>&1 &
+          service_pid=$!
+          trap 'kill "$service_pid" 2>/dev/null || true' EXIT
+          for attempt in {1..50}; do
+            if curl --fail --silent http://127.0.0.1:8765/health >/dev/null; then break; fi
+            sleep 0.1
+          done
+          "$GITHUB_WORKSPACE/faultline" check --config "$fixture/faultline.toml" --plain --json > "$fixture/result.json"
+          cat "$fixture/result.json"
+          # Check both directions of the gate: a false invariant must exit exactly 1.
+          sed 's/equals = 5/equals = 6/' "$fixture/faultline.toml" > "$fixture/failing.toml"
+          set +e
+          "$GITHUB_WORKSPACE/faultline" check --config "$fixture/failing.toml" --json > "$fixture/failing-result.json"
+          status=$?
+          set -e
+          test "$status" -eq 1
+          node -e 'const fs=require("fs"); const p=JSON.parse(fs.readFileSync(process.argv[1])); const f=JSON.parse(fs.readFileSync(process.argv[2])); if (!p.passed || f.passed || p.sandbox.runtime_ready !== null) process.exit(1)' "$fixture/result.json" "$fixture/failing-result.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: faultline-check-results
+          path: ${{ runner.temp }}/faultline-gate/*result.json
