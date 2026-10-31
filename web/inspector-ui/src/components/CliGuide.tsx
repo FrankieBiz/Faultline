@@ -17,10 +17,16 @@ const STEPS: { title: string; commands: string[]; terminal: string; dashboard: s
     dashboard: "The sandbox status in the header. Containment and environment reset sit in the setup panel under past runs.",
   },
   {
-    title: "Probe live",
+    title: "Gate live invariants",
+    commands: ["faultline check --port 8000", "faultline check --port 8000 --json"],
+    terminal: "Sends every HTTP rule and scenario in faultline.toml from two fresh sessions; each assertion must pass in both. Exit 0 when all pass and the sandbox prerequisites are present, 1 otherwise. --json prints one object for CI, and --repair proposes a sandbox candidate for a reproduced failure without applying it.",
+    dashboard: "Run live check sends the same rule through the same engine and shows both sessions' evidence. The rail keeps each rule's last verdict.",
+  },
+  {
+    title: "Probe the demo store",
     commands: ["faultline verify"],
-    terminal: "Sends one checkout request to the live store and reports whether the seeded defect is active.",
-    dashboard: "Run live check sends any rule from two fresh sessions. faultline.toml rules have no CLI equivalent yet.",
+    terminal: "Sends one checkout request to the store on port 8000 and reports whether the seeded defect is active.",
+    dashboard: "Check checkout live in the live store bar.",
   },
   {
     title: "Reproduce and repair",
@@ -48,7 +54,11 @@ const STEPS: { title: string; commands: string[]; terminal: string; dashboard: s
   },
 ];
 
-const PREFIX = "uv run --project services/repair-orchestrator --python 3.13 --locked";
+
+/** Command-line flags in prose, set as code so "--repair" never breaks across a line. */
+function withFlags(text: string) {
+  return text.split(/(--[a-z]+)/).map((part, i) => (i % 2 ? <code key={i} className="flag">{part}</code> : part));
+}
 
 function CopyCommand({ command, onCopied }: { command: string; onCopied: (text: string) => void }) {
   const copy = async () => {
@@ -113,14 +123,14 @@ export default function CliGuide({ request }: { request: number }) {
                 <ul className="cmds" aria-label={`${step.title} commands`}>
                   {step.commands.map((command) => <CopyCommand key={command} command={command} onCopied={setCopied} />)}
                 </ul>
-                <p>{step.terminal}</p>
+                <p>{withFlags(step.terminal)}</p>
               </div>
               <p className="guide-dashboard"><span className="sr-only">In the dashboard: </span>{step.dashboard}</p>
             </li>
           ))}
         </ol>
         <p className="dialog-note">
-          From a clone, without installing the CLI, prefix each command with <code>{PREFIX}</code>.
+          From a clone, run each command through the launcher at the repository root, as in <code>./faultline check --port 8000</code>. It also works from another project by absolute path or a symlink on <code>PATH</code>.
           Press <kbd>?</kbd> anywhere outside a text field to open this sheet.
         </p>
         <p className="sr-only" role="status" aria-live="polite">{copied}</p>

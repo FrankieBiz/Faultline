@@ -82,6 +82,14 @@ function CheckResult(props: {
       <p className="check-target"><code>{check.method} {check.url}</code></p>
       <div className="sessions">
         {check.sessions.map((session, i) => <Session key={session.session_id || i} session={session} index={i} sources={sources} />)}
+        {/* The engine stops after a session that gets no response; say so instead of leaving a blank cell. */}
+        {check.sessions.length === 1 && (
+          <div className="session session-skipped">
+            <p className="eyebrow">Session 2</p>
+            <p className="session-status">Not sent</p>
+            <p className="signal muted">Session 1 got no response, so there was nothing to compare against.</p>
+          </div>
+        )}
       </div>
       {check.repair ? (
         <div className="repair-callout">

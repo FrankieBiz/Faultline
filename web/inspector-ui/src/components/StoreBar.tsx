@@ -50,10 +50,10 @@ export default function StoreBar(props: {
           ) : null}
         </div>
         <div className="store-actions">
-          <button type="button" className="btn primary" onClick={onApply} disabled={!canApply} aria-describedby="store-hint">
+          <button type="button" className="btn primary" onClick={onApply} disabled={!canApply} aria-describedby={hint ? "store-hint" : undefined}>
             {applying ? "Applying fix…" : "Apply fix"}
           </button>
-          <button type="button" className="btn" onClick={onRevert} disabled={!canRevert} aria-describedby="store-hint">
+          <button type="button" className="btn" onClick={onRevert} disabled={!canRevert} aria-describedby={hint ? "store-hint" : undefined}>
             {reverting ? "Reverting…" : "Revert store"}
           </button>
           {onCheckLive && (

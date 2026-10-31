@@ -22,11 +22,14 @@ export function writeSoundPreference(on: boolean): void {
 }
 
 let context: AudioContext | null = null;
+/** Audio devices can take a moment to wake; a cue still waiting after this is dropped, not played late. */
+const RESUME_GRACE_MS = 500;
 
 function audio(): AudioContext | null {
   if (typeof window === "undefined" || typeof window.AudioContext !== "function") return null;
-  context ??= new window.AudioContext();
-  if (context.state === "suspended") void context.resume();
+  // Before any user gesture the browser keeps a new context suspended; don't create one that cannot sound.
+  if (!context && navigator.userActivation && !navigator.userActivation.hasBeenActive) return null;
+  context ??= new window.AudioContext({ latencyHint: "interactive" });
   return context;
 }
 
@@ -52,6 +55,16 @@ function voice(ctx: AudioContext, destination: AudioNode, v: Voice): void {
 export function playCue(cue: Cue): void {
   const ctx = audio();
   if (!ctx) return;
+  if (ctx.state === "running") return schedule(ctx, cue);
+  // A suspended (or, on iOS, interrupted) context would hold the cue until the next click and
+  // sound it then, out of step with the event. Play it only if the context resumes promptly.
+  const asked = performance.now();
+  ctx.resume().then(() => {
+    if (performance.now() - asked <= RESUME_GRACE_MS) schedule(ctx, cue);
+  }, () => {});
+}
+
+function schedule(ctx: AudioContext, cue: Cue): void {
   const t = ctx.currentTime + 0.02;
   const master = ctx.createGain();
   master.gain.value = 0.16;

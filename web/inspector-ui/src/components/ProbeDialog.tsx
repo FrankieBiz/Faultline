@@ -9,6 +9,7 @@ export interface ProbeValues {
   body: unknown; autoRepair: boolean;
 }
 
+type Field = "url" | "status" | "body";
 const NO_BODY: ReadonlySet<Method> = new Set(["GET", "HEAD"]);
 const CHECKOUT_BODY = JSON.stringify({ items: [{ product_id: "trail-mug", quantity: 2 }] }, null, 2);
 
@@ -28,12 +29,20 @@ export default function ProbeDialog(props: {
   const [body, setBody] = useState("");
   const [autoRepair, setAutoRepair] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /** The field a client-side check rejected; it is marked invalid and receives focus. */
+  const [invalid, setInvalid] = useState<Field | null>(null);
+  const statusRef = useRef<HTMLInputElement>(null);
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const fields = { url: urlRef, status: statusRef, body: bodyRef };
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     const dialog = ref.current;
     if (!dialog) return;
     if (open && !dialog.open) {
+      // A draft survives Cancel, but a stale error from the last attempt does not.
+      setError(null);
+      setInvalid(null);
       dialog.showModal();
       urlRef.current?.focus();
     } else if (!open && dialog.open) {
@@ -42,7 +51,7 @@ export default function ProbeDialog(props: {
   }, [open]);
 
   const reset = () => {
-    setMethod("GET"); setUrl(""); setStatus("200"); setTitle(""); setBody(""); setError(null);
+    setMethod("GET"); setUrl(""); setStatus("200"); setTitle(""); setBody(""); setError(null); setInvalid(null);
   };
 
   const fillCheckout = () => {
@@ -53,28 +62,36 @@ export default function ProbeDialog(props: {
     setTitle("Checkout without a coupon");
     setBody(CHECKOUT_BODY);
     setError(null);
+    setInvalid(null);
   };
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError(null);
+    setInvalid(null);
+    const reject = (field: Field, message: string) => {
+      setError(message);
+      setInvalid(field);
+      fields[field].current?.focus();
+    };
     let parsedUrl: URL;
     try {
       parsedUrl = new URL(url.trim());
     } catch {
-      return setError("Enter a full URL, such as https://api.example.com/health.");
+      return reject("url", "Enter a full URL, such as https://api.example.com/health.");
     }
-    if (!["http:", "https:"].includes(parsedUrl.protocol)) return setError("The URL must start with http:// or https://.");
+    if (!["http:", "https:"].includes(parsedUrl.protocol)) return reject("url", "The URL must start with http:// or https://.");
     const expectedStatus = Number(status);
     if (!Number.isInteger(expectedStatus) || expectedStatus < 100 || expectedStatus > 599) {
-      return setError("Expected status must be a whole number from 100 to 599.");
+      return reject("status", "Expected status must be a whole number from 100 to 599.");
     }
     let parsedBody: unknown = undefined;
     if (!NO_BODY.has(method) && body.trim()) {
       try {
         parsedBody = JSON.parse(body);
-      } catch {
-        return setError("The request body must be valid JSON.");
+      } catch (e) {
+        // The parser's own message names the position, which is what fixes the typo.
+        return reject("body", `The request body must be valid JSON${e instanceof SyntaxError ? `: ${e.message}` : ""}.`);
       }
     }
     setSaving(true);
@@ -87,6 +104,9 @@ export default function ProbeDialog(props: {
       setSaving(false);
     }
   };
+
+  const describe = (field: Field) => invalid === field
+    ? { "aria-invalid": true, "aria-describedby": `${ids}-e` } : {};
 
   return (
     <dialog ref={ref} className="probe-dialog" aria-labelledby={`${ids}-h`} aria-describedby={`${ids}-d`} onClose={onClose}>
@@ -107,14 +127,14 @@ export default function ProbeDialog(props: {
           </label>
           <label className="field grow">
             <span>URL</span>
-            <input ref={urlRef} type="url" inputMode="url" autoComplete="off" spellCheck={false} required
+            <input ref={urlRef} {...describe("url")} type="url" inputMode="url" autoComplete="off" spellCheck={false} required
               placeholder="https://api.example.com/health" value={url} onChange={(e) => setUrl(e.target.value)} />
           </label>
         </div>
         <div className="field-row">
           <label className="field status-field">
             <span>Expected status</span>
-            <input type="number" inputMode="numeric" min={100} max={599} required value={status} onChange={(e) => setStatus(e.target.value)} />
+            <input ref={statusRef} {...describe("status")} type="number" inputMode="numeric" min={100} max={599} required value={status} onChange={(e) => setStatus(e.target.value)} />
           </label>
           <label className="field grow">
             <span>Name <span className="muted">optional</span></span>
@@ -124,7 +144,7 @@ export default function ProbeDialog(props: {
         {!NO_BODY.has(method) && (
           <label className="field">
             <span>JSON body <span className="muted">optional, sent as application/json</span></span>
-            <textarea rows={5} spellCheck={false} value={body} onChange={(e) => setBody(e.target.value)} placeholder='{"items": []}' />
+            <textarea ref={bodyRef} {...describe("body")} rows={5} spellCheck={false} value={body} onChange={(e) => setBody(e.target.value)} placeholder='{"items": []}' />
           </label>
         )}
         <label className="check-field">
@@ -132,7 +152,7 @@ export default function ProbeDialog(props: {
           <span>If it fails and a registered sandbox repair covers this route and error, start the repair.</span>
         </label>
         <p className="dialog-note">No credentials or custom headers are sent. Redirects are reported, not followed. Responses are read up to 64 KiB.</p>
-        {error && <p className="notice" data-tone="bad" role="alert">{error}</p>}
+        {error && <p id={`${ids}-e`} className="notice" data-tone="bad" role="alert">{error}</p>}
         <div className="dialog-actions">
           <button type="button" className="btn quiet" onClick={onClose} disabled={saving}>Cancel</button>
           <button type="submit" className="btn primary" disabled={saving}>{saving ? "Saving…" : "Save and check live"}</button>

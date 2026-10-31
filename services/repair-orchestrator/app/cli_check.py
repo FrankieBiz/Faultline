@@ -111,7 +111,12 @@ class CheckedConfig:
 
 def validate_config(path: Path) -> CheckedConfig:
     """Validate the entire document before sending even one request."""
-    data = tomllib.loads(path.read_text(encoding="utf-8"))
+    if not path.is_file():
+        raise ValueError(f"{path} not found; run faultline init or pass --config PATH")
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError as exc:
+        raise ValueError(f"{path.name} is not valid TOML: {exc}") from exc
     if type(data.get("schema")) is not int:
         raise ValueError("schema must be the integer 1")
     config = Configuration.model_validate(data)
@@ -122,7 +127,7 @@ def validate_config(path: Path) -> CheckedConfig:
     validate_target(config.project.url, placeholder=True)
     root = (path.parent / config.project.root).resolve()
     if not root.is_dir():
-        raise ValueError("project.root does not exist")
+        raise ValueError(f"project.root does not exist: {root}")
     for rule in config.invariants.rule:
         if rule.request is not None:
             if rule.model_fields_set & {"target", "method", "expected_status", "json_body"}:

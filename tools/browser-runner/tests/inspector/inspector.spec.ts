@@ -268,19 +268,38 @@ test("dialog errors stay in the dialog and Escape closes it", async ({ page }) =
   await dialog.getByLabel("URL").fill("not a url");
   await dialog.getByRole("button", { name: "Save and check live" }).click();
   await expect(dialog.getByRole("alert")).toHaveText("Enter a full URL, such as https://api.example.com/health.");
+  // The rejected field is marked, described by the error, and focused so it can be fixed in place.
+  await expect(dialog.getByLabel("URL")).toBeFocused();
+  await expect(dialog.getByLabel("URL")).toHaveAttribute("aria-invalid", "true");
+  await expect(dialog.getByLabel("URL")).toHaveAccessibleDescription("Enter a full URL, such as https://api.example.com/health.");
+  await dialog.getByLabel("URL").fill("https://example.com/");
+  await dialog.getByLabel("Expected status").fill("42");
+  await dialog.getByRole("button", { name: "Save and check live" }).click();
+  await expect(dialog.getByRole("alert")).toHaveText("Expected status must be a whole number from 100 to 599.");
+  await expect(dialog.getByLabel("Expected status")).toBeFocused();
+  await expect(dialog.getByLabel("URL")).not.toHaveAttribute("aria-invalid");
+  await dialog.getByLabel("Expected status").fill("200");
   await dialog.getByLabel("Method").selectOption("PUT");
   await dialog.getByLabel("URL").fill("https://user:pw@example.com/");
   await dialog.getByLabel(/JSON body/).fill("{not json");
   await dialog.getByRole("button", { name: "Save and check live" }).click();
-  await expect(dialog.getByRole("alert")).toHaveText("The request body must be valid JSON.");
+  // The parser's own position is part of the message, so the typo can be found.
+  await expect(dialog.getByRole("alert")).toHaveText(/^The request body must be valid JSON: .*position \d+.*\.$/);
+  await expect(dialog.getByLabel(/JSON body/)).toBeFocused();
+  await expect(dialog.getByLabel(/JSON body/)).toHaveAttribute("aria-invalid", "true");
   expect(calls.registered).toHaveLength(0);
   await dialog.getByLabel(/JSON body/).fill("");
   await dialog.getByRole("button", { name: "Save and check live" }).click();
   await expect(dialog.getByRole("alert")).toHaveText("URL must not contain credentials");
   expect(calls.registered).toEqual([{ method: "PUT", url: "https://user:pw@example.com/", expected_status: 200 }]);
+  await expect(dialog.getByLabel(/JSON body/)).not.toHaveAttribute("aria-invalid");
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
   expect(calls.checks).toHaveLength(0);
+  // Reopening keeps the draft but not the last attempt's error.
+  await page.getByRole("button", { name: "New invariant" }).click();
+  await expect(dialog.getByLabel("URL")).toHaveValue("https://user:pw@example.com/");
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
 });
 
 test("a failure no sandbox repair covers is detection only, and probes can be removed", async ({ page }) => {
@@ -319,7 +338,12 @@ test("rules with {port} ask for the port, and outcomes read from the recorded se
   await expect(page.getByRole("heading", { name: "Check did not complete" })).toBeVisible();
   await expect(page.getByText("Nothing answered at http://127.0.0.1:8471. Start the service, then check again.")).toBeVisible();
   await expect(page.getByText("Request failed: ConnectError")).toBeVisible();
+  // The engine sends no second session after a transport failure; the result says so rather than leaving a gap.
+  await expect(page.locator(".session-skipped")).toContainText("Session 2");
+  await expect(page.locator(".session-skipped")).toContainText("Not sent");
+  await expect(page.locator(".session-skipped")).toContainText("Session 1 got no response");
   await run.click();
+  await expect(page.locator(".session-skipped")).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Passing", exact: true })).toBeVisible();
   await expect(page.getByText("Both fresh sessions met every expectation.")).toBeVisible();
   expect(calls.checks).toEqual([{ id: "service_health", body: { port: 8471 } }, { id: "service_health", body: { port: 8471 } }]);
@@ -664,19 +688,33 @@ test("the CLI guide pairs each real command with its dashboard control, copies c
   const guide = page.getByRole("dialog", { name: "Developer workflow" });
   await expect(guide).toBeVisible();
   await expect(guide.getByRole("button", { name: "Close" })).toBeFocused();
-  for (const command of ["faultline init", "faultline doctor", "faultline verify", "faultline run checkout_api --detect",
-    "faultline run checkout_api", "faultline listen", "faultline dashboard", "faultline apply", "faultline revert"]) {
+  for (const command of ["faultline init", "faultline doctor", "faultline check --port 8000", "faultline check --port 8000 --json",
+    "faultline verify", "faultline run checkout_api --detect", "faultline run checkout_api", "faultline listen",
+    "faultline dashboard", "faultline apply", "faultline revert"]) {
     await expect(guide.getByRole("button", { name: `Copy ${command}`, exact: true })).toBeVisible();
   }
-  // Only commands the CLI parser defines; live checks of faultline.toml rules are dashboard-only.
-  await expect(guide.getByText("faultline check")).toHaveCount(0);
-  await expect(guide).toContainText("faultline.toml rules have no CLI equivalent yet");
+  // faultline check is the terminal twin of Run live check: same rules, same two-session engine, a CI exit code.
+  const gate = guide.getByRole("listitem").filter({ hasText: "Gate live invariants" });
+  await expect(gate).toContainText("Exit 0 when all pass");
+  await expect(gate).toContainText("--repair proposes a sandbox candidate for a reproduced failure without applying it");
+  // Flags in prose are code that never wraps mid-flag.
+  await expect(gate.locator("code.flag")).toHaveText(["--json", "--repair"]);
+  expect(await gate.locator("code.flag").first().evaluate((el) => getComputedStyle(el).whiteSpace)).toBe("nowrap");
+  await expect(gate.locator(".guide-dashboard")).toContainText("Run live check sends the same rule through the same engine");
+  await expect(guide).not.toContainText("no CLI equivalent");
+  const steps = await guide.locator(".guide-step h3").allTextContents();
+  expect(steps.indexOf("Gate live invariants")).toBe(steps.indexOf("Check readiness") + 1);
+  await expect(guide.getByRole("listitem").filter({ hasText: "Probe the demo store" }).locator(".guide-dashboard")).toHaveText(/Check checkout live/);
   await expect(guide.getByRole("listitem").filter({ hasText: "Reproduce and repair" })).toContainText("Run sandbox repair");
-  await expect(guide).toContainText("uv run --project services/repair-orchestrator --python 3.13 --locked");
+  await expect(guide.locator(".dialog-note")).toContainText("./faultline check --port 8000");
+  await expect(guide).not.toContainText("uv run --project");
 
   await guide.getByRole("button", { name: "Copy faultline init", exact: true }).click();
   await expect(guide.getByRole("status")).toHaveText("Copied faultline init");
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("faultline init");
+  await guide.getByRole("button", { name: "Copy faultline check --port 8000 --json", exact: true }).click();
+  await expect(guide.getByRole("status")).toHaveText("Copied faultline check --port 8000 --json");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("faultline check --port 8000 --json");
 
   await page.keyboard.press("Escape");
   await expect(guide).toBeHidden();
@@ -740,6 +778,69 @@ test("sound cues are opt-in, persist, and sound an alarm for a reproduced failur
   await run.click();
   await expect(page.getByRole("heading", { name: "Passing", exact: true })).toBeVisible();
   expect(await started()).toEqual(["triangle", "triangle", "triangle", "sine"]);
+});
+
+test("cues never sound late: none before a user gesture, none from a context that stays suspended", async ({ page }) => {
+  // Playwright's own evaluations count as user gestures and its Chromium may autoplay, so model a real
+  // browser: activation comes only from a pointer or key event, and a test switch holds the context suspended.
+  await page.addInitScript(() => {
+    localStorage.setItem("faultline.sound", "on");
+    const started: string[] = [];
+    const contexts: string[] = [];
+    const flags = { active: false, suspend: false };
+    Object.assign(window, { __oscillators: started, __contexts: contexts, __audio: flags });
+    for (const type of ["pointerdown", "keydown"]) addEventListener(type, () => { flags.active = true; }, true);
+    Object.defineProperty(navigator, "userActivation", { value: { get hasBeenActive() { return flags.active; }, isActive: false } });
+    const Real = window.AudioContext;
+    window.AudioContext = class extends Real {
+      constructor(options?: AudioContextOptions) {
+        super(options);
+        contexts.push(String(options?.latencyHint));
+      }
+      override get state() { return flags.suspend ? "suspended" : super.state; }
+      // A suspended context resumes only at the next gesture, long after the event it would announce.
+      override resume() { return flags.suspend ? new Promise<void>((resolve) => setTimeout(resolve, 1500)) : super.resume(); }
+      override createOscillator() {
+        const oscillator = super.createOscillator();
+        const start = oscillator.start.bind(oscillator);
+        oscillator.start = (when?: number) => { started.push(oscillator.type); start(when); };
+        return oscillator;
+      }
+    };
+  });
+  const audio = () => page.evaluate(() => {
+    const w = window as unknown as { __oscillators: string[]; __contexts: string[] };
+    return { oscillators: w.__oscillators.length, contexts: [...w.__contexts] };
+  });
+  const suspend = (on: boolean) => page.evaluate((value) => { (window as unknown as { __audio: { suspend: boolean } }).__audio.suspend = value; }, on);
+  // Sound was left on; the page reattaches to a run that settles before the operator touches anything.
+  let settled = false;
+  const outcomes = [check("checkout.no_coupon", "detected"), check("checkout.no_coupon", "detected")];
+  await mock(page, { detail: detail("running", null), onCheck: () => outcomes.shift()! });
+  await page.route(`**/api/faultline/jobs/${id}`, (route) => route.fulfill({ json: settled ? verifiedDetail() : detail("running", null) }));
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Sound cues" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "Stop run" })).toBeVisible();
+  settled = true;
+  await expect(page.getByRole("heading", { name: "Verified repair", exact: true })).toBeVisible();
+  await page.waitForTimeout(200);
+  expect(await audio()).toEqual({ oscillators: 0, contexts: [] });
+
+  // After a gesture, a cue whose context will not resume promptly is dropped rather than held.
+  await rail(page).getByRole("button", { name: /Checkout without a coupon creates an order/ }).click();
+  await suspend(true);
+  const run = page.getByRole("button", { name: "Run live check" });
+  await run.click();
+  await expect(page.getByRole("heading", { name: "Failing", exact: true })).toBeVisible();
+  await page.waitForTimeout(1800);
+  expect((await audio()).oscillators).toBe(0);
+
+  // A running context sounds the cue at once, on a context created for interactive latency.
+  await suspend(false);
+  await run.click();
+  await expect(run).toHaveText("Run live check");
+  await expect.poll(async () => (await audio()).oscillators).toBe(6);
+  expect((await audio()).contexts).toEqual(["interactive"]);
 });
 
 test("the rail shows a live check in flight and each sandbox run's evidence-checked result", async ({ page }) => {

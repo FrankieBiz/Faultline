@@ -8,6 +8,7 @@ import json
 import os
 import queue
 import signal
+import socket
 import subprocess
 import threading
 import tomllib
@@ -24,6 +25,7 @@ import pytest
 from app.cli import (
     OUTCOME_EXIT_CODES,
     HudState,
+    _describe_check,
     _pump_events,
     apply_patch_for_job,
     build_parser,
@@ -885,7 +887,8 @@ assert = [{{status = 200}}, {{path = "$.value", equals = 3}}]
     path.write_text(path.read_text().replace("equals = 3", "equals = 4"))
     assert _check(path, "--plain") == 1
     out = capsys.readouterr().out
-    assert "FAIL echo" in out and "\x1b" not in out
+    assert "FAIL echo: failed the same way in both sessions: " in out and "\x1b" not in out
+    assert "_reproduced_twice" not in out
 
 
 @pytest.mark.parametrize(
@@ -1003,10 +1006,13 @@ def test_check_port_substitution_and_plain(
     port = live_http[0].rsplit(":", 1)[1]
     path = _config(tmp_path, "http://127.0.0.1:{port}")
     assert _check(path, "--plain") == 1
-    assert "port_required" in capsys.readouterr().out
+    assert "error: port_required: this config's URLs use {port}; pass --port N" in (
+        capsys.readouterr().out
+    )
     assert _check(path, "--port", port, "--plain") == 0
     output = capsys.readouterr().out
-    assert "PASS health" in output and "\x1b" not in output
+    assert "PASS health: every assertion passed in both sessions" in output
+    assert "\x1b" not in output
     assert _check(path, "--port", "0", "--json") == 1
     assert json.loads(capsys.readouterr().out)["errors"]
 
@@ -1443,3 +1449,42 @@ steps=[{action="request",id="r",method="GET",path="/"},{action="assert",id="a",s
         s for s in run.repro.steps if isinstance(s, RequestStep) and s.id.startswith("invariant.")
     )
     assert request.body == {"value": 3}
+
+
+def test_check_plain_output_explains_missing_config_bad_toml_and_no_response(
+    tmp_path: Path, ready_sandbox: MagicMock, capsys: pytest.CaptureFixture[str]
+) -> None:
+    missing = tmp_path / "faultline.toml"
+    assert _check(missing, "--plain") == 1
+    assert f"error: {missing} not found; run faultline init or pass --config PATH" in (
+        capsys.readouterr().out
+    )
+    missing.write_text("schema = 1\n[project\n")
+    assert _check(missing, "--json") == 1
+    (error,) = json.loads(capsys.readouterr().out)["errors"]
+    assert error.startswith("faultline.toml is not valid TOML: ")
+    # A closed port: the gate fails and says what to check, not an engine reason code.
+    path = _config(tmp_path, "http://127.0.0.1:{port}")
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        closed = probe.getsockname()[1]
+    assert _check(path, "--port", str(closed), "--plain") == 1
+    out = capsys.readouterr().out
+    assert "FAIL health: no complete response (ConnectError); is the service running" in out
+    assert "execution_or_cleanup_failed" not in out
+
+
+def test_describe_check_names_flaky_and_mismatched_failures() -> None:
+    def session(*passed: bool) -> dict[str, Any]:
+        assertions = [{"id": f"a{i}", "passed": ok} for i, ok in enumerate(passed)]
+        return {"error": None, "assertions": assertions}
+
+    flaky = {
+        "passed": False,
+        "outcome": "no_failure",
+        "reason": "failure_not_reproduced_twice",
+        "sessions": [session(True, False), session(True, True)],
+    }
+    assert _describe_check(flaky) == "failed inconsistently across the two sessions (flaky): a1"
+    mismatch = {**flaky, "reason": "fingerprint_mismatch", "sessions": [session(False)] * 2}
+    assert _describe_check(mismatch) == "failed, but not with the declared server error: a0"

@@ -189,6 +189,7 @@ a.btn { display: inline-flex; align-items: center; text-decoration: none; }
   background: var(--well); color: var(--ink); font: 14px var(--sans);
 }
 .field textarea { padding: 10px 12px; font: 13px/1.55 var(--mono); resize: vertical; }
+.field [aria-invalid="true"] { border-color: var(--red); }
 .field input[type="url"], .field input[type="number"] { font-family: var(--mono); font-size: 13.5px; }
 .port-field input { width: 120px; }
 
@@ -211,6 +212,7 @@ a.btn { display: inline-flex; align-items: center; text-decoration: none; }
 .session[data-tone="bad"] .session-status { color: var(--red); text-shadow: 0 0 22px rgba(255, 77, 106, 0.35); }
 .session[data-tone="ok"] .session-status { color: var(--green); text-shadow: 0 0 22px rgba(61, 255, 162, 0.25); }
 .session[data-tone="warn"] .session-status { color: var(--amber); font-size: 22px; }
+.session-skipped .session-status { color: var(--ink-3); font-size: 22px; }
 .session .asserts { margin-top: 14px; }
 .repair-callout { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 16px 32px; margin-top: 20px; padding: 18px 20px; border: 1px solid var(--line-strong); border-radius: 12px; }
 .repair-callout > div { flex: 1 1 320px; min-width: 0; }
@@ -364,6 +366,7 @@ details[open] > summary { margin-bottom: 16px; }
 .btn.cmd-copy { flex: none; min-height: 30px; padding: 0 10px; font-size: 12px; }
 .btn.cmd-copy:hover { color: var(--ink); background: rgba(255, 255, 255, 0.05); }
 .guide .dialog-note code { color: var(--ink-2); }
+.guide-terminal .flag { color: var(--ink); font-size: 12px; white-space: nowrap; }
 .guide-copied { position: sticky; bottom: 0; justify-self: end; margin: -4px 0 0; padding: 6px 12px; border: 1px solid rgba(61, 255, 162, 0.3); border-radius: 8px; background: var(--raised); color: var(--green); font: 12px var(--mono); overflow-wrap: anywhere; }
 
 .foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; margin-top: 72px; padding-top: 24px; padding-bottom: 48px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--ink-3); }

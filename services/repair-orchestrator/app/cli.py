@@ -1353,6 +1353,33 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
     return 0
 
 
+# Plain-output explanations for engine codes; --json keeps the codes themselves.
+_CHECK_ERROR_HINTS = {
+    "port_required": "this config's URLs use {port}; pass --port N",
+}
+
+
+def _describe_check(check: dict[str, Any]) -> str:
+    """One readable line per invariant: what happened in the two sessions, and what failed."""
+    if check["passed"]:
+        return "every assertion passed in both sessions"
+    sessions = check["sessions"]
+    error = next((s["error"] for s in sessions if s["error"]), None)
+    if error:
+        return f"no complete response ({error}); is the service running on that port?"
+    failing = list(
+        dict.fromkeys(a["id"] for s in sessions for a in s["assertions"] if not a["passed"])
+    )
+    named = ": " + ", ".join(failing) if failing else ""
+    if check["outcome"] == "detected":
+        return "failed the same way in both sessions" + named
+    if check["reason"] == "fingerprint_mismatch":
+        return "failed, but not with the declared server error" + named
+    if check["reason"] in {"nondeterministic_failure", "failure_not_reproduced_twice"}:
+        return "failed inconsistently across the two sessions (flaky)" + named
+    return str(check["reason"]).replace("_", " ") + named
+
+
 def cmd_check(args: argparse.Namespace) -> int:
     """Check a running project's declared HTTP invariants, optionally proposing repairs."""
     from app.cli_check import check_project
@@ -1368,11 +1395,13 @@ def cmd_check(args: argparse.Namespace) -> int:
         if result["sandbox"]:
             print("sandbox: " + result["sandbox"]["status"] + " (repair preflight required)")
         for check in result["checks"]:
-            print(f"{'PASS' if check['passed'] else 'FAIL'} {check['id']}: {check['reason']}")
+            verdict = "PASS" if check["passed"] else "FAIL"
+            print(f"{verdict} {check['id']}: {_describe_check(check)}")
             if args.repair:
                 print("  repair: " + check["repair"]["status"] + "; live source unchanged")
         for error in result["errors"]:
-            print("error: " + error)
+            hint = _CHECK_ERROR_HINTS.get(error)
+            print("error: " + error + (f": {hint}" if hint else ""))
     return int(result["exit_code"])
 
 
