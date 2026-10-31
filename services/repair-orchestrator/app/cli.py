@@ -44,8 +44,86 @@ BOLD = "\033[1m"
 DIM = "\033[2m"
 RESET = "\033[0m"
 
+DEFAULT_ORCHESTRATOR_PORT = 9000
+DEFAULT_STORE_API_PORT = 8000
+DEFAULT_STOREFRONT_PORT = 3000
 
-def _get_control_token() -> str:
+
+@dataclass(frozen=True)
+class Palette:
+    """ANSI styles for one command's output; every field is empty when color is off."""
+
+    cyan: str = ""
+    green: str = ""
+    yellow: str = ""
+    red: str = ""
+    bold: str = ""
+    dim: str = ""
+    reset: str = ""
+
+
+COLOR = Palette(CYAN, GREEN, YELLOW, RED, BOLD, DIM, RESET)
+PLAIN = Palette()
+
+
+def _color_enabled(args: argparse.Namespace) -> bool:
+    """Color only on a terminal, without NO_COLOR (https://no-color.org), --plain, or --no-color."""
+    if getattr(args, "plain", False) or getattr(args, "no_color", False):
+        return False
+    if os.environ.get("NO_COLOR"):
+        return False
+    return sys.stdout.isatty()
+
+
+def _palette(args: argparse.Namespace) -> Palette:
+    return COLOR if _color_enabled(args) else PLAIN
+
+
+def _env_port(name: str, default: int) -> int:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        port = int(raw)
+    except ValueError:
+        port = 0
+    if not 0 < port < 65536:
+        raise SystemExit(f"faultline: {name} must be a port number (1-65535), got {raw!r}")
+    return port
+
+
+def _orchestrator_port(args: argparse.Namespace) -> int:
+    """The repair orchestrator's port: --port, then FAULTLINE_PORT, then 9000."""
+    port: int | None = getattr(args, "port", None)
+    return port if port is not None else _env_port("FAULTLINE_PORT", DEFAULT_ORCHESTRATOR_PORT)
+
+
+def _store_api_port(args: argparse.Namespace) -> int:
+    """The BuggyShop API's port: --api-port, then BUGGYSHOP_API_PORT, then 8000."""
+    port: int | None = getattr(args, "api_port", None)
+    return port if port is not None else _env_port("BUGGYSHOP_API_PORT", DEFAULT_STORE_API_PORT)
+
+
+def _storefront_url() -> str:
+    return f"http://127.0.0.1:{_env_port('BUGGYSHOP_PORT', DEFAULT_STOREFRONT_PORT)}"
+
+
+def _port_arg(value: str) -> int:
+    port = int(value)
+    if not 0 < port < 65536:
+        raise argparse.ArgumentTypeError(f"{value} is not a port number (1-65535)")
+    return port
+
+
+def _process_listens_on(pid: str, port: int) -> bool:
+    try:
+        argv = Path(f"/proc/{pid}/cmdline").read_bytes().decode(errors="replace").split("\x00")
+    except OSError:
+        return False
+    return any(a == "--port" and b == str(port) for a, b in zip(argv, argv[1:], strict=False))
+
+
+def _get_control_token(port: int | None = None) -> str:
     token = os.environ.get("FAULTLINE_CONTROL_TOKEN")
     if token:
         return token
@@ -53,11 +131,14 @@ def _get_control_token() -> str:
     if token_file.exists():
         return token_file.read_text().strip()
 
-    # Discover token from running repair-orchestrator process
+    # Discover token from running repair-orchestrator process, preferring the one on this port
+    # when several demo stacks run side by side.
     try:
         pids = subprocess.check_output(
             ["pgrep", "-f", "services/repair-orchestrator.*uvicorn"], text=True
         ).split()
+        if port is not None:
+            pids.sort(key=lambda pid: not _process_listens_on(pid, port))
         for pid in pids:
             environ_path = Path(f"/proc/{pid}/environ")
             if environ_path.exists():
@@ -74,11 +155,11 @@ def _api_request(
     path: str,
     method: str = "GET",
     data: dict[str, Any] | None = None,
-    port: int = 9000,
+    port: int = DEFAULT_ORCHESTRATOR_PORT,
 ) -> dict[str, Any]:
     url = f"http://127.0.0.1:{port}{path}"
     headers = {
-        "Authorization": f"Bearer {_get_control_token()}",
+        "Authorization": f"Bearer {_get_control_token(port)}",
         "Content-Type": "application/json",
     }
     body = json.dumps(data).encode() if data else None
@@ -99,6 +180,7 @@ def _api_request(
 
 def cmd_version(args: argparse.Namespace) -> int:
     """Print FaultLine CLI and engine version details."""
+    c = _palette(args)
     commit = "unknown"
     try:
         commit = subprocess.check_output(
@@ -109,7 +191,7 @@ def cmd_version(args: argparse.Namespace) -> int:
         ).strip()
     except Exception:
         pass
-    print(f"{BOLD}FaultLine Developer Platform CLI{RESET} v0.2.0 ({commit})")
+    print(f"{c.bold}FaultLine Developer Platform CLI{c.reset} v0.2.0 ({commit})")
     print(f"  Python:   {sys.version.split()[0]}")
     print(f"  Root:     {REPOSITORY_ROOT}")
     print(f"  Platform: {sys.platform}")
@@ -120,8 +202,10 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     """Check system requirements: bubblewrap, cgroups v2, Node, uv, and models."""
     from app.cli_check import sandbox_readiness
 
+    c = _palette(args)
+    orchestrator_port, store_port = _orchestrator_port(args), _store_api_port(args)
     readiness = sandbox_readiness()
-    print(f"\n{BOLD}FaultLine Doctor: System Diagnostic Report{RESET}\n")
+    print(f"\n{c.bold}FaultLine Doctor: System Diagnostic Report{c.reset}\n")
 
     checks: list[tuple[str, bool, str]] = []
 
@@ -186,10 +270,10 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     )
 
     # 6. Service Health
-    orch_health = _api_request("/healthz", port=9000)
+    orch_health = _api_request("/healthz", port=orchestrator_port)
     checks.append(
         (
-            "Repair Orchestrator Service (port 9000)",
+            f"Repair Orchestrator Service (port {orchestrator_port})",
             orch_health.get("status") == "ok",
             "Active & Healthy"
             if orch_health.get("status") == "ok"
@@ -197,10 +281,10 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         )
     )
 
-    store_health = _api_request("/healthz", port=8000)
+    store_health = _api_request("/healthz", port=store_port)
     checks.append(
         (
-            "Storefront Backend API (port 8000)",
+            f"Storefront Backend API (port {store_port})",
             store_health.get("status") == "ok",
             "Active & Healthy" if store_health.get("status") == "ok" else "Offline",
         )
@@ -208,42 +292,46 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
     all_ok = readiness["prerequisites_available"]
     for name, passed, detail in checks:
-        icon = f"{GREEN}✓{RESET}" if passed else f"{RED}✗{RESET}"
-        status_text = f"{GREEN}PASS{RESET}" if passed else f"{YELLOW}WARN{RESET}"
-        print(f" {icon} {BOLD}{name:<40}{RESET} [{status_text}]")
-        print(f"     {DIM}{detail}{RESET}")
+        icon = f"{c.green}✓{c.reset}" if passed else f"{c.red}✗{c.reset}"
+        status_text = f"{c.green}PASS{c.reset}" if passed else f"{c.yellow}WARN{c.reset}"
+        print(f" {icon} {c.bold}{name:<40}{c.reset} [{status_text}]")
+        print(f"     {c.dim}{detail}{c.reset}")
         if not passed and name.startswith("Linux"):
             all_ok = False
 
-    print(f"\n{DIM}{'─' * 60}{RESET}")
+    print(f"\n{c.dim}{'─' * 60}{c.reset}")
     if all_ok:
         msg = (
-            f"{GREEN}{BOLD}Result: Sandbox prerequisites found; "
-            f"runner enforcement preflight is still required.{RESET}\n"
+            f"{c.green}{c.bold}Result: Sandbox prerequisites found; "
+            f"runner enforcement preflight is still required.{c.reset}\n"
         )
         print(msg)
         return 0
     else:
-        print(f"{YELLOW}Result: Some components require attention. See details above.{RESET}\n")
+        print(f"{c.yellow}Result: Some components require attention. See details above.{c.reset}\n")
         return 1
 
 
 def cmd_status(args: argparse.Namespace) -> int:
     """Check live orchestrator status, sandbox limits, and readiness."""
-    res = _api_request("/api/faultline/readiness")
+    c = _palette(args)
+    port = _orchestrator_port(args)
+    res = _api_request("/api/faultline/readiness", port=port)
     if "error" in res:
-        print(f"{RED}Error connecting to FaultLine orchestrator: {res['error']}{RESET}")
-        print("Ensure the service is running on port 9000 (`./scripts/start-demo.sh`).")
+        print(f"{c.red}Error connecting to FaultLine orchestrator: {res['error']}{c.reset}")
+        print(f"Ensure the service is running on port {port} (`./scripts/start-demo.sh`).")
         return 1
 
-    status_str = f"{GREEN if res.get('status') == 'ready' else YELLOW}{res.get('status')}{RESET}"
-    print(f"\n{BOLD}FaultLine Orchestrator Status{RESET}")
+    status_str = (
+        f"{c.green if res.get('status') == 'ready' else c.yellow}{res.get('status')}{c.reset}"
+    )
+    print(f"\n{c.bold}FaultLine Orchestrator Status{c.reset}")
     print(f"  Status:          {status_str}")
     print(f"  Runtime Ready:   {res.get('runtime_ready')}")
     print(f"  Quarantined:     {res.get('quarantined')}")
 
     model = res.get("model") or {}
-    model_str = f"{CYAN}{model.get('model', 'None')}{RESET}"
+    model_str = f"{c.cyan}{model.get('model', 'None')}{c.reset}"
     print(f"  Repair Model:    {model_str} (Provider: {model.get('provider')})")
 
     limits = res.get("resource_limits") or {}
@@ -259,51 +347,56 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 def cmd_jobs(args: argparse.Namespace) -> int:
     """List recent repair jobs with state, duration, and outcomes."""
-    res = _api_request("/api/faultline/jobs?limit=10")
+    c = _palette(args)
+    res = _api_request("/api/faultline/jobs?limit=10", port=_orchestrator_port(args))
     if "error" in res:
-        print(f"{RED}Error fetching jobs: {res['error']}{RESET}")
+        print(f"{c.red}Error fetching jobs: {res['error']}{c.reset}")
         return 1
 
     jobs = res.get("jobs", [])
     if not jobs:
-        print(f"{YELLOW}No recent jobs recorded in database.{RESET}")
+        print(f"{c.yellow}No recent jobs recorded in database.{c.reset}")
         return 0
 
-    hdr = f"\n{BOLD}{'JOB ID':<8} {'SCENARIO':<20} {'STATE':<10} {'OUTCOME':<12} {'CREATED'}{RESET}"
-    print(hdr)
+    hdr = f"{'JOB ID':<8} {'SCENARIO':<20} {'STATE':<10} {'OUTCOME':<12} {'CREATED'}"
+    print(f"\n{c.bold}{hdr}{c.reset}")
     print("-" * 75)
     for j in jobs:
         state = j.get("state", "")
-        state_color = GREEN if state == "succeeded" else (RED if state == "failed" else YELLOW)
+        state_color = (
+            c.green if state == "succeeded" else (c.red if state == "failed" else c.yellow)
+        )
         jid = j.get("id", "")[:12]
         scen = j.get("scenario_id", "")[:24]
         outc = str(j.get("outcome", ""))[:14]
         created = j.get("created_at", "")[:19]
-        print(f"{jid:<12} {scen:<24} {state_color}{state:<12}{RESET} {outc:<14} {created}")
+        print(f"{jid:<12} {scen:<24} {state_color}{state:<12}{c.reset} {outc:<14} {created}")
     print()
     return 0
 
 
 def cmd_diff(args: argparse.Namespace) -> int:
     """Print the candidate patch for a job."""
+    c = _palette(args)
+    port = _orchestrator_port(args)
     job_id = args.job_id
     if not job_id:
         # Find latest succeeded job
-        res = _api_request("/api/faultline/jobs?limit=1")
+        res = _api_request("/api/faultline/jobs?limit=1", port=port)
         jobs = res.get("jobs", [])
         if not jobs:
-            print(f"{RED}No jobs found.{RESET}")
+            print(f"{c.red}No jobs found.{c.reset}")
             return 1
         job_id = jobs[0]["id"]
 
-    res = _api_request(f"/api/faultline/jobs/{job_id}")
+    res = _api_request(f"/api/faultline/jobs/{job_id}", port=port)
     if "error" in res:
-        print(f"{RED}Error: {res['error']}{RESET}")
+        print(f"{c.red}Error: {res['error']}{c.reset}")
         return 1
 
     attempts = res.get("attempts", [])
     if not attempts:
-        print(f"{YELLOW}No repair attempts recorded for job {job_id}.{RESET}")
+        print(f"{c.yellow}No repair attempts recorded for job {job_id}.{c.reset}")
         return 1
 
     latest_attempt = attempts[-1]
@@ -321,26 +414,29 @@ def cmd_diff(args: argparse.Namespace) -> int:
         diff = latest_attempt.get("proposal", {}).get("diff", "")
 
     if not diff:
-        print(f"{YELLOW}No diff found in proposal for job {job_id}.{RESET}")
+        print(f"{c.yellow}No diff found in proposal for job {job_id}.{c.reset}")
         return 1
 
     outcome = (res.get("job") or {}).get("outcome") or "in progress"
-    tone = GREEN if outcome == "verified" else YELLOW
-    print(f"\n{BOLD}Candidate diff for job {job_id}{RESET} {DIM}·{RESET} {tone}{outcome}{RESET}\n")
+    tone = c.green if outcome == "verified" else c.yellow
+    title = f"{c.bold}Candidate diff for job {job_id}{c.reset}"
+    print(f"\n{title} {c.dim}·{c.reset} {tone}{outcome}{c.reset}\n")
     for line in diff.splitlines():
         if line.startswith("+") and not line.startswith("+++"):
-            print(f"{GREEN}{line}{RESET}")
+            print(f"{c.green}{line}{c.reset}")
         elif line.startswith("-") and not line.startswith("---"):
-            print(f"{RED}{line}{RESET}")
+            print(f"{c.red}{line}{c.reset}")
         elif line.startswith("@"):
-            print(f"{CYAN}{line}{RESET}")
+            print(f"{c.cyan}{line}{c.reset}")
         else:
             print(line)
     print()
     return 0
 
 
-def apply_patch_for_job(job_id: str, database: Any = None) -> dict[str, Any]:
+def apply_patch_for_job(
+    job_id: str, database: Any = None, port: int = DEFAULT_ORCHESTRATOR_PORT
+) -> dict[str, Any]:
     """Apply a verified candidate patch from a job to the live codebase."""
     diff = ""
     if database is not None:
@@ -373,7 +469,7 @@ def apply_patch_for_job(job_id: str, database: Any = None) -> dict[str, Any]:
             elif isinstance(raw, dict):
                 diff = raw.get("unified_diff", "")
     else:
-        res = _api_request(f"/api/faultline/jobs/{job_id}")
+        res = _api_request(f"/api/faultline/jobs/{job_id}", port=port)
         if "error" in res:
             return {"success": False, "error_code": "job_fetch_failed", "message": res["error"]}
         job = res.get("job", {})
@@ -466,29 +562,30 @@ def revert_to_seeded() -> dict[str, Any]:
 
 def cmd_init(args: argparse.Namespace) -> int:
     """Initialize a repository with faultline.toml configuration."""
+    c = _palette(args)
     target_dir = Path.cwd()
     dest_file = target_dir / "faultline.toml"
     if dest_file.exists() and not getattr(args, "force", False):
-        print(f"{YELLOW}faultline.toml already exists at {dest_file}{RESET}")
+        print(f"{c.yellow}faultline.toml already exists at {dest_file}{c.reset}")
         print("Use --force to overwrite.")
         return 0
 
-    print(f"\n{BOLD}FaultLine Initializer: Analyzing repository at {target_dir}...{RESET}")
+    print(f"\n{c.bold}FaultLine Initializer: Analyzing repository at {target_dir}...{c.reset}")
     try:
         info = detect_project_stack(target_dir)
         toml_content = generate_faultline_toml(info)
     except (OSError, ValueError, SyntaxError) as exc:
         print(f"faultline init: {exc}", file=sys.stderr)
         return 1
-    print(f"  Detected Project: {CYAN}{info['name']}{RESET}")
-    print(f"  Detected Stack:   {GREEN}{info['stack']}{RESET}")
+    print(f"  Detected Project: {c.cyan}{info['name']}{c.reset}")
+    print(f"  Detected Stack:   {c.green}{info['stack']}{c.reset}")
     if info["dev_command"]:
         print(f"  Dev Command:      {info['dev_command']}")
     if info["test_command"]:
         print(f"  Test Command:     {info['test_command']}")
 
     dest_file.write_text(toml_content)
-    print(f"\n{GREEN}{BOLD}✓ Created {dest_file}{RESET}")
+    print(f"\n{c.green}{c.bold}✓ Created {dest_file}{c.reset}")
     print("Next steps:")
     print("  1. Review faultline.toml and add a [scenarios.NAME] target_file and repro.")
     print("     Or run: faultline run --repro repro.json --target path/to/source")
@@ -499,81 +596,89 @@ def cmd_init(args: argparse.Namespace) -> int:
 
 def cmd_apply(args: argparse.Namespace) -> int:
     """Apply a verified candidate patch to the live application."""
+    c = _palette(args)
+    port, store_port = _orchestrator_port(args), _store_api_port(args)
     job_id = args.job_id
     if not job_id:
-        res = _api_request("/api/faultline/jobs?limit=5")
+        res = _api_request("/api/faultline/jobs?limit=5", port=port)
         jobs = res.get("jobs", [])
         verified = [
             j for j in jobs if j.get("state") == "succeeded" and j.get("outcome") == "verified"
         ]
         if not verified:
-            print(f"{RED}No verified jobs found to apply.{RESET}")
+            print(f"{c.red}No verified jobs found to apply.{c.reset}")
             return 1
         job_id = verified[0]["id"]
 
-    result = apply_patch_for_job(job_id)
+    result = apply_patch_for_job(job_id, port=port)
     if not result.get("success"):
-        print(f"{RED}Failed to apply patch: {result.get('message')}{RESET}")
+        print(f"{c.red}Failed to apply patch: {result.get('message')}{c.reset}")
         return 1
 
-    print(f"\n{GREEN}{BOLD}✓ Verified patch successfully applied to:{RESET}")
+    print(f"\n{c.green}{c.bold}✓ Verified patch successfully applied to:{c.reset}")
     print(f"  {result.get('target')}")
     print(f"  Backup created: {result.get('backup')}")
 
     # Test live API
-    print(f"\n{CYAN}Testing live store endpoint...{RESET}")
+    print(f"\n{c.cyan}Testing live store endpoint...{c.reset}")
     test_payload = {
         "items": [{"product_id": "trail-mug", "quantity": 2}],
         "coupon_code": "",
     }
-    test_res = _api_request("/api/checkout", method="POST", data=test_payload, port=8000)
+    test_res = _api_request("/api/checkout", method="POST", data=test_payload, port=store_port)
     if test_res.get("status") == 0 or "error" in test_res:
-        print(f"  {YELLOW}Note: Backend may need automatic reload (port 8000).{RESET}")
+        print(f"  {c.yellow}Note: Backend may need automatic reload (port {store_port}).{c.reset}")
     else:
         order_id = test_res.get("id")
         total = test_res.get("total", 0)
         price = f"${total / 100:.2f}"
-        print(f"  {GREEN}{BOLD}Live Order Created: ID={order_id}, Total={price}{RESET}")
-        print(f"  {GREEN}BuggyShop on http://127.0.0.1:3000 is now 100% REPAIRED!{RESET}\n")
+        print(f"  {c.green}{c.bold}Live Order Created: ID={order_id}, Total={price}{c.reset}")
+        print(f"  {c.green}BuggyShop on {_storefront_url()} is now 100% REPAIRED!{c.reset}\n")
 
     return 0
 
 
 def cmd_revert(args: argparse.Namespace) -> int:
     """Revert the live application back to the seeded bug state."""
+    c = _palette(args)
     result = revert_to_seeded()
     if not result.get("success"):
-        print(f"{RED}Failed to revert: {result.get('message')}{RESET}")
+        print(f"{c.red}Failed to revert: {result.get('message')}{c.reset}")
         return 1
 
-    print(f"\n{YELLOW}{BOLD}✓ Reverted live store to seeded defect state:{RESET}")
+    print(f"\n{c.yellow}{c.bold}✓ Reverted live store to seeded defect state:{c.reset}")
     print(f"  Target: {result.get('target')}")
-    print("  Live BuggyShop at http://127.0.0.1:3000 will now trigger the 500 error.\n")
+    print(f"  Live BuggyShop at {_storefront_url()} will now trigger the 500 error.\n")
     return 0
 
 
 def cmd_verify(args: argparse.Namespace) -> int:
     """Run an automated checkout check against the live store to verify status."""
-    print(f"\n{BOLD}Probing live store checkout (http://127.0.0.1:8000/api/checkout)...{RESET}")
+    c = _palette(args)
+    store_port = _store_api_port(args)
+    url = f"http://127.0.0.1:{store_port}/api/checkout"
+    print(f"\n{c.bold}Probing live store checkout ({url})...{c.reset}")
     test_payload = {
         "items": [{"product_id": "trail-mug", "quantity": 1}],
         "coupon_code": "",
     }
-    res = _api_request("/api/checkout", method="POST", data=test_payload, port=8000)
+    res = _api_request("/api/checkout", method="POST", data=test_payload, port=store_port)
     err_str = str(res.get("error", "")) + str(res.get("detail", ""))
     if res.get("status") == 500 or "TypeError" in err_str:
-        print(f"  {RED}{BOLD}Status: DEFECT ACTIVE (HTTP 500){RESET}")
-        print(f"  {DIM}TypeError: unsupported operand type(s) for -: 'int' and 'NoneType'{RESET}")
-        print("  Live BuggyStore at http://127.0.0.1:3000 is currently BROKEN.")
+        print(f"  {c.red}{c.bold}Status: DEFECT ACTIVE (HTTP 500){c.reset}")
+        print(
+            f"  {c.dim}TypeError: unsupported operand type(s) for -: 'int' and 'NoneType'{c.reset}"
+        )
+        print(f"  Live BuggyStore at {_storefront_url()} is currently BROKEN.")
         print("  Run `faultline apply` to apply the verified patch!\n")
         return 1
     elif res.get("id"):
-        print(f"  {GREEN}{BOLD}Status: HEALTHY (HTTP 201 Created){RESET}")
+        print(f"  {c.green}{c.bold}Status: HEALTHY (HTTP 201 Created){c.reset}")
         print(f"  Order ID: {res.get('id')}, Total: ${res.get('total', 0) / 100:.2f}")
         print("  Store is working cleanly!\n")
         return 0
     else:
-        print(f"  {YELLOW}Unexpected response: {res}{RESET}\n")
+        print(f"  {c.yellow}Unexpected response: {res}{c.reset}\n")
         return 2
 
 
@@ -1062,13 +1167,18 @@ def parse_sse(lines: Iterable[str]) -> Iterator[tuple[str, str]]:
                 data.append(value)
 
 
-def stream_job_events(job_id: str, *, after: int = 0, port: int = 9000) -> Iterator[dict[str, Any]]:
+def stream_job_events(
+    job_id: str, *, after: int = 0, port: int = DEFAULT_ORCHESTRATOR_PORT
+) -> Iterator[dict[str, Any]]:
     """Yield JobEvent payloads from the controller's SSE endpoint, after a sequence cursor."""
     url = (
         f"http://127.0.0.1:{port}/api/faultline/jobs/"
         f"{urllib.parse.quote(job_id, safe='')}/events?after={after}"
     )
-    headers = {"Authorization": f"Bearer {_get_control_token()}", "Accept": "text/event-stream"}
+    headers = {
+        "Authorization": f"Bearer {_get_control_token(port)}",
+        "Accept": "text/event-stream",
+    }
     request = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(request, timeout=SSE_READ_TIMEOUT) as response:
         for name, data in parse_sse(raw.decode("utf-8") for raw in response):
@@ -1196,32 +1306,32 @@ def _raise_interrupt(signum: int, frame: object) -> None:
 
 def _output_mode(args: argparse.Namespace) -> tuple[bool, bool, bool]:
     """Return (plain, color, ascii_only) from flags, the terminal, CI, and NO_COLOR."""
-    interactive = sys.stdout.isatty()
-    plain = bool(args.plain) or not interactive or os.environ.get("CI") == "true"
-    color = interactive and not os.environ.get("NO_COLOR")
+    plain = bool(args.plain) or not sys.stdout.isatty() or os.environ.get("CI") == "true"
+    color = _color_enabled(args)
     ascii_only = bool(args.ascii) or "utf" not in (sys.stdout.encoding or "").lower()
     return plain, color, ascii_only
 
 
 def cmd_listen(args: argparse.Namespace) -> int:
     """Stream a job's stage events as a live terminal HUD, then mark its assertions."""
-    port: int = args.port
+    c = _palette(args)
+    port = _orchestrator_port(args)
     job_id = args.job_id
     if not job_id:
         res = _api_request("/api/faultline/jobs?limit=1", port=port)
         if "error" in res:
-            print(f"{RED}Error fetching jobs: {res['error']}{RESET}")
+            print(f"{c.red}Error fetching jobs: {res['error']}{c.reset}")
             return 1
         jobs = res.get("jobs", [])
         if not jobs:
-            print(f"{YELLOW}No jobs recorded yet. Start a run from the Inspector first.{RESET}")
+            print(f"{c.yellow}No jobs recorded yet. Start a run from the Inspector first.{c.reset}")
             return 1
         job_id = jobs[0]["id"]
 
     detail_path = f"/api/faultline/jobs/{urllib.parse.quote(job_id, safe='')}"
     detail = _api_request(detail_path, port=port)
     if "error" in detail:
-        print(f"{RED}Error loading job {job_id}: {detail['error']}{RESET}")
+        print(f"{c.red}Error loading job {job_id}: {detail['error']}{c.reset}")
         print(f"Ensure the controller is running on port {port} (`./scripts/start-demo.sh`).")
         return 1
     state = HudState(job_id)
@@ -1275,28 +1385,29 @@ def _probe_inspector(url: str) -> str:
     return "inspector" if "FaultLine" in page else "other"
 
 
-def _start_inspector(port: int, url: str) -> subprocess.Popen[bytes] | None:
+def _start_inspector(port: int, url: str, c: Palette) -> subprocess.Popen[bytes] | None:
     """Start the built Inspector detached, as scripts/start-demo.sh does, and wait for it."""
     next_bin = INSPECTOR_DIR / "node_modules" / "next" / "dist" / "bin" / "next"
     node = shutil.which("node")
     if not next_bin.exists():
-        print(f"{RED}Inspector dependencies are missing. Run `make setup` first.{RESET}")
+        print(f"{c.red}Inspector dependencies are missing. Run `make setup` first.{c.reset}")
         return None
     if not (INSPECTOR_DIR / ".next" / "BUILD_ID").exists():
-        print(f"{RED}The Inspector has no production build.{RESET}")
+        print(f"{c.red}The Inspector has no production build.{c.reset}")
         print("Build it with: npm --prefix web/inspector-ui run build")
         return None
     if node is None:
-        print(f"{RED}Node.js is required to run the Inspector.{RESET}")
+        print(f"{c.red}Node.js is required to run the Inspector.{c.reset}")
         return None
 
+    orchestrator_port = _env_port("FAULTLINE_PORT", DEFAULT_ORCHESTRATOR_PORT)
     env = {
         **os.environ,
         "FAULTLINE_ORCHESTRATOR_URL": os.environ.get(
-            "FAULTLINE_ORCHESTRATOR_URL", "http://127.0.0.1:9000"
+            "FAULTLINE_ORCHESTRATOR_URL", f"http://127.0.0.1:{orchestrator_port}"
         ),
-        "FAULTLINE_CONTROL_TOKEN": _get_control_token(),
-        "BUGGYSHOP_PORT": os.environ.get("BUGGYSHOP_PORT", "3000"),
+        "FAULTLINE_CONTROL_TOKEN": _get_control_token(orchestrator_port),
+        "BUGGYSHOP_PORT": os.environ.get("BUGGYSHOP_PORT", str(DEFAULT_STOREFRONT_PORT)),
     }
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     log_path = DATA_DIR / "inspector.log"
@@ -1310,12 +1421,14 @@ def _start_inspector(port: int, url: str) -> subprocess.Popen[bytes] | None:
             stderr=subprocess.STDOUT,
             start_new_session=True,
         )
-    print(f"{CYAN}Starting the Inspector on port {port}...{RESET}")
+    print(f"{c.cyan}Starting the Inspector on port {port}...{c.reset}")
     deadline = time.monotonic() + INSPECTOR_START_TIMEOUT
     while time.monotonic() < deadline:
         code = process.poll()
         if code is not None:
-            print(f"{RED}The Inspector exited during startup (code {code}). See {log_path}{RESET}")
+            print(
+                f"{c.red}The Inspector exited during startup (code {code}). See {log_path}{c.reset}"
+            )
             return None
         if _probe_inspector(url) == "inspector":
             print(f"  Started as pid {process.pid}; log {log_path}")
@@ -1323,26 +1436,28 @@ def _start_inspector(port: int, url: str) -> subprocess.Popen[bytes] | None:
             return process
         time.sleep(0.25)
     print(
-        f"{YELLOW}The Inspector (pid {process.pid}) did not answer within "
-        f"{INSPECTOR_START_TIMEOUT:.0f} s. See {log_path}{RESET}"
+        f"{c.yellow}The Inspector (pid {process.pid}) did not answer within "
+        f"{INSPECTOR_START_TIMEOUT:.0f} s. See {log_path}{c.reset}"
     )
     return None
 
 
 def cmd_dashboard(args: argparse.Namespace) -> int:
     """Open the local Inspector dashboard, starting it first when nothing serves it."""
+    c = _palette(args)
     url = f"http://127.0.0.1:{args.port}"
     found = _probe_inspector(url)
     if found == "other":
         print(
-            f"{RED}Port {args.port} is serving something other than the FaultLine Inspector.{RESET}"
+            f"{c.red}Port {args.port} is serving something other than "
+            f"the FaultLine Inspector.{c.reset}"
         )
         print("Choose another port with `faultline dashboard --port N`.")
         return 1
-    if found == "down" and _start_inspector(args.port, url) is None:
+    if found == "down" and _start_inspector(args.port, url, c) is None:
         return 1
 
-    print(f"\n{BOLD}FaultLine Inspector{RESET}  {CYAN}{url}{RESET}")
+    print(f"\n{c.bold}FaultLine Inspector{c.reset}  {c.cyan}{url}{c.reset}")
     if args.no_open:
         return 0
     if not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
@@ -1437,6 +1552,27 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
 
+    def output_flags(command: argparse.ArgumentParser, *, plain: bool = True) -> None:
+        if plain:
+            command.add_argument("--plain", action="store_true", help="Print without ANSI escapes")
+        command.add_argument(
+            "--no-color", action="store_true", help="Print without ANSI colors (or set NO_COLOR)"
+        )
+
+    def orchestrator_port_flag(command: argparse.ArgumentParser) -> None:
+        command.add_argument(
+            "--port",
+            type=_port_arg,
+            help=f"Orchestrator port (default $FAULTLINE_PORT or {DEFAULT_ORCHESTRATOR_PORT})",
+        )
+
+    def store_port_flag(command: argparse.ArgumentParser) -> None:
+        command.add_argument(
+            "--api-port",
+            type=_port_arg,
+            help=f"BuggyShop API port (default $BUGGYSHOP_API_PORT or {DEFAULT_STORE_API_PORT})",
+        )
+
     p_check = subparsers.add_parser("check", help="Gate on a running project's HTTP invariants")
     p_check.add_argument("--config", default="faultline.toml")
     p_check.add_argument("--port", type=int, help="Live service port to substitute for {port}")
@@ -1446,7 +1582,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Propose isolated candidates for reproduced failures; never apply",
     )
     p_check.add_argument("--json", action="store_true", help="Emit exactly one JSON result")
-    p_check.add_argument("--plain", action="store_true", help="Print without ANSI escapes")
+    output_flags(p_check)
     p_check.set_defaults(func=cmd_check)
 
     p_run = subparsers.add_parser(
@@ -1466,10 +1602,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.add_argument(
         "--detect", action="store_true", help="Run both baselines without requesting a patch"
     )
+    output_flags(p_run)
     p_run.set_defaults(func=cmd_run)
 
     # version
     p_ver = subparsers.add_parser("version", help="Print CLI and engine version")
+    output_flags(p_ver)
     p_ver.set_defaults(func=cmd_version)
 
     # init
@@ -1479,25 +1617,35 @@ def build_parser() -> argparse.ArgumentParser:
     p_init.add_argument(
         "-f", "--force", action="store_true", help="Overwrite existing faultline.toml"
     )
+    output_flags(p_init)
     p_init.set_defaults(func=cmd_init)
 
     # doctor
     p_doc = subparsers.add_parser(
         "doctor", help="Inspect system sandbox requirements and API readiness"
     )
+    orchestrator_port_flag(p_doc)
+    store_port_flag(p_doc)
+    output_flags(p_doc)
     p_doc.set_defaults(func=cmd_doctor)
 
     # status
     p_stat = subparsers.add_parser("status", help="Query orchestrator service and sandbox status")
+    orchestrator_port_flag(p_stat)
+    output_flags(p_stat)
     p_stat.set_defaults(func=cmd_status)
 
     # jobs
     p_jobs = subparsers.add_parser("jobs", help="List recent repair jobs")
+    orchestrator_port_flag(p_jobs)
+    output_flags(p_jobs)
     p_jobs.set_defaults(func=cmd_jobs)
 
     # diff
     p_diff = subparsers.add_parser("diff", help="View candidate diff for a job")
     p_diff.add_argument("job_id", nargs="?", help="Job ID (defaults to latest)")
+    orchestrator_port_flag(p_diff)
+    output_flags(p_diff)
     p_diff.set_defaults(func=cmd_diff)
 
     # apply
@@ -1505,22 +1653,31 @@ def build_parser() -> argparse.ArgumentParser:
         "apply", help="Apply a verified candidate patch to the live codebase"
     )
     p_apply.add_argument("job_id", nargs="?", help="Verified Job ID (defaults to latest verified)")
+    orchestrator_port_flag(p_apply)
+    store_port_flag(p_apply)
+    output_flags(p_apply)
     p_apply.set_defaults(func=cmd_apply)
 
     # revert
     p_rev = subparsers.add_parser("revert", help="Revert live codebase to seeded defect state")
+    output_flags(p_rev)
     p_rev.set_defaults(func=cmd_revert)
 
     # verify
     p_verify = subparsers.add_parser("verify", help="Probe live store to test if checkout works")
+    store_port_flag(p_verify)
+    output_flags(p_verify)
     p_verify.set_defaults(func=cmd_verify)
 
     # listen
     p_listen = subparsers.add_parser("listen", help="Stream a job's stages live as a terminal HUD")
     p_listen.add_argument("job_id", nargs="?", help="Job ID (defaults to latest)")
-    p_listen.add_argument("--port", type=int, default=9000, help="Controller port (default 9000)")
-    p_listen.add_argument("--plain", action="store_true", help="One line per stage, for CI logs")
+    orchestrator_port_flag(p_listen)
+    p_listen.add_argument(
+        "--plain", action="store_true", help="One line per stage without ANSI, for CI logs"
+    )
     p_listen.add_argument("--ascii", action="store_true", help="ASCII status glyphs")
+    output_flags(p_listen, plain=False)
     p_listen.set_defaults(func=cmd_listen)
 
     # dashboard
@@ -1531,6 +1688,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_dash.add_argument(
         "--no-open", action="store_true", help="Print the URL without opening a browser"
     )
+    output_flags(p_dash)
     p_dash.set_defaults(func=cmd_dashboard)
 
     return parser

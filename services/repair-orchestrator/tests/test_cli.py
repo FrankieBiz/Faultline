@@ -10,6 +10,7 @@ import queue
 import signal
 import socket
 import subprocess
+import sys
 import threading
 import tomllib
 import urllib.error
@@ -29,6 +30,7 @@ from app.cli import (
     _pump_events,
     apply_patch_for_job,
     build_parser,
+    cmd_apply,
     cmd_check,
     cmd_dashboard,
     cmd_diff,
@@ -1488,3 +1490,291 @@ def test_describe_check_names_flaky_and_mismatched_failures() -> None:
     assert _describe_check(flaky) == "failed inconsistently across the two sessions (flaky): a1"
     mismatch = {**flaky, "reason": "fingerprint_mismatch", "sessions": [session(False)] * 2}
     assert _describe_check(mismatch) == "failed, but not with the declared server error: a0"
+
+
+# --- Color policy and port resolution ---------------------------------------------------------
+
+_DIFF_JOB = {
+    "job": {"outcome": "verified"},
+    "attempts": [{"parsed_diff": "--- a/f.py\n+++ b/f.py\n@@ -1 +1 @@\n-old\n+new\n"}],
+}
+_READY = {"status": "ready", "runtime_ready": True, "model": {"model": "m", "provider": "meta"}}
+
+
+def _styled_output(argv: list[str], capsys: pytest.CaptureFixture[str], *, tty: bool) -> str:
+    """Run one command through the real parser with the orchestrator mocked; return stdout.
+
+    With tty=True the captured stdout claims to be a terminal, so only NO_COLOR or a flag can
+    turn color off. It is patched here, not in a fixture: capture swaps sys.stdout after setup.
+    """
+    args = build_parser().parse_args(argv)
+    replies = {"diff": _DIFF_JOB, "status": _READY}
+    reply = replies.get(argv[0], {"status": "ok"})
+    with (
+        patch("app.cli._api_request", return_value=reply),
+        patch.object(sys.stdout, "isatty", return_value=tty),
+    ):
+        args.func(args)
+    return capsys.readouterr().out
+
+
+@pytest.fixture
+def color_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("NO_COLOR", raising=False)
+
+
+COLOR_COMMANDS = [["version"], ["doctor"], ["diff", "job-1"], ["status"]]
+
+
+@pytest.mark.parametrize("argv", COLOR_COMMANDS, ids=lambda argv: argv[0])
+def test_terminal_output_is_colored_by_default(
+    argv: list[str], color_env: None, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Control: on a terminal without NO_COLOR, the same commands do style their output."""
+    assert "\x1b[" in _styled_output(argv, capsys, tty=True)
+
+
+@pytest.mark.parametrize("argv", COLOR_COMMANDS, ids=lambda argv: argv[0])
+def test_no_color_env_strips_ansi_on_a_terminal(
+    argv: list[str],
+    color_env: None,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("NO_COLOR", "1")
+    out = _styled_output(argv, capsys, tty=True)
+    assert out.strip() and "\x1b" not in out
+
+
+@pytest.mark.parametrize("flag", ["--no-color", "--plain"])
+@pytest.mark.parametrize("argv", COLOR_COMMANDS, ids=lambda argv: argv[0])
+def test_color_flags_strip_ansi_on_a_terminal(
+    argv: list[str], flag: str, color_env: None, capsys: pytest.CaptureFixture[str]
+) -> None:
+    out = _styled_output([*argv, flag], capsys, tty=True)
+    assert out.strip() and "\x1b" not in out
+
+
+@pytest.mark.parametrize("argv", COLOR_COMMANDS, ids=lambda argv: argv[0])
+def test_non_tty_output_has_no_ansi(
+    argv: list[str], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Piped output (captured stdout is not a terminal) is plain even without NO_COLOR."""
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    out = _styled_output(argv, capsys, tty=False)
+    assert out.strip() and "\x1b" not in out
+
+
+def test_empty_no_color_does_not_disable_color(
+    color_env: None, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """no-color.org: only a NO_COLOR that is present and non-empty disables color."""
+    monkeypatch.setenv("NO_COLOR", "")
+    assert "\x1b[" in _styled_output(["version"], capsys, tty=True)
+
+
+def test_every_command_accepts_no_color() -> None:
+    parser = build_parser()
+    subparsers = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction))
+    for name, command in subparsers.choices.items():
+        options = {option for action in command._actions for option in action.option_strings}
+        assert {"--no-color", "--plain"} <= options, name
+
+
+def test_listen_no_color_keeps_live_view_but_drops_color(
+    color_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.cli import _output_mode
+
+    monkeypatch.delenv("CI", raising=False)
+    parser = build_parser()
+
+    def plain_and_color(*argv: str) -> tuple[bool, bool]:
+        with patch.object(sys.stdout, "isatty", return_value=True):
+            plain, color, _ = _output_mode(parser.parse_args(["listen", *argv]))
+        return plain, color
+
+    assert plain_and_color() == (False, True)
+    assert plain_and_color("--no-color") == (False, False)
+    assert plain_and_color("--plain") == (True, False)
+    monkeypatch.setenv("NO_COLOR", "1")
+    assert plain_and_color() == (False, False)
+
+
+def _ports_used(argv: list[str], reply: dict[str, Any] | None = None) -> list[int]:
+    """Run a command through the parser and return the port of every API request it made."""
+    args = build_parser().parse_args(argv)
+    with patch("app.cli._api_request", return_value=reply or {"status": "ok"}) as api:
+        args.func(args)
+    return [call.kwargs["port"] for call in api.call_args_list]
+
+
+@pytest.fixture
+def default_ports(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in ("FAULTLINE_PORT", "BUGGYSHOP_API_PORT", "BUGGYSHOP_PORT"):
+        monkeypatch.delenv(name, raising=False)
+
+
+def test_commands_default_to_the_standard_ports(default_ports: None) -> None:
+    assert _ports_used(["doctor"]) == [9000, 8000]
+    assert _ports_used(["status"]) == [9000]
+    assert _ports_used(["jobs"]) == [9000]
+    assert _ports_used(["diff", "job-1"], _DIFF_JOB) == [9000]
+    assert _ports_used(["verify"]) == [8000]
+
+
+def test_port_flags_override_defaults(default_ports: None) -> None:
+    assert _ports_used(["doctor", "--port", "9401", "--api-port", "8401"]) == [9401, 8401]
+    assert _ports_used(["status", "--port", "9402"]) == [9402]
+    assert _ports_used(["jobs", "--port", "9403"]) == [9403]
+    assert _ports_used(["diff", "job-1", "--port", "9404"], _DIFF_JOB) == [9404]
+    assert _ports_used(["verify", "--api-port", "8405"]) == [8405]
+
+
+def test_port_environment_variables_are_respected(
+    default_ports: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FAULTLINE_PORT", "9500")
+    monkeypatch.setenv("BUGGYSHOP_API_PORT", "8500")
+    assert _ports_used(["doctor"]) == [9500, 8500]
+    assert _ports_used(["status"]) == [9500]
+    assert _ports_used(["jobs"]) == [9500]
+    assert _ports_used(["verify"]) == [8500]
+    # An explicit flag still wins over the environment.
+    assert _ports_used(["doctor", "--port", "9501", "--api-port", "8501"]) == [9501, 8501]
+
+
+def test_doctor_names_the_resolved_ports(
+    default_ports: None, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("FAULTLINE_PORT", "9600")
+    _ports_used(["doctor", "--api-port", "8600"])
+    out = capsys.readouterr().out
+    assert "Repair Orchestrator Service (port 9600)" in out
+    assert "Storefront Backend API (port 8600)" in out
+    assert "port 9000" not in out and "port 8000" not in out
+
+
+def test_apply_uses_both_ports_and_the_storefront_port(
+    default_ports: None, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("BUGGYSHOP_PORT", "3700")
+    args = build_parser().parse_args(["apply", "job-1", "--port", "9700", "--api-port", "8700"])
+    applied = {"success": True, "target": "checkout.py", "backup": "checkout.py.bak"}
+    with (
+        patch("app.cli.apply_patch_for_job", return_value=applied) as apply_patch,
+        patch("app.cli._api_request", return_value={"id": "order-1", "total": 1000}) as api,
+    ):
+        assert cmd_apply(args) == 0
+    apply_patch.assert_called_once_with("job-1", port=9700)
+    assert api.call_args.kwargs["port"] == 8700
+    assert "http://127.0.0.1:3700" in capsys.readouterr().out
+
+
+def test_apply_patch_for_job_fetches_from_the_given_port() -> None:
+    with patch("app.cli._api_request", return_value={"error": "down", "status": 0}) as api:
+        result = apply_patch_for_job("job-1", port=9800)
+    assert result["error_code"] == "job_fetch_failed"
+    assert api.call_args.kwargs["port"] == 9800
+
+
+def test_listen_resolves_port_from_environment(
+    default_ports: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FAULTLINE_PORT", "9900")
+    args = build_parser().parse_args(["listen", "job-1", "--plain"])
+    with patch("app.cli._api_request", return_value={"error": "down", "status": 0}) as api:
+        assert cmd_listen(args) == 1
+    assert api.call_args.kwargs["port"] == 9900
+
+
+def test_dashboard_points_the_inspector_at_faultline_port(
+    tmp_path: Path, default_ports: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    inspector = tmp_path / "inspector"
+    next_bin = inspector / "node_modules" / "next" / "dist" / "bin" / "next"
+    next_bin.parent.mkdir(parents=True)
+    next_bin.write_text("")
+    (inspector / ".next").mkdir()
+    (inspector / ".next" / "BUILD_ID").write_text("build")
+    monkeypatch.delenv("FAULTLINE_ORCHESTRATOR_URL", raising=False)
+    monkeypatch.setenv("FAULTLINE_PORT", "9450")
+    process = MagicMock(pid=1)
+    process.poll.return_value = None
+    with (
+        patch("app.cli._probe_inspector", side_effect=["down", "inspector"]),
+        patch("app.cli.INSPECTOR_DIR", inspector),
+        patch("app.cli.DATA_DIR", tmp_path / "data"),
+        patch("app.cli.shutil.which", return_value="/usr/bin/node"),
+        patch("app.cli._get_control_token", return_value="t"),
+        patch("app.cli.subprocess.Popen", return_value=process) as popen,
+    ):
+        assert cmd_dashboard(argparse.Namespace(port=4450, no_open=True)) == 0
+    assert popen.call_args.kwargs["env"]["FAULTLINE_ORCHESTRATOR_URL"] == "http://127.0.0.1:9450"
+
+
+@pytest.mark.parametrize("value", ["abc", "0", "70000"])
+def test_invalid_port_environment_is_rejected(
+    value: str, default_ports: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FAULTLINE_PORT", value)
+    with pytest.raises(SystemExit, match="FAULTLINE_PORT must be a port number"):
+        _ports_used(["status"])
+
+
+def test_invalid_port_flag_is_a_usage_error(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exit_info:
+        build_parser().parse_args(["status", "--port", "70000"])
+    assert exit_info.value.code == 2
+    assert "not a port number" in capsys.readouterr().err
+
+
+def test_status_reaches_a_real_orchestrator_on_a_custom_port(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """End to end over HTTP: FAULTLINE_PORT routes the request, not the 9000 default."""
+    seen: list[str] = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            seen.append(self.path)
+            body = json.dumps(_READY).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args: object) -> None:
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        monkeypatch.setenv("FAULTLINE_PORT", str(server.server_address[1]))
+        monkeypatch.setenv("FAULTLINE_CONTROL_TOKEN", "test-token")
+        assert cmd_status(build_parser().parse_args(["status"])) == 0
+    finally:
+        server.shutdown()
+        server.server_close()
+    assert seen == ["/api/faultline/readiness"]
+    out = capsys.readouterr().out
+    assert "Status:          ready" in out and "\x1b" not in out
+
+
+def test_control_token_lookup_matches_the_port_in_a_process_command_line() -> None:
+    from app.cli import _process_listens_on
+
+    code = "import time; print('up', flush=True); time.sleep(30)"
+    with subprocess.Popen(
+        [sys.executable, "-c", code, "--port", "9412"], stdout=subprocess.PIPE, text=True
+    ) as process:
+        try:
+            # Until the child execs, /proc/PID/cmdline still shows the parent's argv.
+            assert process.stdout is not None and process.stdout.readline() == "up\n"
+            assert _process_listens_on(str(process.pid), 9412)
+            assert not _process_listens_on(str(process.pid), 9000)
+        finally:
+            process.kill()
+    assert not _process_listens_on("999999999", 9412)
