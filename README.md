@@ -19,6 +19,8 @@ Recorded local workflow evidence; this screenshot does not represent a live Meta
 
 ## Run a configured repository
 
+`faultline check --config faultline.toml --port 3000 --json` gates a running service on declared HTTP invariants and sandbox prerequisites. `--repair` can produce a sandbox-verified candidate for a repeated failure; it leaves source unchanged and the live gate failed. See [CLI checks, initialization, and CI](docs/CLI_CHECK.md).
+
 `faultline run [scenario_name]` now executes named scenarios from `faultline.toml` or a CLI-supplied ReproSpec. It freezes tracked source, requires two matching isolated failures, requests a Meta patch for the selected file, verifies the candidate, and emits a checksummed proof after cleanup. The existing Inspector demo retains its checkout-specific regression suite.
 
 ```bash
