@@ -34,7 +34,7 @@ Usage:
   ./scripts/orca-child.sh clean <worktree-name>
 
 Frontier Model Defaults:
-  codex  -> gpt-6-astra (effort: high or xhigh)
+  codex  -> gpt-6.1-sol (effort: high or xhigh)
   claude -> claude-opus-5-5 (effort: high or xhigh)
 EOF
   exit 1
@@ -55,7 +55,7 @@ cmd_spawn() {
 
   case "$agent" in
     codex)
-      model="gpt-6-astra"
+      model="gpt-6.1-sol"
       ;;
     claude)
       model="claude-opus-5-5"
