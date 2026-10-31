@@ -181,11 +181,13 @@ Static AST inspection and Git worktrees are policy and source-management tools; 
 
 ### Web Inspector studio (`localhost:4000`)
 
-- **Scenario rail.** Sandbox repair scenarios and live HTTP checks, each with a status line: cyan while work is in flight, emerald only for evidence-verified repairs, red for failures.
+- **1-2-3 guided demo.** The Demo Playground (sample store) runs **Break it** (live checkout returns HTTP 500), the sandbox repair (labeled **Repair with Meta** only when the engine reports the Meta Model API), and **Apply fix** (hot-patch, then a live check confirms HTTP 201). Each step advances on recorded evidence, not clicks.
+- **Test any URL.** The header field sends a GET from two fresh sessions and shows the result. Bare `localhost:3000/path` means http, and **More options** opens the full **Custom URL check** dialog.
+- **Scenario rail.** Repairable defects, project checks from `faultline.toml`, and your saved URLs, each with a status line: cyan while work is in flight, emerald only for evidence-verified repairs, red for failures.
 - **Live invariant tester.** Runs `[[invariants.rule]]` and `[scenarios.*]` from `faultline.toml` against the running store, in two sessions each.
-- **Ad-hoc URL probe dialog.** **New invariant** registers a check against any URL and validates JSON input in place.
+- **Custom URL check dialog.** Any method, JSON body, and expected status, validated in place.
 - **Procedural Web Audio cues.** Synthesized from oscillators, off by default: an alarm for a failing check and a resolution chord for a verified repair.
-- **One-click apply / revert.** **Apply fix** writes a verified, cleanly cleaned-up candidate to the running store's source. **Revert store** restores the seeded defect.
+- **One-click apply / revert.** **Apply fix** writes a verified, cleanly cleaned-up candidate to the running store's source and re-checks checkout once the store reloads. **Revert store** restores the seeded defect.
 - A built-in CLI guide (press `?`) pairs each dashboard control with its terminal command.
 
 ### CI/CD pull request gate
@@ -227,10 +229,10 @@ These results describe an authored corpus for one checkout route, not arbitrary 
 | Repair orchestrator and CLI (pytest) | 665 |
 | Browser runner unit tests | 96 |
 | **Unit and integration total** (`make check`) | **1,047** |
-| Inspector browser tests (Playwright) | 32 |
+| Inspector browser tests (Playwright) | 35 |
 | Storefront browser test (Playwright) | 1 |
-| **Browser total** (`make browser`) | **33** |
-| **All automated tests** | **1,080** |
+| **Browser total** (`make browser`) | **36** |
+| **All automated tests** | **1,083** |
 
 `make check` also runs Ruff lint and format checks, strict mypy, fixture and corpus provenance, the storefront, runner, and Inspector builds, and both Python distribution builds. `make integration` exercises real isolated Chromium and cgroup enforcement, and `make evaluate` runs the corpus.
 

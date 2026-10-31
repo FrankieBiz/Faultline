@@ -16,7 +16,7 @@ function expectation(check: BodyCheck): string {
 }
 
 const KICKER: Record<Invariant["source"], string> = {
-  config: "Rule from faultline.toml", scenario: "Scenario from faultline.toml", probe: "Probe added here",
+  config: "Rule from faultline.toml", scenario: "Scenario from faultline.toml", probe: "Your custom website",
 };
 
 function stepExpectation(step: ReproStepWire): string {
@@ -176,7 +176,7 @@ export default function InvariantPanel(props: {
         )}
         <button type="submit" className="btn primary run-button" disabled={busy || !portValid || invariant.live_note !== null}>{checking ? "Checking live…" : "Run live check"}</button>
         {invariant.source === "probe" && (
-          <button type="button" className="btn quiet" onClick={onRemove} disabled={busy}>Remove probe</button>
+          <button type="button" className="btn quiet" onClick={onRemove} disabled={busy}>Remove this URL</button>
         )}
         {checking && <p className="scan" role="status"><span className="scan-bar" aria-hidden="true" />Sending the request from two fresh sessions…</p>}
       </form>

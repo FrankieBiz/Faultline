@@ -19,12 +19,13 @@ export default function PackPanel(props: {
 
   return (
     <article className="workspace" aria-labelledby="scenario-h">
-      <p className="result-kicker">{project ? "Project sandbox scenario" : "Sandbox repair scenario"} <code className="muted">{scenario.id}</code></p>
+      <p className="result-kicker">{project ? "Your project · sandbox scenario" : "Demo Playground · Sample Store defect"}</p>
       <h1 id="scenario-h">{scenario.title}</h1>
       {scenario.description && <p className="lede">{scenario.description.replace(/\.?$/, ".")}</p>}
       {scenario.route && <p className="request-line"><span className="method">{method}</span><code>{path.join(" ")}</code></p>}
       <dl className="facts">
         <div><dt>Repair scope</dt><dd>{scenario.target_file}</dd></div>
+        <div><dt>Scenario ID</dt><dd>{scenario.id}</dd></div>
         {scenario.error_fingerprint && <div><dt>Server error</dt><dd>{scenario.error_fingerprint}</dd></div>}
         <div><dt>Checks</dt><dd>{project
           ? `${scenario.expected_assertions.length} ReproSpec assertions, rerun on the baseline twice and on every candidate`

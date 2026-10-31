@@ -8,13 +8,13 @@ const STEPS: { title: string; commands: string[]; terminal: string; dashboard: s
     title: "Initialize",
     commands: ["faultline init"],
     terminal: "Detects the stack and writes faultline.toml: project commands, the repair scope, sandbox limits, and a service_health rule.",
-    dashboard: "Its [scenarios] and [[invariants.rule]] entries appear in the rail under faultline.toml.",
+    dashboard: "Its [scenarios] and [[invariants.rule]] entries appear in the rail under Project checks.",
   },
   {
     title: "Check readiness",
     commands: ["faultline doctor"],
     terminal: "Checks Bubblewrap, cgroup v2, uv, Node.js, and META_API_KEY, and whether the orchestrator (port 9000) and store (port 8000) answer.",
-    dashboard: "The sandbox status in the header. Containment and environment reset sit in the setup panel under past runs.",
+    dashboard: "Engine Status in the header. Containment and environment reset sit in the setup panel under past runs.",
   },
   {
     title: "Gate live invariants",
@@ -26,13 +26,13 @@ const STEPS: { title: string; commands: string[]; terminal: string; dashboard: s
     title: "Probe the demo store",
     commands: ["faultline verify"],
     terminal: "Sends one checkout request to the store on port 8000 and reports whether the seeded defect is active.",
-    dashboard: "Check checkout live in the live store bar.",
+    dashboard: "Step 1, Break it, in the Demo Playground, or Check checkout live beside it.",
   },
   {
     title: "Reproduce and repair",
     commands: ["faultline run checkout_api --detect", "faultline run checkout_api"],
     terminal: "Requires two matching isolated failures before any model call, then verifies the candidate and writes a checksummed proof. Exit 0 verified, 10 detected, 11 not reproduced, 20 not repaired.",
-    dashboard: "Run sandbox repair, or Run detection only when no repair provider is available. Terminal runs are not listed in this page's history.",
+    dashboard: "Step 2 in the Demo Playground, or Run sandbox repair on the scenario. Run detection only appears when no repair provider is available. Terminal runs are not listed in this page's history.",
   },
   {
     title: "Watch a run",
@@ -50,7 +50,7 @@ const STEPS: { title: string; commands: string[]; terminal: string; dashboard: s
     title: "Deliver",
     commands: ["faultline diff", "faultline apply", "faultline revert"],
     terminal: "Prints the newest run's candidate diff with its outcome, writes the newest verified fix to the store's working source, or restores the seeded defect. Nothing is pushed or deployed.",
-    dashboard: "Apply fix and Revert store in the live store bar.",
+    dashboard: "Step 3, Apply fix, in the Demo Playground, which then checks checkout live. Revert store sits beside it.",
   },
 ];
 

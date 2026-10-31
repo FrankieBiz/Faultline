@@ -8,7 +8,7 @@ const ready = {
   model: { available: true, provider: "deterministic", model: "deterministic-checkout-v1", reason: null, prompt_tokens: null, completion_tokens: null },
 };
 const pack = {
-  id: "scripted_checkout_repair", title: "Scripted checkout repair",
+  id: "scripted_checkout_repair", title: "E-Commerce Checkout Defect",
   description: "Optional-coupon backend defect causing TypeError during arithmetic when coupon is omitted or empty",
   target_file: target, route: "POST /api/checkout", error_fingerprint: fingerprint,
   expected_assertions: Array.from({ length: 8 }, (_, i) => `checkout.check_${i}`),
@@ -63,7 +63,7 @@ function check(invariantId: string, outcome: "detected" | "no_failure" | "infras
     sessions: outcome === "infrastructure_error" ? [session(null, false, { error: "ConnectError", excerpt: null })]
       : [session(failing ? 500 : 201, !failing), session(failing ? 500 : 201, !failing)],
     repair: failing ? { scenario_id: pack.id, title: pack.title, target_file: target } : null,
-    repair_note: failing ? "Same route and server fingerprint as Scripted checkout repair. Its sandbox pipeline reproduces the failure again in isolation before any model call." : null,
+    repair_note: failing ? "Same route and server fingerprint as E-Commerce Checkout Defect. Its sandbox pipeline reproduces the failure again in isolation before any model call." : null,
     ...extra,
   };
 }
@@ -103,7 +103,7 @@ type Listing = { scenarios: object[]; invariants: ({ id: string } & Record<strin
 type Options = {
   readiness?: object; detail?: object; resetFails?: boolean; listing?: Listing; store?: object;
   checks?: Record<string, object[]>; onCheck?: (invariantId: string, body: unknown) => object;
-  register?: (body: Record<string, unknown>) => { status: number; json: object };
+  register?: (body: Record<string, unknown>) => { status: number; json: object } | undefined;
   apply?: () => { status: number; json: object };
 };
 async function mock(page: Page, options: Options = {}) {
@@ -207,14 +207,14 @@ test("the rail lists sandbox repairs, faultline.toml rules, config errors, and a
   await page.goto("/");
   const nav = rail(page);
   await expect(nav).toContainText("buggyshop from faultline.toml");
-  await expect(nav.getByRole("region", { name: "Sandbox repair" }).getByRole("button", { name: /Scripted checkout repair/ })).toHaveAttribute("aria-current", "true");
-  await expect(nav.getByRole("region", { name: "faultline.toml" }).getByRole("button")).toHaveCount(3);
+  await expect(nav.getByRole("region", { name: "Repairable defects" }).getByRole("button", { name: /E-Commerce Checkout Defect/ })).toHaveAttribute("aria-current", "true");
+  await expect(nav.getByRole("region", { name: "Project checks" }).getByRole("button")).toHaveCount(3);
   await expect(nav.getByText("POST /api/checkout, 2 requests")).toBeVisible();
   await expect(nav.getByText("POST /api/checkout").nth(1)).toBeVisible();
   await expect(nav.getByText(/rule\[3\] \(broken\) ignored: duplicate id/)).toBeVisible();
-  await expect(nav.getByText("Probe any URL with New invariant.")).toBeVisible();
+  await expect(nav.getByText("Test any URL from the bar at the top.")).toBeVisible();
   await expect(page.getByText(/Deterministic fallback/)).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Scripted checkout repair", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "E-Commerce Checkout Defect", level: 1 })).toBeVisible();
   await expect(page.locator(".covering")).toContainText("Checkout without a coupon creates an order");
 
   await nav.getByRole("button", { name: /Checkout without a coupon creates an order/ }).click();
@@ -223,15 +223,15 @@ test("the rail lists sandbox repairs, faultline.toml rules, config errors, and a
   await expect(page.locator(".request-line")).toContainText("http://127.0.0.1:{port}/api/checkout");
   await expect(page.getByText("HTTP status 201; $.discount equals 0; $.total equals $.subtotal")).toBeVisible();
   await expect(page.getByText("Not checked yet.", { exact: false })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Remove probe" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Remove this URL" })).toHaveCount(0);
 });
 
 test("the new invariant dialog probes a URL, reproduces it twice, and starts the bound sandbox repair", async ({ page }) => {
   const calls = await mock(page, { detail: detail("running", null) });
   await page.route("**/api/faultline/jobs", (route) => route.request().method() === "GET" ? route.fulfill({ json: { jobs: [] } }) : route.fallback());
   await page.goto("/");
-  await page.getByRole("button", { name: "New invariant" }).click();
-  const dialog = page.getByRole("dialog", { name: "New invariant" });
+  await page.getByRole("button", { name: "Custom URL check" }).click();
+  const dialog = page.getByRole("dialog", { name: "Custom URL check" });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByLabel("URL")).toBeFocused();
   await dialog.getByRole("button", { name: "Fill in the live store checkout" }).click();
@@ -249,11 +249,11 @@ test("the new invariant dialog probes a URL, reproduces it twice, and starts the
   await expect(sessions.nth(0)).toContainText("500");
   await expect(sessions.nth(1)).toContainText(`Server error: ${fingerprint}`);
   await expect(sessions.nth(0).getByText("expected 201, observed 500")).toBeVisible();
-  await expect(page.locator(".repair-callout")).toContainText("Repairable in the sandbox: Scripted checkout repair");
+  await expect(page.locator(".repair-callout")).toContainText("Repairable in the sandbox: E-Commerce Checkout Defect");
   await expect.poll(() => calls.posts).toBe(1);
   expect(calls.jobBodies[0]).toMatchObject({ scenario_id: pack.id, mode: "repair" });
   await expect(page.getByText(/Sandbox run in progress/)).toBeVisible();
-  const added = rail(page).getByRole("region", { name: "Added here" }).getByRole("button");
+  const added = rail(page).getByRole("region", { name: "Your custom website" }).getByRole("button");
   await expect(added).toHaveAttribute("aria-current", "true");
   await expect(added).toContainText("last check: failing");
 });
@@ -263,8 +263,8 @@ test("dialog errors stay in the dialog and Escape closes it", async ({ page }) =
     register: () => ({ status: 422, json: { error: { code: "invalid_probe", message: "URL must not contain credentials", job_id: null } } }),
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "New invariant" }).click();
-  const dialog = page.getByRole("dialog", { name: "New invariant" });
+  await page.getByRole("button", { name: "Custom URL check" }).click();
+  const dialog = page.getByRole("dialog", { name: "Custom URL check" });
   await dialog.getByLabel("URL").fill("not a url");
   await dialog.getByRole("button", { name: "Save and check live" }).click();
   await expect(dialog.getByRole("alert")).toHaveText("Enter a full URL, such as https://api.example.com/health.");
@@ -297,7 +297,7 @@ test("dialog errors stay in the dialog and Escape closes it", async ({ page }) =
   await expect(dialog).toBeHidden();
   expect(calls.checks).toHaveLength(0);
   // Reopening keeps the draft but not the last attempt's error.
-  await page.getByRole("button", { name: "New invariant" }).click();
+  await page.getByRole("button", { name: "Custom URL check" }).click();
   await expect(dialog.getByLabel("URL")).toHaveValue("https://user:pw@example.com/");
   await expect(dialog.getByRole("alert")).toHaveCount(0);
 });
@@ -310,8 +310,8 @@ test("a failure no sandbox repair covers is detection only, and probes can be re
     }),
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "New invariant" }).click();
-  const dialog = page.getByRole("dialog", { name: "New invariant" });
+  await page.getByRole("button", { name: "Custom URL check" }).click();
+  const dialog = page.getByRole("dialog", { name: "Custom URL check" });
   await dialog.getByLabel("URL").fill("https://api.example.com/orders");
   await dialog.getByRole("button", { name: "Save and check live" }).click();
   await expect(page.getByRole("heading", { name: "Failing", exact: true })).toBeVisible();
@@ -319,11 +319,11 @@ test("a failure no sandbox repair covers is detection only, and probes can be re
   await expect(page.getByRole("button", { name: "Repair in sandbox" })).toHaveCount(0);
   await page.waitForTimeout(300);
   expect(calls.posts).toBe(0);
-  await page.getByRole("button", { name: "Remove probe" }).click();
-  await expect(notice(page)).toContainText("Removed the probe");
+  await page.getByRole("button", { name: "Remove this URL" }).click();
+  await expect(notice(page)).toContainText('Removed "GET https://api.example.com/orders"');
   expect(calls.removes).toBe(1);
-  await expect(rail(page).getByText("Probe any URL with New invariant.")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Scripted checkout repair", level: 1 })).toBeVisible();
+  await expect(rail(page).getByText("Test any URL from the bar at the top.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "E-Commerce Checkout Defect", level: 1 })).toBeVisible();
 });
 
 test("rules with {port} ask for the port, and outcomes read from the recorded sessions", async ({ page }) => {
@@ -351,29 +351,139 @@ test("rules with {port} ask for the port, and outcomes read from the recorded se
   await expect(page.locator(".history li").filter({ hasText: "Check did not complete" })).toContainText("ConnectError");
 });
 
-test("the store bar applies only an opened verified run, reverts, and checks checkout live", async ({ page }) => {
-  const calls = await mock(page, { detail: verifiedDetail(), onCheck: (invariantId) => check(invariantId, "no_failure") });
+test("the playground applies only an opened verified run, reverts, and checks checkout live", async ({ page }) => {
+  const outcomes = [check("scenario.checkout_api", "no_failure"), check("scenario.checkout_api", "no_failure")];
+  const calls = await mock(page, { detail: verifiedDetail(), onCheck: () => outcomes.shift()! });
   await page.goto("/");
-  const bar = page.getByRole("region", { name: /Running the seeded checkout defect/ });
+  const bar = page.getByRole("region", { name: /Checkout is broken: the seeded defect is live/ });
+  await expect(bar).toContainText("Demo Playground · Sample Store");
   await expect(bar).toContainText(target);
   await expect(bar.getByRole("button", { name: "Apply fix" })).toBeDisabled();
+  await expect(bar.getByRole("button", { name: "Apply fix" })).toHaveAccessibleDescription(/Unlocks after a verified repair/);
   await expect(bar.getByRole("button", { name: "Revert store" })).toBeDisabled();
-  await expect(bar).toContainText("Apply unlocks after a sandbox repair verifies a fix.");
   await inspectPastRun(page);
   await expect(page.getByRole("heading", { name: "Verified repair", exact: true })).toBeVisible();
-  await expect(bar).toContainText(`Applies run ${id.slice(0, 8)}'s verified diff to ${target}.`);
+  await expect(bar.getByRole("button", { name: "Apply fix" })).toHaveAccessibleDescription(new RegExp(`Writes run ${id.slice(0, 8)}'s verified fix to the store`));
   await bar.getByRole("button", { name: "Apply fix" }).click();
-  await expect(page.getByRole("heading", { name: `Running the verified fix from run ${id.slice(0, 8)}` })).toBeVisible();
-  await expect(notice(page)).toContainText("check it live to confirm");
+  await expect(page.getByRole("heading", { name: `Checkout is fixed by run ${id.slice(0, 8)}` })).toBeVisible();
+  await expect(notice(page)).toContainText("checkout is checked live once it answers");
   expect(calls.applies).toBe(1);
-  const patched = page.getByRole("region", { name: /Running the verified fix/ });
-  await expect(patched.getByRole("button", { name: "Apply fix" })).toBeDisabled();
-  await patched.getByRole("button", { name: "Check checkout live" }).click();
+  // Apply waits out the store's hot reload, then confirms checkout live.
   await expect(page.getByRole("heading", { name: "Passing", exact: true })).toBeVisible();
   expect(calls.checks).toEqual([{ id: "scenario.checkout_api", body: { port: 8000 } }]);
+  const patched = page.getByRole("region", { name: /Checkout is fixed/ });
+  await expect(patched.getByRole("button", { name: "Apply fix" })).toBeDisabled();
+  await patched.getByRole("button", { name: "Check checkout live" }).click();
+  await expect.poll(() => calls.checks.length).toBe(2);
   await patched.getByRole("button", { name: "Revert store" }).click();
-  await expect(page.getByRole("heading", { name: "Running the seeded checkout defect" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Checkout is broken: the seeded defect is live" })).toBeVisible();
   expect(calls.reverts).toBe(1);
+});
+
+test("the guided demo advances Break it, repair, and Apply fix on recorded evidence", async ({ page }) => {
+  const outcomes = [check("scenario.checkout_api", "detected"), check("scenario.checkout_api", "no_failure"), check("scenario.checkout_api", "detected")];
+  const calls = await mock(page, { detail: verifiedDetail(), onCheck: () => outcomes.shift()! });
+  // Nothing has run yet in this session; the verified record is reached only by step 2.
+  await page.route("**/api/faultline/jobs?*", (route) => route.fulfill({ json: { jobs: [] } }));
+  await page.goto("/");
+  const flow = page.getByRole("list", { name: "Guided demo" });
+  const steps = flow.getByRole("listitem");
+  await expect(steps).toHaveCount(3);
+  await expect(page.locator(".readiness")).toHaveText("Engine Status: Ready");
+  await expect(steps.nth(0)).toHaveAttribute("aria-current", "step");
+  // A deterministic provider is never called Meta; the step names the fallback instead.
+  const repair = flow.getByRole("button", { name: "Auto-repair" });
+  await expect(repair).toHaveAccessibleDescription(/not a Meta model trial/);
+  await expect(page.getByText("Repair with Meta")).toHaveCount(0);
+  await expect(flow.getByRole("button", { name: "Apply fix" })).toBeDisabled();
+
+  await flow.getByRole("button", { name: "Break it" }).click();
+  await expect(page.getByRole("heading", { name: "Failing", exact: true })).toBeVisible();
+  expect(calls.checks).toEqual([{ id: "scenario.checkout_api", body: { port: 8000 } }]);
+  await expect(steps.nth(0)).toHaveAttribute("data-state", "done");
+  await expect(steps.nth(0).locator(".flow-status")).toHaveText("HTTP 500 · checkout crashes");
+  await expect(steps.nth(1)).toHaveAttribute("aria-current", "step");
+
+  await repair.click();
+  await expect(page.getByRole("heading", { name: "Verified repair", exact: true })).toBeVisible();
+  expect(calls.jobBodies).toEqual([expect.objectContaining({ scenario_id: pack.id, mode: "repair" })]);
+  await expect(steps.nth(1).locator(".flow-status")).toHaveText("44 of 44 checks passed");
+  await expect(steps.nth(1)).toHaveAttribute("data-state", "done");
+  await expect(steps.nth(2)).toHaveAttribute("aria-current", "step");
+
+  await flow.getByRole("button", { name: "Apply fix" }).click();
+  await expect(steps.nth(2).locator(".flow-status")).toHaveText("HTTP 201 · checkout works");
+  expect(calls.applies).toBe(1);
+  expect(calls.checks).toHaveLength(2);
+  for (const index of [0, 1, 2]) await expect(steps.nth(index)).toHaveAttribute("data-state", "done");
+  await expect(flow.locator("[aria-current]")).toHaveCount(0);
+
+  // Breaking a fixed store restores the seed first, then shows checkout failing again.
+  await expect(flow.getByRole("button", { name: "Break it" })).toHaveAccessibleDescription(/Reverts the fix, then checks again/);
+  await flow.getByRole("button", { name: "Break it" }).click();
+  await expect(page.getByRole("heading", { name: "Checkout is broken: the seeded defect is live" })).toBeVisible();
+  await expect(steps.nth(0).locator(".flow-status")).toHaveText("HTTP 500 · checkout crashes");
+  expect(calls.reverts).toBe(1);
+  expect(calls.checks).toHaveLength(3);
+});
+
+test("the repair step says Meta only for the Meta Model API and explains a blocked engine", async ({ page }) => {
+  await mock(page, { readiness: { ...ready, model: { ...ready.model, provider: "meta", model: "muse-spark-1.3" } } });
+  await page.goto("/");
+  const flow = page.getByRole("list", { name: "Guided demo" });
+  await expect(flow.getByRole("button", { name: "Repair with Meta" })).toHaveAccessibleDescription(/muse-spark-1\.3 in a Bubblewrap sandbox/);
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  await mock(page, { readiness: { ...ready, status: "blocked", runtime_ready: false, reason: "isolated_runtime_unavailable" } });
+  await page.reload();
+  await expect(page.locator(".readiness")).toHaveText("Engine Status: Needs attention");
+  await expect(flow.getByRole("button", { name: "Auto-repair" })).toBeDisabled();
+  await expect(flow.getByRole("button", { name: "Auto-repair" })).toHaveAccessibleDescription(/Engine needs attention/);
+});
+
+test("the header tests any URL in one step, reuses its saved check, and opens more options", async ({ page }) => {
+  const calls = await mock(page, {
+    onCheck: (invariantId) => check(invariantId, "no_failure", { method: "GET", url: "http://localhost:3000/health" }),
+    register: (body) => String(body.url).includes("full") ? { status: 409, json: { error: { code: "too_many_probes" } } } : undefined,
+  });
+  await page.goto("/");
+  const quick = page.getByRole("form", { name: "Test any URL" });
+  const field = page.getByRole("textbox", { name: "Test any URL" });
+  await expect(field).toHaveAttribute("placeholder", "http://localhost:3000/...");
+  await field.fill("http://");
+  await quick.getByRole("button", { name: "Test endpoint" }).click();
+  await expect(quick.getByRole("alert")).toHaveText("Enter a full URL, such as http://localhost:3000/.");
+  await expect(field).toHaveAttribute("aria-invalid", "true");
+  expect(calls.registered).toHaveLength(0);
+
+  // A bare host and port means http, as in a browser's address bar.
+  await field.fill("localhost:3000/health");
+  await quick.getByRole("button", { name: "Test endpoint" }).click();
+  await expect(field).toHaveValue("http://localhost:3000/health");
+  await expect(page.getByRole("heading", { name: "Passing", exact: true })).toBeVisible();
+  await expect(quick.getByRole("alert")).toHaveCount(0);
+  expect(calls.registered).toEqual([{ method: "GET", url: "http://localhost:3000/health", expected_status: 200 }]);
+  expect(calls.checks).toEqual([{ id: "probe-0123456789ab", body: {} }]);
+  await expect(page.getByText("Your custom website", { exact: true }).first()).toBeVisible();
+  const saved = rail(page).getByRole("region", { name: "Your custom website" }).getByRole("button");
+  await expect(saved).toHaveAttribute("aria-current", "true");
+  await expect(saved).toContainText("last check: passing");
+  await expect(page.locator("#workspace .check")).toBeInViewport();
+
+  // Testing the same URL again reuses the saved check instead of adding a duplicate.
+  await quick.getByRole("button", { name: "Test endpoint" }).click();
+  await expect.poll(() => calls.checks.length).toBe(2);
+  expect(calls.registered).toHaveLength(1);
+  await expect(saved).toHaveCount(1);
+
+  await field.fill("http://localhost:3000/full");
+  await quick.getByRole("button", { name: "Test endpoint" }).click();
+  await expect(quick.getByRole("alert")).toHaveText("You have 50 saved URLs. Remove one before adding another.");
+  expect(calls.checks).toHaveLength(2);
+
+  await quick.getByRole("button", { name: "More options" }).click();
+  const dialog = page.getByRole("dialog", { name: "Custom URL check" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByLabel("URL")).toHaveValue("http://localhost:3000/full");
 });
 
 test("delivery refusals are explained", async ({ page }) => {
@@ -421,7 +531,7 @@ test("project mode lists the runner's scenario, covers its own entry, and hides 
   const calls = await mock(page, { listing: { ...listing, scenarios: [projectScenario], invariants: [scenario] } });
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Checkout without a coupon", level: 1 })).toBeVisible();
-  await expect(page.getByText("Project sandbox scenario")).toBeVisible();
+  await expect(page.getByText("Your project · sandbox scenario")).toBeVisible();
   await expect(page.getByText("3 ReproSpec assertions, rerun on the baseline twice and on every candidate")).toBeVisible();
   await expect(page.locator(".workspace > .request-line")).toHaveCount(0);
   await expect(rail(page).getByText("ReproSpec, 3 assertions")).toBeVisible();
@@ -505,8 +615,8 @@ test("mobile layout fits, keyboard controls have a visible focus, and the dialog
   const markers = await page.locator("details > summary").evaluateAll((items) => items.map((item) => getComputedStyle(item, "::before").content));
   expect(markers.length).toBeGreaterThan(0);
   expect(markers.filter((content) => content === "none")).toEqual([]);
-  await page.getByRole("button", { name: "New invariant" }).click();
-  const box = await page.getByRole("dialog", { name: "New invariant" }).boundingBox();
+  await page.getByRole("button", { name: "Custom URL check" }).click();
+  const box = await page.getByRole("dialog", { name: "Custom URL check" }).boundingBox();
   expect(box && box.x >= 0 && box.x + box.width <= 390).toBe(true);
 });
 
@@ -620,7 +730,7 @@ test("the selected scenario's primary action submits that scenario and shows its
   await expect(page.getByRole("heading", { name: "Unverified result" })).toBeVisible();
   expect(calls.posts).toBe(1);
   expect(calls.jobBodies[0]).toMatchObject({ scenario_id: pack.id, mode: "repair" });
-  await expect(page.getByText(/Sandbox run result for Scripted checkout repair/)).toBeVisible();
+  await expect(page.getByText(/Sandbox run result for E-Commerce Checkout Defect/)).toBeVisible();
   await expect(runRepair(page)).toBeEnabled();
 });
 
@@ -725,9 +835,9 @@ test("the CLI guide pairs each real command with its dashboard control, copies c
   await expect(guide).toBeHidden();
 
   // Typing "?" into a field is text, not a shortcut.
-  await page.getByRole("button", { name: "New invariant" }).click();
-  await page.getByRole("dialog", { name: "New invariant" }).getByLabel("URL").pressSequentially("https://x.test/?q=1");
-  await expect(page.getByRole("dialog", { name: "New invariant" }).getByLabel("URL")).toHaveValue("https://x.test/?q=1");
+  await page.getByRole("button", { name: "Custom URL check" }).click();
+  await page.getByRole("dialog", { name: "Custom URL check" }).getByLabel("URL").pressSequentially("https://x.test/?q=1");
+  await expect(page.getByRole("dialog", { name: "Custom URL check" }).getByLabel("URL")).toHaveValue("https://x.test/?q=1");
   await expect(guide).toBeHidden();
   await page.keyboard.press("Escape");
 
@@ -850,8 +960,8 @@ test("the rail shows a live check in flight and each sandbox run's evidence-chec
   await page.route("**/api/faultline/invariants/checkout.no_coupon/check", async (route) => { await held; await route.fallback(); });
   await page.goto("/");
   const nav = rail(page);
-  await expect(nav.getByRole("region", { name: "Sandbox repair" })).toContainText("sandbox · 1");
-  await expect(nav.getByRole("region", { name: "faultline.toml" })).toContainText("http · 3");
+  await expect(nav.getByRole("region", { name: "Repairable defects" })).toContainText("sandbox · 1");
+  await expect(nav.getByRole("region", { name: "Project checks" })).toContainText("faultline.toml · 3");
   const ruleItem = nav.getByRole("button", { name: /Checkout without a coupon creates an order/ });
   await expect(ruleItem).toContainText("not checked yet");
 
@@ -865,7 +975,7 @@ test("the rail shows a live check in flight and each sandbox run's evidence-chec
   await expect(ruleItem.locator(".rail-dot")).toHaveAttribute("data-tone", "bad");
   await expect(page.getByText("Sending the request from two fresh sessions…")).toHaveCount(0);
 
-  const packItem = nav.getByRole("button", { name: /Scripted checkout repair/ });
+  const packItem = nav.getByRole("button", { name: /E-Commerce Checkout Defect/ });
   await expect(packItem).toContainText("repairable in the sandbox");
   await inspectPastRun(page);
   await expect(page.getByRole("heading", { name: "Verified repair", exact: true })).toBeVisible();
@@ -877,7 +987,7 @@ test("the rail marks a running sandbox job as active and never calls an unproven
   const events = [{ sequence: 1, timestamp: "2026-10-27T12:00:00Z", stage: "baseline", message_code: "baseline", message: "Entered baseline." }];
   await mock(page, { detail: { ...detail("running", null), events } });
   await page.goto("/");
-  const packItem = rail(page).getByRole("button", { name: /Scripted checkout repair/ });
+  const packItem = rail(page).getByRole("button", { name: /E-Commerce Checkout Defect/ });
   await expect(packItem).toContainText("sandbox run in progress…");
   await expect(packItem.locator(".rail-dot")).toHaveAttribute("data-tone", "active");
   await expect(page.locator(".pipeline li[data-state=current]")).toHaveCount(1);
