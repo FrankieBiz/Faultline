@@ -116,58 +116,135 @@ a.btn { display: inline-flex; align-items: center; text-decoration: none; }
 #workspace > .notice:first-child { margin: 0 0 24px; }
 .empty { margin: 32px 0 0; padding: 28px 0; border-top: 1px solid var(--line); color: var(--ink-2); }
 
-/* Header quick test: one URL, one button, a live result in the workspace. */
-/* Its own row under the wordmark and tools: the URL field gets the width it needs at every size. */
-.quick-test { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; order: 3; flex: 1 1 100%; }
-.quick-label { color: var(--ink-3); font: 500 11px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; }
-.quick-row { display: flex; gap: 6px; flex: 1 1 300px; min-width: 0; }
-.quick-row input {
-  flex: 1 1 240px; min-width: 0; min-height: 36px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 8px;
-  background: var(--well); color: var(--ink); font: 13px var(--mono);
+/* Hero paste arena: one URL, one big button, and the agent does the rest. */
+.hero { position: relative; border-bottom: 1px solid var(--line); overflow: hidden; }
+/* A single soft light behind the field; static, so it never repaints. */
+.hero::before {
+  content: ""; position: absolute; inset: -40% 10% auto; height: 120%; z-index: -1; pointer-events: none;
+  background: radial-gradient(closest-side, rgba(236, 238, 241, 0.06), transparent 70%);
 }
-.quick-row input::placeholder { color: var(--ink-3); }
-.quick-row input[aria-invalid="true"] { border-color: var(--red); }
-.quick-row .btn { flex: none; min-height: 36px; padding: 0 12px; font-size: 13px; }
-.quick-error { flex-basis: 100%; margin: 0; color: var(--red); font-size: 12.5px; }
-.quick-row .quick-break { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
-.quick-bolt { font-size: 12px; line-height: 1; }
+.hero-inner { padding-top: clamp(36px, 7vw, 76px); padding-bottom: clamp(32px, 6vw, 60px); }
+.hero-kicker { display: inline-flex; align-items: center; gap: 10px; margin: 0 0 18px; color: var(--ink-3); font: 500 11.5px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+.hero-live { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 10px var(--green); animation: pulse 2.4s ease-in-out infinite; }
+.hero h1 { max-width: 18ch; font-size: clamp(34px, 5.4vw, 64px); line-height: 1.02; letter-spacing: -0.04em; font-weight: 650; text-wrap: balance; }
+.hero-sub { max-width: 58ch; margin: 18px 0 0; color: var(--ink-2); font-size: clamp(15px, 1.4vw, 17.5px); line-height: 1.55; text-wrap: pretty; }
 
-/* Crawler HUD: the live Playwright crawl as a terminal, ending in the intercepted defect. */
-.hud { padding-top: 18px; }
-.hud-frame { border: 1px solid var(--line); border-radius: 12px; background: var(--well); overflow: hidden; animation: rise 220ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.arena { max-width: 920px; margin-top: clamp(26px, 4vw, 40px); }
+.arena-field {
+  display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 18px;
+  border: 1px solid var(--line-strong); border-radius: 16px; background: var(--well);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 24px 60px -30px rgba(0, 0, 0, 0.9);
+  transition: border-color 160ms ease-out, box-shadow 160ms ease-out;
+}
+.arena-field:focus-within { border-color: var(--ink-2); box-shadow: 0 0 0 4px rgba(236, 238, 241, 0.07), 0 24px 60px -30px rgba(0, 0, 0, 0.9); }
+.arena[data-hunting] .arena-field { border-color: rgba(45, 212, 255, 0.55); box-shadow: 0 0 0 4px var(--cyan-wash), 0 24px 60px -30px rgba(0, 0, 0, 0.9); }
+.arena-prompt { color: var(--ink-3); font: 600 20px var(--mono); }
+.arena-field input {
+  flex: 1 1 auto; min-width: 0; min-height: 52px; padding: 0 4px; border: 0; background: transparent;
+  color: var(--ink); font: 500 clamp(15px, 1.6vw, 18px) var(--mono); outline: none;
+}
+.arena-field input::placeholder { color: var(--ink-3); opacity: 0.75; }
+.arena-field:has(input[aria-invalid="true"]) { border-color: var(--red); }
+.arena-go {
+  flex: none; display: inline-flex; align-items: center; gap: 4px; min-height: 52px; padding: 0 22px; border-radius: 11px;
+  font-size: 15.5px; font-weight: 650; letter-spacing: -0.01em;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.4) inset, 0 10px 30px -10px rgba(236, 238, 241, 0.45);
+  transition: background-color 120ms, transform 120ms ease-out, box-shadow 160ms ease-out;
+}
+.arena-go:hover:not(:disabled) { box-shadow: 0 0 0 1px #fff inset, 0 14px 40px -10px rgba(236, 238, 241, 0.6); }
+.arena-go:active:not(:disabled) { transform: scale(0.98); }
+.arena-error { margin: 10px 0 0 4px; color: var(--red); font-size: 13px; }
+.arena-below { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; margin-top: 14px; }
+.presets { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.preset {
+  min-height: 34px; padding: 0 14px; border: 1px solid var(--line-strong); border-radius: 999px; background: rgba(255, 255, 255, 0.02);
+  color: var(--ink-2); font: 500 12.5px var(--mono); cursor: pointer; transition: color 120ms, border-color 120ms, background-color 120ms;
+}
+.preset:hover { color: var(--ink); border-color: var(--ink-2); }
+.preset[aria-pressed="true"] { color: var(--ink); border-color: var(--ink); background: rgba(255, 255, 255, 0.06); }
+.arena-hint { margin: 0; color: var(--ink-3); font-size: 13px; }
+.arena-hint kbd { margin-right: 4px; }
+
+/* Live agent mission HUD: telemetry, the crawler's real steps, then the defect, repair, and delivery. */
+.hud { padding-top: 24px; }
+.hud-frame { border: 1px solid var(--line); border-radius: 14px; background: var(--well); overflow: hidden; animation: rise 220ms cubic-bezier(0.2, 0.8, 0.2, 1); }
 .hud[data-phase="caught"] .hud-frame { border-color: rgba(255, 77, 106, 0.4); }
+.hud[data-phase="clean"] .hud-frame { border-color: rgba(61, 255, 162, 0.3); }
 .hud-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 10px 10px 10px 16px; border-bottom: 1px solid var(--line); background: var(--raised); }
 .hud-key { margin: 0; color: var(--ink-2); font: 500 11px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; }
 .hud-target { flex: 1 1 180px; min-width: 0; color: var(--ink); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hud-phase { display: inline-flex; align-items: center; gap: 7px; color: var(--ink-2); font: 500 12px var(--mono); }
-.hud-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
-.hud-phase[data-tone="active"] { color: var(--cyan); }
-.hud-phase[data-tone="active"] .hud-dot { box-shadow: 0 0 10px currentColor; animation: pulse 1.2s ease-in-out infinite; }
-.hud-phase[data-tone="bad"] { color: var(--red); }
-.hud-phase[data-tone="warn"] { color: var(--amber); }
-.btn.hud-close { min-height: 30px; margin-left: auto; font-size: 12px; }
-.hud-scan, .hud-note, .hud-cursor { margin: 0; padding: 12px 16px 0; font: 12.5px/1.5 var(--mono); }
-.hud-scan { color: var(--ink); }
-.hud-prompt { margin-right: 10px; color: var(--cyan); }
+.hud-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+
+.hud-telemetry { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0; border-bottom: 1px solid var(--line); }
+.hud-telemetry > div { display: grid; gap: 2px; min-width: 0; padding: 12px 16px; }
+.hud-telemetry > div + div { border-left: 1px solid var(--line); }
+.hud-telemetry dt { color: var(--ink-3); font: 500 10.5px var(--mono); letter-spacing: 0.07em; text-transform: uppercase; }
+.hud-telemetry dd { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--ink); font: 600 20px/1.25 var(--mono); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.hud-telemetry > div:first-child dd { font-size: 16px; letter-spacing: 0; }
+.hud-telemetry > [data-tone="active"] dd { color: var(--cyan); }
+.hud-telemetry > [data-tone="active"] .hud-dot { box-shadow: 0 0 10px currentColor; animation: pulse 1.2s ease-in-out infinite; }
+.hud-telemetry > [data-tone="bad"] dd { color: var(--red); }
+.hud-telemetry > [data-tone="ok"] dd { color: var(--green); }
+.hud-telemetry > [data-tone="warn"] dd { color: var(--amber); }
+
+.hud-note, .hud-cursor { margin: 0; padding: 12px 16px 0; font: 12.5px/1.5 var(--mono); }
 .hud-note { color: var(--ink-2); }
 .hud-note:is([data-phase="failed"], [data-phase="incomplete"], [data-phase="retrying"], [data-phase="fallback"]) { color: var(--amber); }
-.hud-ticker { max-height: 224px; margin: 0; padding: 10px 16px 0; overflow-y: auto; list-style: none; font: 12.5px/1.65 var(--mono); color: var(--ink-2); overscroll-behavior: contain; }
-.hud-ticker li { animation: rise 180ms ease-out; overflow-wrap: anywhere; }
+.hud-ticker { max-height: 260px; margin: 0; padding: 12px 16px 0; overflow-y: auto; list-style: none; font: 12.5px/1.7 var(--mono); color: var(--ink-2); overscroll-behavior: contain; }
+.hud-ticker li { position: relative; padding-left: 18px; animation: rise 180ms ease-out; overflow-wrap: anywhere; }
+/* Pulse markers: a dot per step on a faint rail; the newest one breathes while the agent works. */
+.hud-ticker li::before { content: ""; position: absolute; left: 3px; top: 0; bottom: 0; width: 1px; background: var(--line); }
+.hud-ticker li:first-child::before { top: 0.85em; }
+.hud-ticker li:last-child::before { bottom: auto; height: 0.85em; }
+.hud-pulse { position: absolute; left: 0; top: calc(0.85em - 3.5px); width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); }
+.hud-ticker li[data-ok="true"] .hud-pulse { background: rgba(61, 255, 162, 0.7); }
+.hud-ticker li[data-kind="scan"] .hud-pulse { background: var(--cyan); }
 .hud-ticker li[data-ok="false"] { color: var(--red); }
+.hud-ticker li[data-ok="false"] .hud-pulse { background: var(--red); box-shadow: 0 0 10px var(--red); }
+.hud-ticker[data-running] li:last-child .hud-pulse { background: var(--cyan); box-shadow: 0 0 10px var(--cyan); animation: pulse 1s ease-in-out infinite; }
 .hud-step { color: var(--ink-3); }
 .hud-ticker li[data-ok="false"] .hud-step { color: inherit; }
-/* A blinking block cursor while the crawler is still working. */
+.hud-caught { font-weight: 700; }
+
 .hud-cursor { color: var(--cyan); }
 .hud-cursor::after { content: ""; display: inline-block; width: 7px; height: 13px; margin-left: 8px; vertical-align: -2px; background: currentColor; animation: blink 1s steps(1) infinite; }
-.hud-frame > :last-child:not(.hud-head, .hud-defect) { padding-bottom: 14px; }
-.hud-defect { display: grid; gap: 4px; margin: 14px 0 0; padding: 14px 16px 16px; border-top: 1px solid rgba(255, 77, 106, 0.3); background: var(--red-wash); box-shadow: inset 3px 0 0 var(--red); }
+.hud-frame > :last-child:not(.hud-head, .hud-defect, .hud-shield, .hud-repair-state) { padding-bottom: 14px; }
+
+.hud-shield { margin: 14px 0 0; padding: 16px; border-top: 1px solid rgba(61, 255, 162, 0.25); background: var(--green-wash); box-shadow: inset 3px 0 0 var(--green); color: var(--green); font: 600 14px/1.45 var(--mono); }
+
+.hud-defect { display: grid; gap: 6px; margin: 14px 0 0; padding: 18px 16px; border-top: 1px solid rgba(255, 77, 106, 0.35); background: linear-gradient(rgba(255, 77, 106, 0.12), var(--red-wash)); box-shadow: inset 3px 0 0 var(--red); animation: rise 220ms cubic-bezier(0.2, 0.8, 0.2, 1); }
 .hud-defect p { margin: 0; }
-.hud-defect-title { color: var(--red); font: 600 14px/1.4 var(--mono); overflow-wrap: anywhere; }
+.hud-defect-kicker { color: var(--red); font: 600 11px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+.hud-defect-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; color: var(--ink); font: 600 clamp(17px, 2vw, 22px)/1.3 var(--mono); letter-spacing: -0.01em; overflow-wrap: anywhere; }
+.hud-code { padding: 1px 9px; border-radius: 6px; background: var(--red); color: #16070a; }
 .hud-defect-trigger { color: var(--ink); font-size: 13.5px; }
+.hud-trail { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 0; margin: 4px 0 0; padding: 0; list-style: none; font: 12px/1.6 var(--mono); color: var(--ink-2); }
+.hud-trail li { position: relative; padding: 1px 8px; border: 1px solid var(--line-strong); border-radius: 6px; background: rgba(0, 0, 0, 0.25); }
+.hud-trail li + li { margin-left: 24px; }
+.hud-trail li + li::before { content: "→"; position: absolute; left: -18px; color: var(--ink-3); }
+.hud-trail li[data-ok="false"] { border-color: rgba(255, 77, 106, 0.6); color: var(--red); }
 .hud-defect-fp { color: var(--ink-3); font-size: 12px; }
 .hud-defect-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 10px; }
-.hud-repair { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.hud-repair, .hud-apply { min-height: 48px; padding: 12px 20px; border-radius: 10px; font-size: 15px; line-height: 1.4; font-weight: 650; text-align: center; }
+/* The one-click CTAs breathe a glow; only the halo's opacity animates, so it stays on the compositor. */
+.hud-repair, .hud-apply { position: relative; }
+.hud-repair::after, .hud-apply::after { content: ""; position: absolute; inset: -1px; border-radius: inherit; pointer-events: none; opacity: 0; box-shadow: 0 0 30px rgba(236, 238, 241, 0.4); }
+.hud-apply::after { box-shadow: 0 0 30px rgba(61, 255, 162, 0.5); }
+:is(.hud-repair, .hud-apply):not(:disabled)::after { animation: breathe 2.4s ease-in-out infinite; }
+.hud-repair-sub { font-weight: 500; opacity: 0.7; }
+.hud-apply { background: var(--green); border-color: var(--green); color: #04150c; }
+.btn.primary.hud-apply:hover:not(:disabled) { background: #7dffc2; }
 .hud-blocked { color: var(--amber); font-size: 12.5px; }
+
+.hud-repair-state { display: grid; gap: 6px; padding: 16px; border-top: 1px solid var(--line); }
+.hud-repair-state p { margin: 0; }
+.hud-repair-state[data-tone="active"] { background: var(--cyan-wash); box-shadow: inset 3px 0 0 var(--cyan); }
+.hud-repair-state[data-tone="ok"] { background: var(--green-wash); box-shadow: inset 3px 0 0 var(--green); animation: rise 220ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.hud-repair-state[data-tone="bad"], .hud-repair-state[data-tone="warn"] { box-shadow: inset 3px 0 0 var(--amber); }
+.hud-repair-title { color: var(--green); font: 600 15px/1.45 var(--mono); }
+.hud-repair-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; color: var(--ink-2); font-size: 13.5px; }
+.hud-repair-state[data-tone="active"] .hud-repair-line { color: var(--cyan); font-family: var(--mono); }
+.hud-repair-state[data-tone="active"] .hud-dot { box-shadow: 0 0 10px currentColor; animation: pulse 1.2s ease-in-out infinite; }
 
 /* Demo Playground: the sample store's state and the three-step guided demo. */
 .playground { background: var(--raised); border-bottom: 1px solid var(--line); box-shadow: inset 3px 0 0 var(--line-strong); }
@@ -461,6 +538,7 @@ details[open] > summary { margin-bottom: 16px; }
 @keyframes settle { from { opacity: 0.4; } to { opacity: 1; } }
 @keyframes rise { from { opacity: 0; transform: translateY(6px) scale(0.99); } }
 @keyframes blink { 50% { opacity: 0; } }
+@keyframes breathe { 50% { opacity: 1; } }
 @keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
 
 @media (max-width: 960px) {
@@ -472,7 +550,14 @@ details[open] > summary { margin-bottom: 16px; }
 
 @media (max-width: 760px) {
   .shell { padding-inline: 16px; }
-  .quick-row { flex-wrap: wrap; }
+  .arena-field { flex-wrap: wrap; padding: 8px; }
+  .arena-prompt { display: none; }
+  .arena-field input { flex-basis: 100%; min-height: 46px; padding: 0 8px; }
+  .arena-go { flex: 1 1 100%; justify-content: center; }
+  .hud-telemetry { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hud-repair, .hud-apply { flex: 1 1 100%; }
+  .hud-telemetry > div:nth-child(3) { border-left: 0; }
+  .hud-telemetry > div:nth-child(n + 3) { border-top: 1px solid var(--line); }
   .actions .btn { flex: 1 1 100%; }
   .cols, .sessions { grid-template-columns: 1fr; }
   .session + .session { border-left: 0; border-top: 1px solid var(--line); }

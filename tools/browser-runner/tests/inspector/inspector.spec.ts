@@ -416,10 +416,10 @@ test("the guided demo advances Break it, repair, and Apply fix on recorded evide
   await expect(page.getByRole("heading", { name: "Failing", exact: true })).toBeVisible();
   expect(calls.crawls).toEqual([{ url: "http://127.0.0.1:3000", max_steps: 25 }]);
   expect(calls.checks).toEqual([{ id: "scenario.checkout_api", body: { port: 8000 } }]);
-  const hud = page.getByRole("region", { name: "Direct HTTP check" });
+  const hud = page.getByRole("region", { name: "Live Agent Mission · Direct HTTP check" });
   await expect(hud).toContainText("no Playwright crawler endpoint yet");
-  await expect(hud.getByRole("alert")).toContainText("Defect Intercepted: HTTP 500 on POST /api/checkout");
-  await expect(hud.getByRole("log", { name: "Crawl steps" })).toContainText("[Step 1] Session 1: POST /api/checkout → HTTP 500");
+  await expect(hud.getByRole("alert")).toContainText("HTTP 500 on POST /api/checkout");
+  await expect(hud.getByRole("log", { name: "Agent steps" })).toContainText("[Step 1] Session 1: POST /api/checkout → HTTP 500");
   await expect(steps.nth(0)).toHaveAttribute("data-state", "done");
   await expect(steps.nth(0).locator(".flow-status")).toHaveText("HTTP 500 · checkout crashes");
   await expect(steps.nth(1)).toHaveAttribute("aria-current", "step");
@@ -428,6 +428,9 @@ test("the guided demo advances Break it, repair, and Apply fix on recorded evide
   await expect(page.getByRole("heading", { name: "Verified repair", exact: true })).toBeVisible();
   expect(calls.jobBodies).toEqual([expect.objectContaining({ scenario_id: pack.id, mode: "repair" })]);
   await expect(steps.nth(1).locator(".flow-status")).toHaveText("44 of 44 checks passed");
+  // Step 2 repaired the defect on the HUD, so the mission follows that run to its verified fix.
+  await expect(hud).toContainText("Fix verified: 44/44 assertions passed in the Bubblewrap sandbox");
+  await expect(hud.getByRole("button", { name: "Apply Verified Fix to Live Codebase" })).toBeEnabled();
   await expect(steps.nth(1)).toHaveAttribute("data-state", "done");
   await expect(steps.nth(2)).toHaveAttribute("aria-current", "step");
 
@@ -466,11 +469,22 @@ test("the header tests any URL without asking for an expected status, reusing it
     register: (body) => String(body.url).includes("full") ? { status: 409, json: { error: { code: "too_many_probes" } } } : undefined,
   });
   await page.goto("/");
-  const quick = page.getByRole("form", { name: "Break any page" });
+  const quick = page.getByRole("form", { name: "Autonomous bug hunt" });
   const field = page.getByRole("textbox", { name: "Target URL" });
   const ping = quick.getByRole("button", { name: "Quick HTTP Ping" });
   await expect(field).toHaveAttribute("placeholder", "http://localhost:3000/...");
-  await expect(quick.getByRole("button", { name: "Auto-Break Page (Playwright)" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "FaultLine Autonomous Bug Hunter", level: 1 })).toBeVisible();
+  await expect(quick.getByRole("button", { name: "Unleash Autonomous Agent" })).toBeVisible();
+  // Presets fill the field; nothing runs until the agent is unleashed.
+  await quick.getByRole("button", { name: "Storefront (port 3000)" }).click();
+  await expect(field).toHaveValue("http://127.0.0.1:3000");
+  await quick.getByRole("button", { name: "Backend API (port 8000)" }).click();
+  await expect(field).toHaveValue("http://127.0.0.1:8000");
+  await expect(quick.getByRole("button", { name: "Backend API (port 8000)" })).toHaveAttribute("aria-pressed", "true");
+  await quick.getByRole("button", { name: "Custom Localhost" }).click();
+  await expect(field).toHaveValue("http://localhost:");
+  await expect(field).toBeFocused();
+  expect(calls.crawls).toHaveLength(0);
   await expect(quick.getByText(/expected/i)).toHaveCount(0);
   await field.fill("http://");
   await ping.click();
@@ -502,13 +516,14 @@ test("the header tests any URL without asking for an expected status, reusing it
   await expect(ping).toBeEnabled();
   // Enter runs the crawler. With no crawler endpoint, a GET ping stands in and the HUD says so.
   await field.press("Enter");
-  const hud = page.getByRole("region", { name: "Direct HTTP check" });
+  const hud = page.getByRole("region", { name: "Live Agent Mission · Direct HTTP check" });
   await expect(hud).toContainText('Sending "GET http://localhost:5000/health" directly');
-  await expect(hud.getByRole("status")).toHaveText("No defect found");
+  await expect(hud.getByRole("status")).toHaveText("Clean");
   await expect(hud).toContainText("Passing: Both fresh sessions met every expectation.");
+  await expect(hud).toContainText("✅ Clean. 0 defects found in 2 fresh sessions.");
   expect(calls.crawls).toEqual([{ url: "http://localhost:5000/health", max_steps: 25 }]);
   expect(calls.checks).toHaveLength(3);
-  await hud.getByRole("button", { name: "Close the crawler" }).click();
+  await hud.getByRole("button", { name: "Close the mission" }).click();
   await expect(hud).toHaveCount(0);
 
   await field.fill("http://localhost:5000/full");
@@ -535,17 +550,23 @@ test("the chaos crawler streams its scan and steps, intercepts the defect, and r
   const flow = page.getByRole("list", { name: "Guided demo" });
   const steps = flow.getByRole("listitem");
   await flow.getByRole("button", { name: "Break it" }).click();
-  const hud = page.getByRole("region", { name: "Playwright chaos crawler" });
-  await expect(hud).toContainText("Scanning DOM… found 6 buttons & 1 form");
-  const log = hud.getByRole("log", { name: "Crawl steps" });
+  const hud = page.getByRole("region", { name: "Live Agent Mission · Playwright" });
+  const log = hud.getByRole("log", { name: "Agent steps" });
   await expect(log.getByRole("listitem")).toHaveText([
+    "[Scan] Discovered 9 interactive elements (6 buttons, 3 links) and 1 form",
     '[Step 1] Clicked "Trail Mug" (OK) on /',
     '[Step 2] Clicked "Add to Cart" (OK) on /products/trail-mug',
-    '[Step 3] Submitted "Place order" (HTTP 500) on /checkout',
+    '[Step 3] Clicked "Place order" on /checkout → 💥 CAUGHT DEFECT: HTTP 500 on POST /api/checkout',
   ]);
+  await expect(hud.getByRole("status")).toHaveText("Defect caught");
+  const telemetry = hud.locator(".hud-telemetry");
+  await expect(telemetry).toContainText("Screens Explored3");
+  await expect(telemetry).toContainText("Actions3");
+  await expect(telemetry).toContainText("Defects1");
   const banner = hud.getByRole("alert");
-  await expect(banner).toContainText("Defect Intercepted: HTTP 500 on POST /api/checkout");
+  await expect(banner).toContainText("HTTP 500 on POST /api/checkout");
   await expect(banner).toContainText("Triggered by: Button “Place order” on /checkout");
+  await expect(banner.getByRole("list", { name: "Click trail" }).getByRole("listitem")).toHaveText(["“Trail Mug”", "“Add to Cart”", "“Place order”"]);
   expect(attempts).toBe(2);
   expect(calls.checks).toHaveLength(0);
   await expect(steps.nth(0)).toHaveAttribute("data-state", "done");
@@ -553,7 +574,7 @@ test("the chaos crawler streams its scan and steps, intercepts the defect, and r
   await expect(steps.nth(1)).toHaveAttribute("aria-current", "step");
   await expect(flow.getByRole("button", { name: "Repair with Meta" })).toBeEnabled();
 
-  await banner.getByRole("button", { name: "Repair with Meta Muse Spark" }).click();
+  await banner.getByRole("button", { name: "Repair with Meta Muse Spark (Sandbox Verified)" }).click();
   await expect.poll(() => calls.jobBodies).toEqual([expect.objectContaining({ scenario_id: pack.id, mode: "repair" })]);
 });
 
@@ -566,11 +587,64 @@ test("a crawl defect no sandbox repair covers is detection only", async ({ page 
   ] } }) });
   await page.goto("/");
   await page.getByRole("textbox", { name: "Target URL" }).fill("localhost:5000/");
-  await page.getByRole("button", { name: "Auto-Break Page (Playwright)" }).click();
-  const banner = page.getByRole("region", { name: "Playwright chaos crawler" }).getByRole("alert");
-  await expect(banner).toContainText("Defect Intercepted: HTTP 500 on GET /api/export");
+  await page.getByRole("button", { name: "Unleash Autonomous Agent" }).click();
+  const banner = page.getByRole("region", { name: "Live Agent Mission · Playwright" }).getByRole("alert");
+  await expect(banner).toContainText("HTTP 500 on GET /api/export");
   await expect(banner.getByRole("button", { name: "Auto-repair" })).toBeDisabled();
   await expect(banner.getByRole("button", { name: "Auto-repair" })).toHaveAccessibleDescription("No sandbox repair covers GET /api/export yet, so this failure is detection only.");
+});
+
+test("a hunt that finds nothing ends on the clean shield", async ({ page }) => {
+  await mock(page, { crawl: () => ({ status: 200, ndjson: [
+    { type: "step", n: 1, action: "visit", target: "http://localhost:5000/", page: "/", ok: true },
+    { type: "scan", url: "http://localhost:5000/", buttons: 2, forms: 1, links: 1 },
+    { type: "step", n: 2, action: "fill", target: "Name", page: "/", ok: true },
+    { type: "step", n: 3, action: "fill", target: "Email", page: "/", ok: true },
+    { type: "step", n: 4, action: "submit", target: "Subscribe", page: "/", ok: true },
+    { type: "done", steps: 4, defect: false },
+  ] }) });
+  await page.goto("/");
+  await page.getByRole("textbox", { name: "Target URL" }).fill("localhost:5000/");
+  await page.getByRole("textbox", { name: "Target URL" }).press("Enter");
+  const hud = page.getByRole("region", { name: "Live Agent Mission · Playwright" });
+  await expect(hud.getByRole("log", { name: "Agent steps" }).getByRole("listitem")).toHaveText([
+    "[Step 1] Navigating to http://localhost:5000/…",
+    "[Scan] Discovered 3 interactive elements (2 buttons, 1 link) and 1 form",
+    "[Step 2–3] Filled form fields (Name, Email) (OK) on /",
+    '[Step 4] Clicked "Subscribe" (OK) on /',
+  ]);
+  await expect(hud.getByRole("status")).toHaveText("Clean");
+  await expect(hud).toContainText("✅ All screens and actions clean. 0 defects found across 1 screen and 3 actions.");
+  await expect(hud.getByRole("alert")).toHaveCount(0);
+});
+
+test("the mission HUD repairs, verifies, and applies the fix it caught", async ({ page }) => {
+  const calls = await mock(page, {
+    detail: verifiedDetail(),
+    onCheck: (invariantId) => check(invariantId, "no_failure"),
+    crawl: () => ({ status: 200, ndjson: [
+      { type: "step", n: 1, action: "visit", target: "http://127.0.0.1:3000", page: "/", ok: true },
+      { type: "step", n: 2, action: "submit", target: "Place order", page: "/checkout", ok: false, note: "HTTP 500" },
+      { type: "defect", method: "POST", path: "/api/checkout", status: 500, trigger: { kind: "Button", label: "Place order", page: "/checkout" }, fingerprint },
+      { type: "done", steps: 2, defect: true },
+    ] }),
+  });
+  // A verified record from an earlier session is not this mission's repair.
+  await page.goto("/");
+  await page.getByRole("textbox", { name: "Target URL" }).fill("http://127.0.0.1:3000");
+  await page.getByRole("button", { name: "Unleash Autonomous Agent" }).click();
+  const hud = page.getByRole("region", { name: "Live Agent Mission · Playwright" });
+  await expect(hud.getByRole("alert").getByRole("list", { name: "Click trail" }).getByRole("listitem")).toHaveText(["/", "“Place order”"]);
+  await expect(hud).not.toContainText("Fix verified");
+  await hud.getByRole("button", { name: /Auto-repair \(Sandbox Verified\)/ }).click();
+  await expect.poll(() => calls.jobBodies).toEqual([expect.objectContaining({ scenario_id: pack.id, mode: "repair" })]);
+  await expect(hud).toContainText("Fix verified: 44/44 assertions passed in the Bubblewrap sandbox");
+  await expect(hud.getByRole("status")).toHaveText("Fix verified");
+  await hud.getByRole("button", { name: "Apply Verified Fix to Live Codebase" }).click();
+  await expect(hud).toContainText(`Applied to ${target}.`);
+  await expect(hud).toContainText("Live checkout re-checked: HTTP 201 · defect gone.");
+  await expect(hud.getByRole("status")).toHaveText("Fix applied");
+  expect(calls.applies).toBe(1);
 });
 
 test("delivery refusals are explained", async ({ page }) => {

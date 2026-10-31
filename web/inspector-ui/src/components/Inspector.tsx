@@ -2,14 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import CliGuide from "@/components/CliGuide";
-import CrawlerHud, { applyCrawlEvent, crawlFromCheck, crawlInFlight, startCrawl, type CrawlState } from "@/components/CrawlerHud";
+import CrawlerHud, { applyCrawlEvent, crawlFromCheck, crawlInFlight, startCrawl, type CrawlState, type MissionRepair } from "@/components/CrawlerHud";
 import { STEP_LABELS, currentStep } from "@/components/Evidence";
 import GuidedFlow, { type FlowRun, type StoreHunt } from "@/components/GuidedFlow";
+import HeroArena from "@/components/HeroArena";
 import InvariantPanel from "@/components/InvariantPanel";
 import JobResult, { summarizeJob } from "@/components/JobResult";
 import PackPanel from "@/components/PackPanel";
 import ProbeDialog, { type ProbeValues } from "@/components/ProbeDialog";
-import QuickTest from "@/components/QuickTest";
 import ScenarioRail, { type RailStatus, type Selection } from "@/components/ScenarioRail";
 import { playFailureAlarm, playResolutionChime, readSoundPreference, writeSoundPreference, type Cue } from "@/lib/audio-cues";
 import {
@@ -67,6 +67,8 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
   const [quickTesting, setQuickTesting] = useState(false);
   const [crawlState, setCrawlState] = useState<CrawlState | null>(null);
   const crawlAbort = useRef<AbortController | null>(null);
+  /** The sandbox run started for the defect the HUD shows, so the HUD follows only that repair. */
+  const [missionJobId, setMissionJobId] = useState<string | null>(null);
   const [flowAction, setFlowAction] = useState<FlowAction>(null);
   /** Bumped to open the CLI guide; the dialog closes itself. */
   const [guideRequest, setGuideRequest] = useState(0);
@@ -336,7 +338,8 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
     : status === "blocked" ? REASON[readiness?.reason ?? ""] ?? "Execution is blocked by the orchestrator."
     : readinessError ?? "Checking orchestrator readiness…";
 
-  const start = async (mode: "repair" | "detect", scenarioId: string) => {
+  /** Resolves to the accepted job's id, or null when the orchestrator refused it. */
+  const start = async (mode: "repair" | "detect", scenarioId: string): Promise<string | null> => {
     setBusy("submit");
     setNotice(null);
     try {
@@ -351,9 +354,13 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
           text: `The orchestrator downgraded this run to detection only (${accepted.repair_block_reason ?? "provider unavailable"}).`,
         });
       }
+      // A repair of the defect on the HUD, from either button, is the mission's repair.
+      if (mode === "repair" && defectScenario?.id === scenarioId) setMissionJobId(accepted.job_id);
+      return accepted.job_id;
     } catch (e) {
       setNotice({ tone: "bad", text: errorText(e) });
       void refreshReadiness();
+      return null;
     } finally {
       setBusy(null);
     }
@@ -515,6 +522,7 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
       if (!controller.signal.aborted) setCrawlState((state) => state && change(state));
     };
     setCrawlState(startCrawl(url));
+    setMissionJobId(null);
     revealHud();
     for (let attempt = 1; ; attempt++) {
       let seen = false;
@@ -563,6 +571,7 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
     crawlAbort.current?.abort();
     crawlAbort.current = null;
     setCrawlState(null);
+    setMissionJobId(null);
   };
 
   /** The store's own checkout check, standing in for the crawler on the store's origins. */
@@ -602,7 +611,7 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
     }
   };
 
-  /** Header ping: reuse the saved GET probe for this URL when there is one, then check it live. */
+  /** Hero ping: reuse the saved GET probe for this URL when there is one, then check it live. */
   const quickTest = async (url: string): Promise<CheckRecord | null> => {
     const existing = listing?.invariants.find((i) => i.source === "probe" && i.method === "GET" && i.url === url
       && i.expected_status === 200 && !i.has_body) ?? null;
@@ -619,7 +628,7 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
     }
   };
 
-  /** Header crawl: on the store's origins the checkout check stands in for the crawler, elsewhere a GET ping. */
+  /** Hero crawl: on the store's origins the checkout check stands in for the crawler, elsewhere a GET ping. */
   const autoBreak = async (url: string) => {
     const onStore = sameOrigin(url, storefrontUrl, null) || (store !== null && sameOrigin(url, store.url, null));
     await runCrawl(url, (onStore ? storeFallback(false) : null) ?? { title: `GET ${url}`, run: () => quickTest(url) });
@@ -694,6 +703,29 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
     select({ kind: "pack", id: defectScenario.id });
     void start("repair", defectScenario.id);
   };
+  // The HUD follows the mission's own run through verification and delivery, never another record.
+  const missionJob = job && job.id === missionJobId ? job : null;
+  const missionDelivers = missionJob !== null && storePack !== null && missionJob.scenario_id === storePack.id;
+  const limits = verification?.resource_limits;
+  const missionRepair: MissionRepair | null = !missionJob ? null : {
+    running,
+    stage: running ? STEP_LABELS[currentStep(missionJob, events)] ?? null : null,
+    verified,
+    checks: verified && verification ? { passed: passedChecks, total: verification.report.assertions.length } : null,
+    sandbox: limits?.verified && limits.mode === "cgroup-v2-scope" ? "the Bubblewrap sandbox under cgroup v2 limits" : "the Bubblewrap sandbox",
+    outcome: !running && !verified ? outcome : null,
+    canApply: missionDelivers && verified && store?.state === "seeded" && busy === null && flowAction === null && !crawlRunning,
+    applyNote: missionDelivers ? null : "Project repairs stay in the sandbox; FaultLine never writes your working source. Review the diff below.",
+    applying: missionDelivers && (busy === "apply" || flowAction === "confirm"),
+    applied: missionDelivers && store?.state === "patched" && store.applied_job_id === missionJob.id ? {
+      file: store.target_file,
+      live: liveCheck && flowAction !== "confirm" ? (() => {
+        const verdict = checkVerdict(liveCheck);
+        const code = liveCheck.sessions.find((s) => s.status !== null)?.status;
+        return { tone: verdict.tone, text: verdict.tone === "ok" ? `Live checkout re-checked: HTTP ${code} · defect gone.` : `Live checkout: ${verdict.title}.` };
+      })() : null,
+    } : null,
+  };
   const engineLabel = status === "ready" ? "Ready" : status === "detect_only" ? "Detection only"
     : status === "blocked" || readinessError ? "Needs attention" : "Checking…";
 
@@ -703,9 +735,6 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
       <header className="top">
         <div className="shell top-row">
           <span className="wordmark"><span aria-hidden="true" className="glyph" />FaultLine{" "}<span className="wordmark-sub">Inspector</span></span>
-          <QuickTest busy={busy !== null || quickTesting || flowAction !== null || crawlRunning}
-            breaking={crawlRunning && flowAction === null} pinging={quickTesting && !crawlRunning}
-            onBreak={autoBreak} onPing={async (url) => { await quickTest(url); }} />
           <div className="top-tools">
             <span className="readiness" data-tone={readinessTone}>
               <span className="readiness-dot" aria-hidden="true" />
@@ -720,6 +749,12 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
           </div>
         </div>
       </header>
+      <HeroArena storefrontUrl={storefrontUrl} apiUrl={store?.url ?? null}
+        busy={busy !== null || quickTesting || flowAction !== null || crawlRunning}
+        hunting={crawlRunning && flowAction === null} pinging={quickTesting && !crawlRunning}
+        onHunt={autoBreak} onPing={async (url) => { await quickTest(url); }} />
+      {crawlState && <CrawlerHud state={crawlState} repairLabel={repairLabel} repairBlocked={crawlRepairBlocked}
+        repair={missionRepair} onRepair={repairFromCrawl} onApply={() => void applyAndConfirm()} onDismiss={closeCrawl} />}
       {(storePack || !listing) && <GuidedFlow store={store} error={storeError} storefrontUrl={storefrontUrl}
         liveCheck={liveCheck} canCheckLive={liveCheckout !== null} run={flowRun} hunt={hunt}
         verifiedJobId={verified && job ? job.id : null}
@@ -728,8 +763,6 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
         reverting={busy === "revert"} checking={liveCheckout !== null && checkingId === liveCheckout.id}
         onBreak={() => void breakStore()} onRepair={repairStore} onApply={() => void applyAndConfirm()}
         onRevert={() => void revertStore()} onRetry={refreshStore} onCheckLive={() => void settleLive("bad", false)} />}
-      {crawlState && <CrawlerHud state={crawlState} repairLabel={repairLabel} repairBlocked={crawlRepairBlocked}
-        onRepair={repairFromCrawl} onDismiss={closeCrawl} />}
 
       <div className="shell dashboard">
         <ScenarioRail listing={listing} error={listingError} selection={selection} packStatus={packStatus} checkingId={checkingId}

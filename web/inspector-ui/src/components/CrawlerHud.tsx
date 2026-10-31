@@ -1,13 +1,22 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import type { CheckRecord, CrawlEvent } from "@/lib/faultline-api";
+import type { CheckRecord, CrawlEvent, Tone } from "@/lib/faultline-api";
 import { checkVerdict } from "@/lib/faultline-api";
 
 type Defect = Extract<CrawlEvent, { type: "defect" }>;
 
-/** One ticker line: what was done and whether it held. */
-export interface CrawlLine { n: number; text: string; page: string | null; ok: boolean }
+/**
+ * One ticker line. `n` is the crawler's step number (a run of field fills on one page folds
+ * into one line, `n` to `last`); the DOM scan has none. `label` is what the click trail shows.
+ */
+export interface CrawlLine {
+  n: number | null; last?: number;
+  kind: "visit" | "scan" | "click" | "fill" | "submit" | "session";
+  text: string; label: string; page: string | null; ok: boolean;
+  /** Set on the step that failed: the defect it caught, in a few words. */
+  caught?: string;
+}
 
 /**
  * A chaos crawl as the HUD shows it. `source` says where every line came from: the Playwright
@@ -27,29 +36,76 @@ export interface CrawlState {
   note: string | null;
 }
 
+/** The sandbox repair started for the defect on screen, summarized from that run's evidence. */
+export interface MissionRepair {
+  running: boolean;
+  /** The current pipeline step while running, e.g. "Verify the candidate". */
+  stage: string | null;
+  verified: boolean;
+  /** Passing and total assertions of the verified candidate. */
+  checks: { passed: number; total: number } | null;
+  /** Where the candidate was verified, e.g. "the Bubblewrap sandbox under cgroup v2 limits". */
+  sandbox: string;
+  /** The settled outcome of an unverified run. */
+  outcome: { tone: Tone; title: string } | null;
+  /** Whether the verified fix can be written to the store's source now. */
+  canApply: boolean;
+  /** Why a verified fix has no apply step, or null. */
+  applyNote: string | null;
+  applying: boolean;
+  /** Set once the store's source holds this run's fix; `live` is the latest live checkout, if any. */
+  applied: { file: string; live: { tone: Tone; text: string } | null } | null;
+}
+
 export const crawlInFlight = (state: CrawlState | null) =>
   state !== null && ["connecting", "retrying", "running", "fallback"].includes(state.phase);
 
 export const startCrawl = (target: string): CrawlState =>
   ({ target, phase: "connecting", source: "playwright", scan: null, lines: [], defect: null, fallbackReason: null, note: null });
 
-const VERB = { visit: "Visited", click: "Clicked", fill: "Filled", submit: "Submitted" } as const;
+const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
+const pathOf = (url: string) => {
+  try {
+    return new URL(url).pathname;
+  } catch {
+    return url;
+  }
+};
 
 /** Folds one crawler event into the HUD state. */
 export function applyCrawlEvent(state: CrawlState, event: CrawlEvent): CrawlState {
   const next: CrawlState = { ...state, phase: state.phase === "connecting" || state.phase === "retrying" ? "running" : state.phase, note: null };
   switch (event.type) {
-    case "scan":
-      return { ...next, scan: { buttons: event.buttons, forms: event.forms, links: event.links } };
-    case "step": {
-      const target = event.action === "visit" ? event.target : `"${event.target}"`;
-      const text = `${VERB[event.action] ?? event.action} ${target} (${event.ok ? "OK" : event.note ?? "failed"})`;
-      return { ...next, lines: [...next.lines, { n: event.n, text, page: event.action === "visit" ? null : event.page, ok: event.ok }] };
+    case "scan": {
+      const elements = event.buttons + event.links;
+      const text = `Discovered ${plural(elements, "interactive element")} (${plural(event.buttons, "button")}, ${plural(event.links, "link")}) and ${plural(event.forms, "form")}`;
+      return { ...next, scan: { buttons: event.buttons, forms: event.forms, links: event.links },
+        lines: [...next.lines, { n: null, kind: "scan", text, label: "", page: null, ok: true }] };
     }
-    case "defect":
-      return { ...next, phase: "caught", defect: { ...event } };
+    case "step": {
+      const caught = event.ok ? undefined : event.note ?? "failed";
+      if (event.action === "visit") {
+        return { ...next, lines: [...next.lines, { n: event.n, kind: "visit", text: `Navigating to ${event.target}…`, label: event.page ?? pathOf(event.target), page: null, ok: event.ok, caught }] };
+      }
+      const previous = next.lines.at(-1);
+      // Consecutive field fills on one page read as one line: "Filled form fields (Name, Email, Address)".
+      if (event.action === "fill" && event.ok && previous?.kind === "fill" && previous.ok && previous.page === event.page) {
+        const fields = [...previous.label.split(", "), event.target];
+        const merged: CrawlLine = { ...previous, last: event.n, label: fields.join(", "), text: `Filled form fields (${fields.join(", ")})` };
+        return { ...next, lines: [...next.lines.slice(0, -1), merged] };
+      }
+      const text = event.action === "fill" ? `Filled "${event.target}"` : `Clicked "${event.target}"`;
+      return { ...next, lines: [...next.lines, { n: event.n, kind: event.action, text, label: event.target, page: event.page, ok: event.ok, caught }] };
+    }
+    case "defect": {
+      // The failing step names the endpoint it broke once the crawler reports it.
+      const at = next.lines.findLastIndex((line) => !line.ok);
+      const caught = `${event.status ? `HTTP ${event.status}` : event.method} on ${event.method} ${event.path}`;
+      const lines = at < 0 ? next.lines : next.lines.map((line, i) => i === at ? { ...line, caught } : line);
+      return { ...next, phase: "caught", lines, defect: { ...event } };
+    }
     case "done":
-      return { ...next, phase: next.defect ? "caught" : "clean", note: next.defect ? null : `No failing request in ${event.steps} ${event.steps === 1 ? "step" : "steps"}.` };
+      return { ...next, phase: next.defect ? "caught" : "clean" };
     case "error":
       return { ...next, phase: "failed", note: event.message };
   }
@@ -59,8 +115,8 @@ export function applyCrawlEvent(state: CrawlState, event: CrawlEvent): CrawlStat
 export function crawlFromCheck(state: CrawlState, record: CheckRecord, title: string): CrawlState {
   let n = 0;
   const lines = record.sessions.flatMap((session, i): CrawlLine[] => session.requests.length
-    ? session.requests.map((r) => ({ n: ++n, text: `Session ${i + 1}: ${r.method} ${r.path} → HTTP ${r.status}`, page: null, ok: r.status < 400 }))
-    : [{ n: ++n, text: `Session ${i + 1}: ${record.method} ${new URL(record.url).pathname} → ${session.status ? `HTTP ${session.status}` : `no response${session.error ? ` (${session.error})` : ""}`}`, page: null, ok: session.status !== null && session.status < 400 }]);
+    ? session.requests.map((r) => ({ n: ++n, kind: "session", text: `Session ${i + 1}: ${r.method} ${r.path} → HTTP ${r.status}`, label: `${r.method} ${r.path}`, page: null, ok: r.status < 400 }))
+    : [{ n: ++n, kind: "session", text: `Session ${i + 1}: ${record.method} ${new URL(record.url).pathname} → ${session.status ? `HTTP ${session.status}` : `no response${session.error ? ` (${session.error})` : ""}`}`, label: `${record.method} ${new URL(record.url).pathname}`, page: null, ok: session.status !== null && session.status < 400 }]);
   const verdict = checkVerdict(record);
   const status = record.sessions.find((s) => s.status !== null)?.status ?? null;
   const defect = verdict.tone === "bad" ? {
@@ -73,17 +129,28 @@ export function crawlFromCheck(state: CrawlState, record: CheckRecord, title: st
 }
 
 const PHASE_LABEL: Record<CrawlState["phase"], string> = {
-  connecting: "Launching", retrying: "Waiting for crawler", running: "Crawling", fallback: "Direct check",
-  caught: "Defect caught", clean: "No defect found", incomplete: "Ended early", failed: "Crawl failed",
+  connecting: "Launching", retrying: "Waking crawler", running: "Hunting", fallback: "Direct check",
+  caught: "Defect caught", clean: "Clean", incomplete: "Ended early", failed: "Stopped",
 };
-const PHASE_TONE: Record<CrawlState["phase"], string> = {
+const PHASE_TONE: Record<CrawlState["phase"], Tone | "active"> = {
   connecting: "active", retrying: "active", running: "active", fallback: "active",
-  caught: "bad", clean: "idle", incomplete: "warn", failed: "warn",
+  caught: "bad", clean: "ok", incomplete: "warn", failed: "warn",
 };
 
+/** The agent's status once a repair takes over from the hunt. */
+function missionStatus(state: CrawlState, repair: MissionRepair | null): { label: string; tone: Tone | "active" } {
+  if (repair?.applied) return { label: "Fix applied", tone: "ok" };
+  if (repair?.applying) return { label: "Applying fix", tone: "active" };
+  if (repair?.verified) return { label: "Fix verified", tone: "ok" };
+  if (repair?.running) return { label: "Repairing", tone: "active" };
+  if (repair?.outcome) return { label: "Repair not verified", tone: repair.outcome.tone };
+  return { label: PHASE_LABEL[state.phase], tone: PHASE_TONE[state.phase] };
+}
+
 /**
- * Live HUD of a Playwright chaos crawl: the DOM scan, a step ticker, and, when a request fails,
- * the intercepted defect with a one-click repair.
+ * Live agent mission HUD: telemetry, a step ticker of the crawler's real actions, and, when a
+ * request fails, the intercepted defect with its click trail and a one-click sandbox repair that
+ * runs through verification to an applied fix.
  */
 export default function CrawlerHud(props: {
   state: CrawlState;
@@ -91,74 +158,138 @@ export default function CrawlerHud(props: {
   repairLabel: string;
   /** Why the defect cannot be repaired right now; null when the repair can start. */
   repairBlocked: string | null;
-  onRepair: () => void; onDismiss: () => void;
+  /** The repair started from this defect, or null before one starts. */
+  repair: MissionRepair | null;
+  onRepair: () => void; onApply: () => void; onDismiss: () => void;
 }) {
-  const { state, repairLabel, repairBlocked } = props;
+  const { state, repairLabel, repairBlocked, repair } = props;
   const tickerRef = useRef<HTMLOListElement>(null);
   const running = crawlInFlight(state);
-  const scanning = state.source === "playwright" && (state.scan !== null || running);
+  const crawler = state.source === "playwright";
 
   // Keep the newest step in view without moving the page.
   useEffect(() => {
     const ticker = tickerRef.current;
     if (ticker) ticker.scrollTop = ticker.scrollHeight;
-  }, [state.lines.length]);
+  }, [state.lines]);
 
-  const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
   const defect = state.defect;
+  const steps = state.lines.filter((line) => line.kind !== "scan");
+  const actions = steps.filter((line) => line.kind !== "visit" && line.kind !== "session")
+    .reduce((count, line) => count + (line.last !== undefined && line.n !== null ? line.last - line.n + 1 : 1), 0);
+  const screens = new Set(steps.filter((line) => line.kind !== "session").map((line) => line.kind === "visit" ? line.label : line.page)).size;
+  const status = missionStatus(state, repair);
+  const telemetry = crawler
+    ? [["Screens Explored", screens], ["Actions", actions]] as const
+    : [["Sessions", new Set(steps.map((line) => line.text.split(":")[0])).size], ["Requests", steps.length]] as const;
+  // The click trail: every page visited and control touched, up to the failing step.
+  const trail = steps.slice(0, (steps.findLastIndex((line) => !line.ok) + 1) || steps.length);
 
   return (
     <section className="hud shell" aria-labelledby="hud-h" data-phase={state.phase}>
       <div className="hud-frame">
         <div className="hud-head">
-          <p className="hud-key" id="hud-h">{state.source === "playwright" ? "Playwright chaos crawler" : "Direct HTTP check"}</p>
+          <p className="hud-key" id="hud-h">Live Agent Mission · {crawler ? "Playwright" : "Direct HTTP check"}</p>
           <code className="hud-target">{state.target}</code>
-          <span className="hud-phase" data-tone={PHASE_TONE[state.phase]} role="status">
-            <span className="hud-dot" aria-hidden="true" />{PHASE_LABEL[state.phase]}
-          </span>
           <button type="button" className="btn quiet tool hud-close" onClick={props.onDismiss}
-            aria-label={running ? "Stop the crawl and close" : "Close the crawler"}>{running ? "Stop" : "Close"}</button>
+            aria-label={running ? "Stop the agent and close" : "Close the mission"}>{running ? "Stop" : "Close"}</button>
         </div>
 
-        {scanning && (
-          <p className="hud-scan">
-            <span className="hud-prompt" aria-hidden="true">$</span>
-            {state.scan
-              ? <>Scanning DOM… found {plural(state.scan.buttons, "button")} &amp; {plural(state.scan.forms, "form")}<span className="muted"> · {plural(state.scan.links, "link")}</span></>
-              : state.phase === "retrying" ? "Waiting for the crawler to start…" : "Scanning DOM…"}
-          </p>
-        )}
+        <dl className="hud-telemetry">
+          <div data-tone={status.tone}>
+            <dt>Agent Status</dt>
+            <dd><span className="hud-dot" aria-hidden="true" /><span role="status">{status.label}</span></dd>
+          </div>
+          {telemetry.map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{value}</dd></div>)}
+          <div data-tone={defect ? "bad" : state.phase === "clean" ? "ok" : undefined}><dt>Defects</dt><dd>{defect ? 1 : 0}</dd></div>
+        </dl>
+
         {state.fallbackReason && <p className="hud-note" data-phase="fallback">{state.fallbackReason}</p>}
         {state.note && <p className="hud-note" data-phase={state.phase}>{state.note}</p>}
+        {state.lines.length === 0 && running && (
+          <p className="hud-note">{state.phase === "retrying" ? "Waiting for the crawler to start…" : `Launching headless Chromium against ${state.target}…`}</p>
+        )}
 
         {state.lines.length > 0 && (
-          <ol ref={tickerRef} className="hud-ticker" role="log" aria-label="Crawl steps" aria-live="polite">
-            {state.lines.map((line) => (
-              <li key={line.n} data-ok={line.ok}>
-                <span className="hud-step">[Step {line.n}]</span> {line.text}
+          <ol ref={tickerRef} className="hud-ticker" role="log" aria-label="Agent steps" aria-live="polite" data-running={running || undefined}>
+            {state.lines.map((line, i) => (
+              <li key={i} data-ok={line.ok} data-kind={line.kind}>
+                <span className="hud-pulse" aria-hidden="true" />
+                <span className="hud-step">{line.n === null ? "[Scan]" : `[Step ${line.n}${line.last ? `–${line.last}` : ""}]`}</span>{" "}
+                {line.text}
+                {line.ok && line.kind !== "visit" && line.kind !== "scan" && line.kind !== "session" && <span className="muted"> (OK)</span>}
                 {line.page && <span className="muted"> on {line.page}</span>}
+                {line.caught && <strong className="hud-caught"> → <span aria-hidden="true">💥 </span>CAUGHT DEFECT: {line.caught}</strong>}
               </li>
             ))}
           </ol>
         )}
-        {running && state.phase !== "retrying" && <p className="hud-cursor" aria-hidden="true">{state.phase === "fallback" ? "sending both sessions" : "hunting for bugs"}</p>}
+        {running && state.phase !== "retrying" && <p className="hud-cursor" aria-hidden="true">{state.phase === "fallback" ? "sending both sessions" : "agent hunting for bugs"}</p>}
+
+        {state.phase === "clean" && (
+          <p className="hud-shield">
+            <span aria-hidden="true">✅ </span>
+            {crawler
+              ? `All screens and actions clean. 0 defects found across ${plural(screens, "screen")} and ${plural(actions, "action")}.`
+              : `Clean. 0 defects found in ${plural(telemetry[0][1], "fresh session")}.`}
+          </p>
+        )}
 
         {defect && (
           <div className="hud-defect" role="alert">
+            <p className="hud-defect-kicker">Defect intercepted</p>
             <p className="hud-defect-title">
-              <span aria-hidden="true">💥 </span>Defect Intercepted: {defect.status ? `HTTP ${defect.status}` : "no response"} on {defect.method} {defect.path}
+              <span className="hud-code">{defect.status ? `HTTP ${defect.status}` : "No response"}</span>
+              <span className="sr-only"> on </span><span>{defect.method} {defect.path}</span>
             </p>
             <p className="hud-defect-trigger">
               Triggered by: {defect.trigger.kind} &ldquo;{defect.trigger.label}&rdquo;{defect.trigger.page && <> on <code>{defect.trigger.page}</code></>}
             </p>
+            {trail.length > 1 && (
+              <ol className="hud-trail" aria-label="Click trail">
+                {trail.map((line, i) => <li key={i} data-ok={line.ok}>{line.kind === "visit" || line.kind === "session" ? line.label : `“${line.label}”`}</li>)}
+              </ol>
+            )}
             {defect.fingerprint && <p className="hud-defect-fp"><code>{defect.fingerprint}</code></p>}
-            <div className="hud-defect-actions">
-              <button type="button" className="btn primary hud-repair" onClick={props.onRepair} disabled={repairBlocked !== null}
-                aria-describedby={repairBlocked ? "hud-blocked" : undefined}>
-                <span aria-hidden="true">🛠️ </span>{repairLabel}
-              </button>
-              {repairBlocked && <span id="hud-blocked" className="hud-blocked">{repairBlocked}</span>}
-            </div>
+            {!repair && (
+              <div className="hud-defect-actions">
+                <button type="button" className="btn primary hud-repair" onClick={props.onRepair} disabled={repairBlocked !== null}
+                  aria-describedby={repairBlocked ? "hud-blocked" : undefined}>
+                  <span aria-hidden="true">🛠️ </span>{repairLabel} <span className="hud-repair-sub">(Sandbox Verified)</span>
+                </button>
+                {repairBlocked && <span id="hud-blocked" className="hud-blocked">{repairBlocked}</span>}
+              </div>
+            )}
+          </div>
+        )}
+
+        {repair && (
+          <div className="hud-repair-state" data-tone={repair.verified ? "ok" : repair.running || repair.applying ? "active" : repair.outcome?.tone ?? "idle"} aria-live="polite">
+            {repair.running ? (
+              <p className="hud-repair-line"><span className="hud-dot" aria-hidden="true" />{repairLabel}: {repair.stage ?? "Starting"}…</p>
+            ) : repair.verified ? (
+              <>
+                <p className="hud-repair-title">
+                  <span aria-hidden="true">🎉 </span>Fix verified{repair.checks ? `: ${repair.checks.passed}/${repair.checks.total} assertions passed` : ""} in {repair.sandbox}
+                </p>
+                {repair.applied ? (
+                  <p className="hud-repair-line">
+                    Applied to <code>{repair.applied.file}</code>.{" "}
+                    {repair.applying ? "Waiting for the store to reload…"
+                      : repair.applied.live ? <span data-tone={repair.applied.live.tone}>{repair.applied.live.text}</span>
+                      : "Check it live to confirm."}
+                  </p>
+                ) : repair.canApply || repair.applying ? (
+                  <div className="hud-defect-actions">
+                    <button type="button" className="btn primary hud-apply" onClick={props.onApply} disabled={!repair.canApply}>
+                      <span aria-hidden="true">✅ </span>{repair.applying ? "Applying the verified fix…" : "Apply Verified Fix to Live Codebase"}
+                    </button>
+                  </div>
+                ) : repair.applyNote ? <p className="hud-repair-line muted">{repair.applyNote}</p> : null}
+              </>
+            ) : repair.outcome ? (
+              <p className="hud-repair-line">Repair ended: {repair.outcome.title}. See the run below for evidence.</p>
+            ) : null}
           </div>
         )}
       </div>
