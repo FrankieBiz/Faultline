@@ -7,6 +7,7 @@
 - Independent subprocess HTTP checks passed for GET success/failure, POST with expected 201, JSON output, and invalid-scheme rejection; completed probes used distinct session IDs without cookie carryover.
 - Final coordinator `make check` exited **0**: **286 backend/script + 709 orchestrator + 96 runner = 1,091** tests, lint/format, strict typing, provenance, frontend/runner builds, and both Python distribution builds.
 - Preserved concurrent production Inspector update `aa5e257` through a merge, combining both handoff entries and README test totals. Reverified the combined tree: `make check` exit **0** with the same **1,091** tests; `make browser` exit **0**, **35 Inspector + 1 storefront = 36** tests (**1,127** total).
+- Found a pre-existing GitHub Verify ordering failure: `make check` ran the real Node repair test before Chromium was installed. Reproduced its exact baseline `artifact_error` locally with an empty `PLAYWRIGHT_BROWSERS_PATH`; the same test passed with installed Chromium. Moved the existing browser-install step ahead of `make check` in `.github/workflows/check.yml`.
 
 ## October 31: concurrent demo launch fix (cli-one-command-worker child)
 
