@@ -4,8 +4,10 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 type Context = { params: Promise<{ path: string[] }> };
-const READ_PATH = /^(?:readiness|scenarios|jobs|jobs\/[\da-f-]+(?:\/events)?|artifacts\/[\da-f-]+)$/i;
-const WRITE_PATH = /^(?:jobs|reset|revert|jobs\/[\da-f-]+\/(?:cancel|apply))$/i;
+// Invariant IDs start with a letter or digit, so "." and ".." can never form a segment.
+const INVARIANT = "invariants\\/[a-z\\d][\\w.-]*";
+const READ_PATH = new RegExp(`^(?:readiness|scenarios|store|jobs|jobs\\/[\\da-f-]+(?:\\/events)?|artifacts\\/[\\da-f-]+|${INVARIANT}\\/checks)$`, "i");
+const WRITE_PATH = new RegExp(`^(?:jobs|reset|revert|invariants|jobs\\/[\\da-f-]+\\/(?:cancel|apply)|${INVARIANT}\\/(?:check|remove))$`, "i");
 
 function isLoopbackOrPrivateHost(hostname: string): boolean {
   return (

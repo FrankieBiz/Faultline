@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "FaultLine — Controlled Browser QA & Verified Source Repair",
-  description: "Meta Global AI Developer Hackathon entry: reproduce a seeded checkout failure in a real browser, gate a proposed patch, and verify it in an isolated runtime.",
+  title: "FaultLine — reproduce, repair, and verify live failures",
+  description: "Check HTTP invariants from faultline.toml or any URL, reproduce failures in two fresh sessions, and repair registered scenarios in an isolated sandbox before delivering a verified fix.",
 };
 
 export default function RootLayout({

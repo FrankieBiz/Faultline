@@ -34,6 +34,6 @@ The deterministic provider is an explicitly identified local workflow check. Hos
 
 ## Scope
 
-One seeded repair case is implemented in the live demo. A hash-pinned evaluation corpus adds nine unfamiliar defects and eleven candidate patches for the same route ([evaluation](EVALUATION.md)). Chaos cases in the Inspector are authored previews. Continuous monitoring, external incident ingestion, production traffic switching, pull-request integration, compliance certification, customer impact measurements, and general repair reliability are not claimed.
+One seeded repair case is implemented in the live demo. A hash-pinned evaluation corpus adds nine unfamiliar defects and eleven candidate patches for the same route ([evaluation](EVALUATION.md)). The Inspector live-checks HTTP rules from `faultline.toml` and any URL entered in it, in two fresh sessions; only a failure matching the registered scenario's route, error, and source can be repaired. Continuous monitoring, external incident ingestion, production traffic switching, pull-request integration, compliance certification, customer impact measurements, and general repair reliability are not claimed.
 
 See [PROJECT_STATUS.md](PROJECT_STATUS.md) for the current verification state and [QUALITY_REVIEW.md](QUALITY_REVIEW.md) for concrete findings and remaining competition risks.

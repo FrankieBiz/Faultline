@@ -121,6 +121,20 @@ class Database:
                     payload TEXT NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS jobs_created_at ON jobs(created_at DESC);
+                -- Additive: operator-registered HTTP probes and every live check result.
+                CREATE TABLE IF NOT EXISTS probes (
+                    id TEXT PRIMARY KEY,
+                    created_at TEXT NOT NULL,
+                    payload TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS invariant_checks (
+                    id TEXT PRIMARY KEY,
+                    invariant_id TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    payload TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS invariant_checks_latest
+                    ON invariant_checks(invariant_id, created_at DESC);
                 PRAGMA user_version = 1;
                 COMMIT;
                 """
@@ -571,5 +585,55 @@ class Database:
                 Artifact.model_validate_json(row[0])
                 for row in self._connection.execute(
                     "SELECT payload FROM artifacts WHERE job_id = ? ORDER BY rowid", (job_id,)
+                )
+            ]
+
+    def save_probe(self, probe_id: str, created_at: str, payload: str, *, limit: int) -> None:
+        """Register one operator probe, refusing growth past the configured bound."""
+        with self._transaction():
+            count = self._connection.execute("SELECT COUNT(*) FROM probes").fetchone()[0]
+            if count >= limit:
+                raise DatabaseError("too_many_probes", 409)
+            self._connection.execute(
+                "INSERT INTO probes VALUES (?, ?, ?)", (probe_id, created_at, payload)
+            )
+
+    def list_probes(self) -> list[str]:
+        """Return registered probe payloads, oldest first."""
+        with self._lock:
+            return [
+                row[0]
+                for row in self._connection.execute(
+                    "SELECT payload FROM probes ORDER BY created_at, rowid"
+                )
+            ]
+
+    def delete_probe(self, probe_id: str) -> None:
+        """Remove a probe and the live checks recorded against it."""
+        with self._transaction():
+            deleted = self._connection.execute("DELETE FROM probes WHERE id = ?", (probe_id,))
+            if deleted.rowcount == 0:
+                raise DatabaseError("not_found", 404)
+            self._connection.execute(
+                "DELETE FROM invariant_checks WHERE invariant_id = ?", (probe_id,)
+            )
+
+    def save_check(self, check_id: str, invariant_id: str, created_at: str, payload: str) -> None:
+        """Append one immutable live check result."""
+        with self._transaction():
+            self._connection.execute(
+                "INSERT INTO invariant_checks VALUES (?, ?, ?, ?)",
+                (check_id, invariant_id, created_at, payload),
+            )
+
+    def list_checks(self, invariant_id: str, limit: int = 10) -> list[str]:
+        """Return an invariant's newest check payloads first."""
+        with self._lock:
+            return [
+                row[0]
+                for row in self._connection.execute(
+                    "SELECT payload FROM invariant_checks WHERE invariant_id = ? "
+                    "ORDER BY created_at DESC, rowid DESC LIMIT ?",
+                    (invariant_id, limit),
                 )
             ]

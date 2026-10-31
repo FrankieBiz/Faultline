@@ -79,7 +79,7 @@ start() {
   children+=("$!")
 }
 start apps/buggyshop-backend env PYTHONPATH="$ROOT" uv run --python 3.13 --locked uvicorn app.main:app --host 127.0.0.1 --port "$BACKEND_PORT" --reload --reload-dir "$ROOT/apps/buggyshop-backend" --log-level warning
-start services/repair-orchestrator env PYTHONPATH="$ROOT" FAULTLINE_RUNTIME=isolated uv run --python 3.13 --locked uvicorn app.main:app --host 127.0.0.1 --port "$CONTROL_PORT" --log-level warning
+start services/repair-orchestrator env PYTHONPATH="$ROOT" FAULTLINE_RUNTIME=isolated FAULTLINE_PROJECT_PORT="$BACKEND_PORT" FAULTLINE_LIVE_STORE_URL="http://127.0.0.1:$BACKEND_PORT" uv run --python 3.13 --locked uvicorn app.main:app --host 127.0.0.1 --port "$CONTROL_PORT" --log-level warning
 start apps/buggyshop-frontend env BUGGYSHOP_BACKEND_URL="http://127.0.0.1:$BACKEND_PORT" node node_modules/next/dist/bin/next start -p "$STORE_PORT" -H 127.0.0.1
 start web/inspector-ui env BUGGYSHOP_PORT="$STORE_PORT" FAULTLINE_ORCHESTRATOR_URL="http://127.0.0.1:$CONTROL_PORT" node node_modules/next/dist/bin/next start -p "$UI_PORT" -H 127.0.0.1
 for url in "http://127.0.0.1:$BACKEND_PORT/healthz" "http://127.0.0.1:$CONTROL_PORT/healthz" "http://127.0.0.1:$STORE_PORT" "http://127.0.0.1:$UI_PORT"; do

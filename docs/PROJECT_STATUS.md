@@ -7,7 +7,7 @@ Updated October 28, 2026 (America/New_York). See [QUALITY_REVIEW.md](QUALITY_REV
 - Entry: Meta Global AI Developer Hackathon, Indie Developer Track.
 - Builder: Francis Bisignano (`FrankieBiz`).
 - Product: controlled browser QA and verified source repair.
-- One registered seeded backend checkout defect in the live demo. An authored, hash-pinned evaluation corpus adds nine unfamiliar defects and eleven candidate patches for the same route. Chaos scenarios in the Inspector remain authored previews.
+- One registered seeded backend checkout defect in the live demo. An authored, hash-pinned evaluation corpus adds nine unfamiliar defects and eleven candidate patches for the same route. The Inspector's authored chaos previews were removed on October 30, 2026; it now live-checks HTTP invariants from `faultline.toml` and any URL, and repairs only failures the registered scenario covers.
 - A successful job produces a verified isolated candidate and downloadable evidence. It does not deploy to production.
 
 ## Implemented and exercised
@@ -21,7 +21,7 @@ Updated October 28, 2026 (America/New_York). See [QUALITY_REVIEW.md](QUALITY_REV
 - Verifier-guided repair: the prompt states the checkout contract rather than the defect; a rejected first attempt sends bounded gate findings to the second; miscounted hunk headers are recounted without altering content; provider identity is derived from the endpoint host and recorded only from actual responses.
 - Evaluation harness, trial ledger, and static checksummed replay export.
 - Actual Chromium baseline/candidate evidence, correlated server failures, artifact checksums, and cleanup.
-- Inspector with measured results, terminal-state handling, reload recovery, truthful legacy-record labeling, binary artifact downloads, replay cursors, responsive layout, and authored preview separation.
+- Inspector with measured results, terminal-state handling, reload recovery, truthful legacy-record labeling, binary artifact downloads, replay cursors, responsive layout, a scenario rail (sandbox repair, `faultline.toml` rules, and added probes), live two-session HTTP checks, and guarded live-store apply/revert.
 - Safe setup/start/reconciliation/rehearsal scripts and GitHub verification workflow.
 
 Last recorded verification (October 28, before the judge-walkthrough commits): `make check` passed with 239 backend/script tests, 320 orchestrator tests, and 32 runner unit tests, plus lint, strict typing, builds, and fixture and corpus provenance. Nine Inspector browser tests passed separately, as did 13 required isolated-runtime and real cgroup tests, which are included in the orchestrator count. Later commits added tests. At commit `a24e890`, the suites collect 239 backend/script, 321 orchestrator, and 48 runner unit tests, plus 14 Inspector and 1 storefront browser tests (`make browser`) and the same 13 isolation tests. The full suites have not been rerun at that commit for this document; rerun them before quoting pass counts.

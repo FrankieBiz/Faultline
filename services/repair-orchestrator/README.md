@@ -25,6 +25,9 @@ When launching from the service directory, set `PYTHONPATH=../..`.
 | `FAULTLINE_CONTROL_TOKEN` | Required controller credential; keep server-side. |
 | `FAULTLINE_DATA_DIR` | SQLite, retained evidence, and disposable runtime exports; defaults to repository `data/`. |
 | `FAULTLINE_INSPECTOR_ORIGIN` | Exact allowed CORS origin; defaults to `http://127.0.0.1:4000`. |
+| `FAULTLINE_CONFIG` | Selects project mode ([PROJECT_RUNNER.md](../../docs/PROJECT_RUNNER.md)). The dashboard's live checks read scenarios and rules from this file, or from the repository `faultline.toml` when it is unset. The file is re-read on every request. |
+| `FAULTLINE_PROJECT_PORT` | Port that fills `{port}` in config rules. The demo launcher sets it to the store API port. Without it, the Inspector asks for a port. |
+| `FAULTLINE_LIVE_STORE_URL` | Origin of the locally running store; defaults to `http://127.0.0.1:8000`. A live failure binds to the sandbox repair only when it comes from this origin. |
 | `FAULTLINE_AGGREGATE_LIMITS` | `required` (default) or `disabled`. Required runs every candidate backend in a verified cgroup v2 user scope and withholds readiness if that cannot be established or enforced. Any other value withholds readiness. |
 | `META_API_KEY` | Hosted Meta credential; takes precedence over the `MODEL_API_KEY` compatibility alias. |
 | `META_BASE_URL` | Provider base URL; defaults to `https://api.meta.ai/v1`. |
@@ -92,7 +95,13 @@ All controller routes begin with `/api/faultline`:
 - `GET /jobs/{id}/events`: `text/event-stream`; resume with `Last-Event-ID` or `?after=`.
 - `POST /jobs/{id}/cancel`: 202 while active; 200 with unchanged terminal history.
 - `POST /reset`: idle reconciliation; active jobs return 409; failed cleanup retains quarantine.
-- `GET /readiness`, `GET /scenarios`, `GET /artifacts/{id}`: component status, registry, and verified inert evidence downloads.
+- `GET /readiness`, `GET /artifacts/{id}`: component status and verified inert evidence downloads.
+- `GET /scenarios`: the scenarios this controller admits (the checkout pipeline, or the selected project scenario), plus `invariants` and `project`. `invariants` holds the live checks: `[scenarios.*]` ReproSpecs, `[[invariants.rule]]` rules, and registered probes, each with its latest check. Scenarios with browser steps carry a `live_note` and run only in the sandbox. `project` has the name, config path, and per-entry config errors.
+- `POST /invariants`: register a probe `{method, url, expected_status, title?, body?}`. Only absolute http(s) URLs without credentials or fragments are accepted, at most 50 probes. Errors return 422 `invalid_probe` with the reason.
+- `POST /invariants/{id}/check` (`{port?}`): run the invariant through `ReproEngine` in two fresh HTTP sessions. No redirects are followed, responses are read up to 64 KiB, and excerpts are redacted. A failure counts only when both sessions fail identically. The record names a sandbox repair in two cases. In project mode, a scenario binds to the project runner's scenario of the same name. Otherwise, an admitted scenario must cover the failing route, the server's 5xx error text must contain its fingerprint, and the origin must be `FAULTLINE_LIVE_STORE_URL`.
+- `GET /invariants/{id}/checks?limit=10`, `POST /invariants/{id}/remove`: check history, and removal of a registered probe (`faultline.toml` rules return 409).
+- `GET /store`: whether the live store source is `seeded`, `patched` by a recorded job, or `modified`, read from file hashes.
+- `POST /jobs/{id}/apply`, `POST /revert`: write a verified job's diff to the seeded store source, or restore the seed. Apply requires a checkout-pipeline job that is `verified` with confirmed cleanup, and a seeded store (409 otherwise). Project-runner jobs return 409 `delivery_unsupported`. Nothing is committed, pushed, or deployed.
 
 The existing canonical scenario is `scripted_checkout_repair`. The previous backend
 handoff's `TENOFF`/`FIFTEEN` coupons, response fields, and validation statuses remain

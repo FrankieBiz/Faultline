@@ -42,7 +42,7 @@ Clips:
   01-storefront-crash      Storefront: two Trail Mugs, empty coupon, checkout crash banner.
   02-recorded-meta-repair  Judge page: the recorded Meta repair (job 3573b32b) at real timing.
   03-gates                 Judge page: three candidate patches in the gate explorer.
-  04-inspector-run         Inspector: "Run the demo" to the result, then steps, diff, evidence.
+  04-inspector-run         Inspector: "Run sandbox repair" to the result, then steps, diff, evidence.
   05-live-break-it         Judge page with ?live=URL: plant a bug and wait for the live result.
 `;
 
@@ -408,16 +408,16 @@ function classifySource(text) {
 async function recordInspector(page, { urls, mark }) {
   const cursor = pointer(page);
   await page.goto(urls.inspector + "/", { waitUntil: "networkidle" });
-  const run = page.getByRole("button", { name: "Run the demo", exact: true });
+  const run = page.getByRole("button", { name: "Run sandbox repair", exact: true });
   await run.waitFor();
-  await waitUntil(() => run.isEnabled(), 90_000, "the Inspector to report readiness (Run the demo enabled)");
+  await waitUntil(() => run.isEnabled(), 90_000, "the Inspector to report readiness (Run sandbox repair enabled)");
   await ready(page);
-  const readinessSource = (await page.locator(".intro .source-line").innerText()).replace(/\s+/g, " ").trim();
+  const readinessSource = (await page.locator(".workspace .source-line").innerText()).replace(/\s+/g, " ").trim();
   await cursor.show();
   mark("start");
   await sleep(2600);
   // Point at the patch source line from its left margin, leaving its text readable.
-  await cursor.over(page.locator(".intro .source-line"), { dx: -0.03 });
+  await cursor.over(page.locator(".workspace .source-line"), { dx: -0.03 });
   await sleep(2200);
 
   await cursor.click(run);
@@ -425,8 +425,8 @@ async function recordInspector(page, { urls, mark }) {
   await cursor.rest(); // The page scrolls to the live result; keep its text uncovered.
   const heading = page.locator("#job-h");
   await heading.waitFor({ timeout: 30_000 });
-  const again = page.getByRole("button", { name: "Run it again", exact: true });
-  await waitUntil(async () => (await again.count()) > 0 && (await again.isEnabled()), 300_000, "the run to finish");
+  // While a run is active the button reads "Repair in progress…"; its name returns when the run ends.
+  await waitUntil(async () => (await run.count()) > 0 && (await run.isEnabled()), 300_000, "the run to finish");
   mark("run_end");
   const outcome = (await heading.innerText()).trim();
   const sourceLine = page.locator(".result-heading .source-line");

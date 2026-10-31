@@ -86,7 +86,7 @@ This baseline comes from [README.md](../README.md), [PROJECT_STATUS.md](PROJECT_
 - Durable admission, idempotency, cancellation, deadlines, restart handling, resource ownership, and cleanup quarantine already exist.
 - The runtime lease is intentionally a singleton. Multi-worker scheduling is a future design problem.
 - The current product produces a verified isolated candidate and downloadable artifacts. It does not deploy application repairs into production.
-- Additional scenario references are authored previews. They are not implemented live repair scenarios.
+- Additional scenario references were authored previews, not live repair scenarios. They were removed from the Inspector on October 30, 2026, in favor of live HTTP checks that cannot be repaired unless the registered scenario covers them.
 
 The quality review records 159 backend/script tests, 198 orchestrator tests, 32 runner unit tests, eight Inspector browser tests, seven required isolated-runtime tests, and a deterministic job with 44 candidate assertions. These counts describe that review snapshot and can change with later work.
 

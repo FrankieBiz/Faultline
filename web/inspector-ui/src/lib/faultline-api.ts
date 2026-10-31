@@ -102,6 +102,116 @@ export interface JobDetail {
   executions: Execution[]; artifacts: Artifact[]; events: JobEvent[];
 }
 
+/** `Scenario` from shared/config/scenarios.py: a repair the sandbox can rebuild and verify. */
+export interface RepairScenario {
+  id: string; title: string; description: string; target_file: string;
+  route: string; error_fingerprint: string; expected_assertions: string[];
+  /** "checkout" for the built-in store pipeline, "repro" for a project runner scenario. */
+  executor?: string; regression_assertions?: string[];
+}
+
+export type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS";
+export const METHODS: Method[] = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
+
+/** `AssertionCheck` from app/repro.py: exactly one matcher, serialized only when set. */
+export interface BodyCheck {
+  path?: string; equals?: unknown; equals_path?: string; matches?: string; type?: string; exists?: boolean;
+}
+
+/** `CheckedAssertion`, `SessionResult`, and `CheckRecord` from app/probes.py. */
+export interface CheckedAssertion { id: string; label: string; passed: boolean; expected: string; observed: string }
+export interface SessionResult {
+  session_id: string; status: number | null; duration_ms: number | null; content_type: string | null;
+  excerpt: string | null; truncated: boolean; fingerprint: string | null; error: string | null;
+  assertions: CheckedAssertion[];
+  requests: { step_id: string; method: Method; path: string; status: number; duration_ms: number }[];
+}
+export interface CheckRecord {
+  id: string; invariant_id: string; created_at: string; method: Method; url: string;
+  outcome: "detected" | "no_failure" | "infrastructure_error"; reason: string;
+  sessions: SessionResult[];
+  repair: { scenario_id: string; title: string; target_file: string } | null;
+  repair_note: string | null;
+}
+
+/** One ReproSpec step from app/repro.py, as serialized (absent keys were never set). */
+export interface ReproStepWire {
+  id: string; action: string; method?: Method; path?: string; body?: unknown; source?: string; check?: BodyCheck & { status?: number };
+}
+
+/** A live HTTP check: a faultline.toml scenario or rule, or a probe registered here. */
+export interface Invariant {
+  id: string; source: "config" | "probe" | "scenario"; title: string; description: string | null;
+  method: Method; url: string; expected_status: number | null;
+  has_body: boolean; body: unknown; assertions: BodyCheck[]; fingerprint: string | null;
+  created_at: string | null; needs_port: boolean; default_port: number | null;
+  latest_check: CheckRecord | null;
+  /** The full ReproSpec of a faultline.toml scenario; null for rules and probes. */
+  repro: { id: string; steps: ReproStepWire[] } | null;
+  /** Why this entry cannot be checked live (browser steps run only in the sandbox). */
+  live_note: string | null;
+}
+
+export interface ScenarioListing {
+  scenarios: RepairScenario[];
+  invariants: Invariant[];
+  project: { name: string | null; config_path: string | null; errors: string[] };
+}
+
+/** app/live_store.py: what the locally running store serves right now. */
+export interface StoreStatus {
+  state: "seeded" | "patched" | "modified" | "missing";
+  target_file: string; sha256: string | null; url: string;
+  applied_job_id: string | null; applied_at: string | null;
+}
+
+/** How a live check reads to an operator; every branch comes from the recorded sessions. */
+export function checkVerdict(check: CheckRecord): { tone: Tone; title: string; detail: string } {
+  if (check.outcome === "detected") {
+    return { tone: "bad", title: "Failing", detail: "Both fresh sessions failed the same way, so the failure reproduces." };
+  }
+  if (check.outcome === "infrastructure_error") {
+    const error = check.sessions.find((s) => s.error)?.error;
+    return {
+      tone: "warn", title: "Check did not complete",
+      detail: error === "ConnectError" ? `Nothing answered at ${new URL(check.url).origin}. Start the service, then check again.`
+        : error ? `The request failed before a response was judged (${error}).` : "The check could not run both sessions.",
+    };
+  }
+  if (check.reason === "nondeterministic_failure") {
+    return { tone: "warn", title: "Failed differently each time", detail: "The two sessions disagreed, so this does not count as a reproduction." };
+  }
+  if (check.reason === "fingerprint_mismatch") {
+    return { tone: "warn", title: "Different failure than declared", detail: "The server error did not match the rule's fingerprint." };
+  }
+  if (check.sessions.some((s) => s.assertions.some((a) => !a.passed))) {
+    return { tone: "warn", title: "Intermittent", detail: "Only one of the two sessions failed, so this does not count as a reproduction." };
+  }
+  return { tone: "ok", title: "Passing", detail: "Both fresh sessions met every expectation." };
+}
+
+/** Whether an invariant targets the given origin; {port} resolves to the controller's default. */
+export function sameOrigin(url: string, origin: string, port: number | null): boolean {
+  if (url.includes("{port}") && port === null) return false;
+  const host = (name: string) => (["127.0.0.1", "localhost", "[::1]"].includes(name) ? "loopback" : name);
+  try {
+    const a = new URL(url.replaceAll("{port}", String(port)));
+    const b = new URL(origin);
+    return a.protocol === b.protocol && host(a.hostname) === host(b.hostname) && a.port === b.port;
+  } catch {
+    return false;
+  }
+}
+
+/** "POST /api/checkout": the route a registered repair scenario covers, if parseable. */
+export function routeOf(method: string, url: string): string | null {
+  try {
+    return `${method} ${new URL(url.replaceAll("{port}", "1")).pathname}`;
+  } catch {
+    return null;
+  }
+}
+
 /** Server error codes and readiness reasons, phrased for an operator. */
 export const REASON: Record<string, string> = {
   isolated_runtime_unavailable:
@@ -121,7 +231,14 @@ export const REASON: Record<string, string> = {
   unverified_job: "Safety policy: Only patches that passed 100% of sandbox assertions can be applied.",
   proxy_unreachable: "The orchestrator is not reachable through the inspector proxy.",
   reset_failed: "Reset could not reconcile owned resources. Check the orchestrator log.",
-  not_found: "That job no longer exists in the orchestrator database.",
+  not_found: "That record no longer exists in the orchestrator database.",
+  store_not_seeded: "The live store is not on the seeded source. Revert it before applying a fix verified against the seed.",
+  patch_apply_failed: "The verified diff did not apply to the live source. Revert the store and try again.",
+  port_required: "This rule's URL uses {port}. Enter the port the service listens on.",
+  too_many_probes: "You have 50 probes. Remove one before adding another.",
+  config_invariant: "This rule lives in faultline.toml. Edit the file to change or remove it.",
+  invalid_request: "The controller rejected the request as malformed.",
+  delivery_unsupported: "Apply fix delivers only the showcase store's fix. Project runs leave your working source unchanged; apply their diff yourself.",
 };
 
 export class ApiError extends Error {

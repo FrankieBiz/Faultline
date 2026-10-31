@@ -12,6 +12,7 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Annotated, Any, cast
 
+import httpx
 import uvicorn
 from fastapi import Depends, FastAPI, Header, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
@@ -21,9 +22,21 @@ from pydantic import ValidationError
 from sse_starlette import ServerSentEvent
 from sse_starlette.sse import EventSourceResponse
 
+from app import live_store
 from app.database import MAX_EVENT_SEQUENCE, TERMINAL_STATES, Database, DatabaseError
 from app.evidence import ArtifactError, EvidenceStore
 from app.model_adapter import MetaRepairAdapter, ModelSettings
+from app.probes import (
+    MAX_PROBES,
+    PORT_PLACEHOLDER,
+    CheckRecord,
+    CheckRequest,
+    Invariant,
+    ProbeError,
+    ProbeRequest,
+    load_project_config,
+    run_check,
+)
 from app.project import ProjectRun, ProjectSnapshots, load_project
 from app.project_runtime import ProjectRuntime
 from app.run import project_budgets
@@ -42,6 +55,9 @@ class Settings:
     data_dir: Path = REPOSITORY_ROOT / "data"
     control_token: str | None = None
     inspector_origin: str = "http://127.0.0.1:4000"
+    config_path: Path = REPOSITORY_ROOT / "faultline.toml"
+    live_store_url: str = "http://127.0.0.1:8000"
+    project_port: int | None = None
 
     def __repr__(self) -> str:
         return f"Settings(data_dir={self.data_dir!r}, inspector_origin={self.inspector_origin!r})"
@@ -49,10 +65,16 @@ class Settings:
     @classmethod
     def from_environment(cls) -> Settings:
         """Read named settings without opening any local credential file."""
+        port = os.environ.get("FAULTLINE_PROJECT_PORT", "")
         return cls(
             data_dir=Path(os.environ.get("FAULTLINE_DATA_DIR", str(REPOSITORY_ROOT / "data"))),
             control_token=os.environ.get("FAULTLINE_CONTROL_TOKEN"),
             inspector_origin=os.environ.get("FAULTLINE_INSPECTOR_ORIGIN", "http://127.0.0.1:4000"),
+            config_path=Path(
+                os.environ.get("FAULTLINE_CONFIG", str(REPOSITORY_ROOT / "faultline.toml"))
+            ),
+            live_store_url=os.environ.get("FAULTLINE_LIVE_STORE_URL", "http://127.0.0.1:8000"),
+            project_port=int(port) if port.isdigit() and 1 <= int(port) <= 65535 else None,
         )
 
 
@@ -64,6 +86,20 @@ class Controller:
     database: Database
     worker: RepairWorker
     evidence: EvidenceStore
+    probe_transport: httpx.AsyncBaseTransport | None = None
+
+    def invariants(self) -> tuple[list[Invariant], list[str], str | None, str | None]:
+        """faultline.toml rules, then registered probes, with config errors."""
+        config = load_project_config(self.settings.config_path, REPOSITORY_ROOT)
+        probes = [Invariant.model_validate_json(item) for item in self.database.list_probes()]
+        return [*config.invariants, *probes], list(config.errors), config.name, config.path
+
+    def invariant(self, invariant_id: str) -> Invariant:
+        """Resolve one invariant by ID or raise a safe not-found error."""
+        found = next((item for item in self.invariants()[0] if item.id == invariant_id), None)
+        if found is None:
+            raise DatabaseError("not_found", 404)
+        return found
 
 
 def controller(request: Request) -> Controller:
@@ -90,17 +126,50 @@ def authorize(
 Control = Annotated[Controller, Depends(controller)]
 
 
-async def parse_submission(request: Request) -> JobRequest:
-    """Decode wire JSON using the canonical strict contract's JSON semantics."""
+async def _bounded_body(request: Request) -> bytes:
     body = bytearray()
     async for chunk in request.stream():
         body.extend(chunk)
         if len(body) > 4096:
             raise DatabaseError("request_too_large", 413)
+    return bytes(body)
+
+
+async def parse_submission(request: Request) -> JobRequest:
+    """Decode wire JSON using the canonical strict contract's JSON semantics."""
     try:
-        return JobRequest.model_validate_json(bytes(body))
+        return JobRequest.model_validate_json(await _bounded_body(request))
     except ValidationError as exc:
         raise DatabaseError("invalid_request", 422) from exc
+
+
+async def parse_probe(request: Request) -> ProbeRequest:
+    """Decode a bounded probe registration body."""
+    try:
+        return ProbeRequest.model_validate_json(await _bounded_body(request))
+    except ValidationError as exc:
+        raise DatabaseError("invalid_probe", 422) from exc
+
+
+async def parse_check(request: Request) -> CheckRequest:
+    """Decode an optional check body; an empty body means no port override."""
+    body = await _bounded_body(request)
+    try:
+        return CheckRequest.model_validate_json(body) if body.strip() else CheckRequest()
+    except ValidationError as exc:
+        raise DatabaseError("invalid_request", 422) from exc
+
+
+def _public(invariant: Invariant, control: Controller) -> dict[str, Any]:
+    latest = control.database.list_checks(invariant.id, 1)
+    return {
+        **invariant.model_dump(mode="json"),
+        "needs_port": PORT_PLACEHOLDER in invariant.url and control.settings.project_port is None,
+        "default_port": control.settings.project_port,
+        "latest_check": CheckRecord.model_validate_json(latest[0]).model_dump(mode="json")
+        if latest
+        else None,
+    }
 
 
 def _accepted(job: OrchestratorJob) -> dict[str, Any]:
@@ -146,6 +215,7 @@ def create_app(
     adapter: MetaRepairAdapter | None = None,
     runtime: Runtime | None = None,
     snapshots: SnapshotManager | None = None,
+    probe_transport: httpx.AsyncBaseTransport | None = None,
 ) -> FastAPI:
     """Construct the controller, allowing explicit trusted test/runtime injection."""
     configuration = settings if settings is not None else Settings.from_environment()
@@ -197,7 +267,7 @@ def create_app(
             project=project,
             budgets=project_budgets(project) if project else None,
         )
-        application.state.controller = Controller(configuration, db, worker, store)
+        application.state.controller = Controller(configuration, db, worker, store, probe_transport)
         try:
             await worker.start()
             logger.info(
@@ -240,6 +310,14 @@ def create_app(
                 }
             },
             headers={"WWW-Authenticate": "Bearer"} if exc.status_code == 401 else None,
+        )
+
+    @application.exception_handler(ProbeError)
+    async def probe_error(request: Request, exc: ProbeError) -> JSONResponse:
+        # Fixed operator-facing reasons; never request bodies or response content.
+        return JSONResponse(
+            status_code=422,
+            content={"error": {"code": "invalid_probe", "message": str(exc), "job_id": None}},
         )
 
     @application.exception_handler(RequestValidationError)
@@ -295,12 +373,81 @@ def create_app(
 
     @routes.get("/scenarios")
     async def scenarios(control: Control) -> dict[str, Any]:
-        """List only server-owned scenario descriptions and permitted scope."""
+        """List sandbox repair scenarios, faultline.toml rules, and registered probes."""
+        invariants, errors, name, path = control.invariants()
         return {
             "scenarios": [
                 scenario.model_dump(mode="json") for scenario in control.worker.scenarios.values()
+            ],
+            "project": {"name": name, "config_path": path, "errors": errors},
+            "invariants": [_public(item, control) for item in invariants],
+        }
+
+    @routes.post("/invariants", status_code=201)
+    async def register_probe(
+        body: Annotated[ProbeRequest, Depends(parse_probe)], control: Control
+    ) -> dict[str, Any]:
+        """Register an ad-hoc HTTP probe; it runs only when a check is requested."""
+        invariant = body.invariant()
+        control.database.save_probe(
+            invariant.id,
+            invariant.created_at or "",
+            invariant.model_dump_json(),
+            limit=MAX_PROBES,
+        )
+        return _public(invariant, control)
+
+    @routes.post("/invariants/{invariant_id}/check")
+    async def check_invariant(
+        invariant_id: str,
+        body: Annotated[CheckRequest, Depends(parse_check)],
+        control: Control,
+    ) -> dict[str, Any]:
+        """Reproduce one invariant live in two fresh HTTP sessions and record it."""
+        invariant = control.invariant(invariant_id)
+        port = body.port or control.settings.project_port
+        if PORT_PLACEHOLDER in invariant.url and port is None:
+            raise DatabaseError("port_required", 422)
+        record = await run_check(
+            invariant,
+            port=port,
+            live_store_url=control.settings.live_store_url,
+            redact=control.evidence.redact,
+            scenarios=control.worker.scenarios,
+            transport=control.probe_transport,
+        )
+        control.database.save_check(
+            record.id, invariant.id, record.created_at, record.model_dump_json()
+        )
+        return record.model_dump(mode="json")
+
+    @routes.get("/invariants/{invariant_id}/checks")
+    async def invariant_checks(
+        invariant_id: str,
+        control: Control,
+        limit: Annotated[int, Query(ge=1, le=50)] = 10,
+    ) -> dict[str, Any]:
+        """Return an invariant's newest live checks first."""
+        control.invariant(invariant_id)
+        return {
+            "checks": [
+                CheckRecord.model_validate_json(item).model_dump(mode="json")
+                for item in control.database.list_checks(invariant_id, limit)
             ]
         }
+
+    @routes.post("/invariants/{invariant_id}/remove")
+    async def remove_probe(invariant_id: str, control: Control) -> dict[str, str]:
+        """Remove a registered probe; faultline.toml rules are edited in the file."""
+        if control.invariant(invariant_id).source == "config":
+            raise DatabaseError("config_invariant", 409)
+        control.database.delete_probe(invariant_id)
+        return {"status": "removed"}
+
+    @routes.get("/store")
+    async def store(control: Control) -> dict[str, Any]:
+        """Report whether the live store runs the seeded defect or a delivered fix."""
+        return live_store.status(control.settings.data_dir, control.settings.live_store_url)
 
     @routes.post("/jobs", status_code=202)
     async def create_job(
@@ -395,23 +542,16 @@ def create_app(
 
     @routes.post("/jobs/{job_id}/apply")
     async def apply_job(job_id: str, control: Control) -> dict[str, Any]:
-        """Apply a verified candidate patch from a job to the live codebase."""
-        from app.cli import apply_patch_for_job
-
-        res = apply_patch_for_job(job_id, database=control.database)
-        if not res.get("success"):
-            raise DatabaseError(res.get("error_code", "apply_failed"), 400, job_id)
-        return res
+        """Apply a verified candidate patch from a job to the live store's source."""
+        settings = control.settings
+        return live_store.apply(
+            job_id, control.database, settings.data_dir, settings.live_store_url
+        )
 
     @routes.post("/revert")
     async def revert_codebase(control: Control) -> dict[str, Any]:
-        """Revert the live codebase back to the seeded defect state."""
-        from app.cli import revert_to_seeded
-
-        res = revert_to_seeded()
-        if not res.get("success"):
-            raise DatabaseError(res.get("error_code", "revert_failed"), 500)
-        return res
+        """Revert the live store's source to the seeded defect."""
+        return live_store.revert(control.settings.data_dir, control.settings.live_store_url)
 
     @routes.get("/artifacts/{artifact_id}")
     async def artifact(artifact_id: str, control: Control) -> Response:

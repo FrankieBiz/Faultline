@@ -38,7 +38,7 @@ make check
 ./scripts/start-demo.sh
 ```
 
-Open [the Inspector](http://127.0.0.1:4000) and choose **Run the demo**. The launcher binds services to loopback, generates a session control credential if needed, and retains job history. It reports occupied ports instead of killing their owners. Ctrl+C stops its owned processes.
+Open [the Inspector](http://127.0.0.1:4000) and choose **Run sandbox repair**, or pick the `checkout_api` scenario from `faultline.toml` and choose **Run live check** to see the running store fail first. **New invariant** checks any URL you enter the same way. When a sandbox run verifies a fix, **Apply fix** writes it to the running store's source and **Revert store** restores the seeded defect. The launcher binds services to loopback, generates a session control credential if needed, and retains job history. It reports occupied ports instead of killing their owners. Ctrl+C stops its owned processes.
 
 If any default port is taken, choose others and point the rehearsal at the matching Inspector:
 
@@ -108,7 +108,7 @@ These results describe an authored corpus for one checkout route, not arbitrary 
 
 - The default Inspector serves `scripted_checkout_repair`; the CLI and a configured controller accept project ReproSpecs. The authored evaluation corpus still covers ten defects and eleven candidate patches for the checkout route.
 - Pricing uses integer cents; coupons are `TENOFF` and `FIFTEEN`.
-- Additional chaos scenarios are explicitly authored previews, not live backend defects.
+- Live checks work against any URL, but repair is limited to the registered scenario. A failure elsewhere is reported as detection only.
 - No continuous production monitoring, Sentry/GitHub integration, rollout, or automatic production deployment.
 - No measured customer adoption, revenue saved, recovery SLA, or externally awarded judging score.
 - Namespaces plus cgroup limits on a shared kernel, not a VM; no seccomp filter. An internal adversarial review is recorded; external review is still outstanding.

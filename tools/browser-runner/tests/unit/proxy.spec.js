@@ -145,3 +145,31 @@ test("client displays actionable message-only proxy errors", async () => {
   globalThis.fetch = async () => Response.json({ error: { message: "Set FAULTLINE_CONTROL_TOKEN on the Inspector server." } }, { status: 503 });
   await expect(api("jobs")).rejects.toThrow("Set FAULTLINE_CONTROL_TOKEN on the Inspector server.");
 });
+
+for (const [method, path] of [
+  ["GET", ["store"]], ["GET", ["scenarios"]], ["GET", ["invariants", "checkout.no_coupon", "checks"]],
+  ["POST", ["invariants"]], ["POST", ["invariants", "probe-0123456789ab", "check"]], ["POST", ["invariants", "service_health", "remove"]],
+  ["POST", ["jobs", id, "apply"]], ["POST", ["revert"]],
+]) {
+  test(`proxy forwards dashboard route ${method} ${path.join("/")}`, async () => {
+    let forwarded = "";
+    globalThis.fetch = async (url) => { forwarded = String(url); return Response.json({ ok: true }); };
+    const headers = { host: "127.0.0.1:4101", ...(method === "POST" ? { origin: "http://127.0.0.1:4101", "sec-fetch-site": "same-origin" } : {}) };
+    const request = new NextRequest(`http://localhost:4101/api/faultline/${path.join("/")}`, { method, headers });
+    expect((await (method === "GET" ? GET : POST)(request, context(...path))).status).toBe(200);
+    expect(forwarded).toBe(`http://127.0.0.1:9000/api/faultline/${path.join("/")}`);
+  });
+}
+
+// Dot segments would let a crafted invariant ID resolve to a different controller route.
+for (const [method, path] of [
+  ["POST", ["invariants", "..", "check"]], ["POST", ["invariants", ".", "remove"]], ["GET", ["invariants", "..", "checks"]],
+  ["POST", ["invariants", "x", "checks"]], ["GET", ["invariants", "x", "check"]], ["POST", ["store"]], ["GET", ["revert"]],
+]) {
+  test(`proxy refuses ${method} ${path.join("/")}`, async () => {
+    globalThis.fetch = async () => { throw new Error("must not contact upstream"); };
+    const headers = { host: "127.0.0.1:4101", ...(method === "POST" ? { origin: "http://127.0.0.1:4101", "sec-fetch-site": "same-origin" } : {}) };
+    const request = new NextRequest(`http://localhost:4101/api/faultline/${path.join("/")}`, { method, headers });
+    expect((await (method === "GET" ? GET : POST)(request, context(...path))).status).toBe(404);
+  });
+}

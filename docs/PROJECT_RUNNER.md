@@ -107,4 +107,6 @@ The SHA-256 digest detects inconsistency; it is not a signature. Source hashes i
 
 Set `FAULTLINE_CONFIG=/absolute/path/to/faultline.toml` and optionally `FAULTLINE_SCENARIO=addition` before starting the authenticated controller. Its scenario listing and admission use the selected project configuration, with the same worker and runtime as the CLI. A controller serves one selected project/scenario per installation. Omit these variables to retain the existing Inspector checkout demo.
 
+The Inspector lists the selected scenario under **Sandbox repair**. Set `FAULTLINE_PROJECT_PORT` to the port of a dev server you already run, and the dashboard can also check the scenario's request steps and `[[invariants.rule]]` rules against that server live. The request runs from two fresh HTTP sessions, and a failure counts only when both fail the same way. A live failure of a scenario offers that scenario's sandbox run, which reproduces it again from tracked source before any model call. The dashboard never applies a project diff.
+
 Remote website mutation, external-service egress, multi-service orchestration, WebSocket journeys, automatic dependency installation, arbitrary test-command ingestion, and automatic patch application/deployment are not part of this command.

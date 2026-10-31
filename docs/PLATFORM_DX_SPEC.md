@@ -38,6 +38,7 @@ Each hardcoded value below becomes a config key or command. The showcase fixture
 | Service launch and loopback ports | `scripts/start-demo.sh` | `[project]`, `[[project.service]]`, `faultline up` |
 | Bundle verification, replay export, trial ledger, evaluation | `tools/verify_bundle.py`, `scripts/export_replay.py`, `scripts/trial_ledger.py`, `scripts/evaluate.sh` | `faultline packet verify`, `faultline replay export`, `faultline bench trials`, `faultline bench corpus` |
 | Inspector | `web/inspector-ui` | `faultline dashboard` |
+| `[scenarios.*]` ReproSpecs (request steps), `[[invariants.rule]]` HTTP rules (both the `faultline init` form and the §4.3 `request`/`assert` form), and ad-hoc probes, checked live against a running service through `ReproEngine` in two fresh sessions (**exists today**, October 30) | `app/probes.py`, `GET /scenarios`, `POST /invariants/{id}/check` | Inspector scenario rail. Repair stays limited to registered scenarios until Phase 1 |
 | Control API (`/api/faultline/readiness`, `/jobs`, `/jobs/{id}/events` SSE, `/cancel`, `/artifacts/{id}`) | `app/main.py` | Phase 0 CLI transport |
 
 ## 2. Installation
