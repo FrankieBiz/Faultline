@@ -388,7 +388,56 @@ async def test_real_node_repository_baseline_repair_and_proof(
     tmp_path: Path,
 ) -> None:
     root, run = project
-    runtime = ProjectRuntime(root, run)
+    diagnostics: list[dict[str, Any]] = []
+
+    class DiagnosticRuntime(ProjectRuntime):
+        async def _close_session(self, key: str) -> None:
+            browser = self.sessions[key].browser
+            try:
+                await super()._close_session(key)
+            finally:
+                if browser is not None:
+                    # Only fixed tags and counts: browser stderr can contain
+                    # source paths, request bodies, and credentials.
+                    stderr = bytes(browser.stderr)
+                    diagnostics.append(
+                        {
+                            "browser_exit": browser.process.returncode,
+                            "stderr_bytes": len(stderr),
+                            "stderr_tags": [
+                                tag
+                                for tag, marker in (
+                                    ("sandbox_unavailable", b"No usable sandbox"),
+                                    ("namespace_denied", b"Operation not permitted"),
+                                    ("browser_missing", b"Executable doesn't exist"),
+                                    ("libraries_missing", b"error while loading shared libraries"),
+                                    ("screenshot_timeout", b"page.screenshot: Timeout"),
+                                )
+                                if marker in stderr
+                            ],
+                        }
+                    )
+
+        async def execute(
+            self, job_id: str, execution_id: str, phase: Phase, snapshot: Snapshot, timeout_ms: int
+        ) -> RuntimeExecution:
+            result = await super().execute(job_id, execution_id, phase, snapshot, timeout_ms)
+            directory = snapshot.path.parents[1] / "evidence" / execution_id
+            diagnostics.append(
+                {
+                    "phase": phase,
+                    "runner_error": json.loads(result.report.raw_logs)["error"],
+                    "artifact_bytes": {a.role: len(a.content) for a in result.artifacts},
+                    "capture_bytes": {
+                        name: (directory / name).stat().st_size
+                        for name in ("screenshot.png", "trace.zip", "requests.json")
+                        if (directory / name).is_file()
+                    },
+                }
+            )
+            return result
+
+    runtime = DiagnosticRuntime(root, run)
     worker = worker_for(root, run, tmp_path / "data", runtime)
     try:
         try:
@@ -401,7 +450,9 @@ async def test_real_node_repository_baseline_repair_and_proof(
             JobRequest(scenario_id="addition", idempotency_key=str(uuid4()))
         )
         done = await worker.run_job(job.id)
-        assert done.outcome == TerminalOutcome.VERIFIED, done.error_details
+        assert done.outcome == TerminalOutcome.VERIFIED, json.dumps(
+            {"error_details": done.error_details, "runtime_diagnostics": diagnostics}, indent=2
+        )
         executions = worker.database.list_executions(job.id)
         assert [e.report.verdict.value for e in executions] == ["failed", "failed", "passed"]
         assert all(e.resource_limits and e.resource_limits.verified for e in executions)
