@@ -24,6 +24,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from app import live_store
 from app.api import build_crawl_router
+from app.cli_crawl import repair_origin
 from app.database import MAX_EVENT_SEQUENCE, TERMINAL_STATES, Database, DatabaseError
 from app.evidence import ArtifactError, EvidenceStore
 from app.model_adapter import MetaRepairAdapter, ModelSettings
@@ -58,6 +59,7 @@ class Settings:
     inspector_origin: str = "http://127.0.0.1:4000"
     config_path: Path = REPOSITORY_ROOT / "faultline.toml"
     live_store_url: str = "http://127.0.0.1:8000"
+    storefront_url: str = "http://127.0.0.1:3000"
     project_port: int | None = None
 
     def __repr__(self) -> str:
@@ -67,6 +69,14 @@ class Settings:
     def from_environment(cls) -> Settings:
         """Read named settings without opening any local credential file."""
         port = os.environ.get("FAULTLINE_PROJECT_PORT", "")
+        store_port = os.environ.get("BUGGYSHOP_PORT", "3000")
+        storefront = os.environ.get("FAULTLINE_STOREFRONT_URL")
+        if storefront is None:
+            storefront = (
+                f"http://127.0.0.1:{int(store_port)}"
+                if store_port.isdigit() and 1 <= int(store_port) <= 65535
+                else ""
+            )
         return cls(
             data_dir=Path(os.environ.get("FAULTLINE_DATA_DIR", str(REPOSITORY_ROOT / "data"))),
             control_token=os.environ.get("FAULTLINE_CONTROL_TOKEN"),
@@ -75,6 +85,7 @@ class Settings:
                 os.environ.get("FAULTLINE_CONFIG", str(REPOSITORY_ROOT / "faultline.toml"))
             ),
             live_store_url=os.environ.get("FAULTLINE_LIVE_STORE_URL", "http://127.0.0.1:8000"),
+            storefront_url=storefront,
             project_port=int(port) if port.isdigit() and 1 <= int(port) <= 65535 else None,
         )
 
@@ -360,6 +371,20 @@ def create_app(
         )
         return {
             "status": status,
+            # Seeded repair owns these operator-configured origins only. Generic
+            # project execution needs its own explicit live-target binding.
+            "repair_origins": []
+            if control.worker.project is not None
+            else sorted(
+                {
+                    origin
+                    for value in (
+                        control.settings.live_store_url,
+                        control.settings.storefront_url,
+                    )
+                    if (origin := repair_origin(value)) is not None
+                }
+            ),
             "runtime_ready": runtime_ready,
             "quarantined": lease.quarantined,
             "model": asdict(probe) if probe else None,

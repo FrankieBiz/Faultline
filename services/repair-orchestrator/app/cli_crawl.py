@@ -253,6 +253,32 @@ def failure_route(failure: dict[str, Any]) -> str | None:
     return f"{str(failure.get('method') or 'GET').upper()} {path}"
 
 
+def repair_origin(url: Any) -> str | None:
+    """Normalize an absolute HTTP origin; refuse credentials and malformed ports."""
+    if not isinstance(url, str):
+        return None
+    try:
+        parsed = urllib.parse.urlsplit(url)
+        if (
+            parsed.scheme not in ("http", "https")
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+        ):
+            return None
+        port = parsed.port if parsed.port is not None else (443 if parsed.scheme == "https" else 80)
+        if not 1 <= port <= 65535:
+            return None
+        host = parsed.hostname.lower()
+        if ":" in host:
+            host = f"[{host}]"
+        default_port = 443 if parsed.scheme == "https" else 80
+        suffix = f":{port}" if port != default_port else ""
+        return f"{parsed.scheme}://{host}{suffix}"
+    except ValueError:
+        return None
+
+
 def _engine_name(model: dict[str, Any]) -> str:
     provider = str(model.get("provider", ""))
     name = str(model.get("model", "")).strip()
@@ -298,6 +324,19 @@ def plan_repair(failure: dict[str, Any], port: int) -> RepairPlan:
     if readiness.get("status") == "blocked":
         raise RepairUnavailable(
             f"The sandbox is not ready ({readiness.get('reason')}). Run ./faultline doctor."
+        )
+    advertised = readiness.get("repair_origins")
+    origins = (
+        {origin for value in advertised if (origin := repair_origin(value)) is not None}
+        if isinstance(advertised, list)
+        else set()
+    )
+    origin = repair_origin(failure.get("url"))
+    if origin is None or origin not in origins:
+        raise RepairUnavailable(
+            "The failing request origin is not an advertised repair origin of this controller. "
+            "No repair was dispatched; configure the controller for the actual project and "
+            "use ./faultline run with its reproduction contract."
         )
     model = readiness.get("model") or {}
     reason = None
@@ -533,6 +572,14 @@ def _error_prompt(code: str, message: str, url: str) -> str:
             f"The FaultLine gate rejected its input: {message} Re-run it against the running "
             "preview, e.g. `faultline gate http://127.0.0.1:3000 --json`."
         )
+    if code == "incomplete_crawl":
+        return (
+            f"The FaultLine gate is inconclusive for {url}: {message} "
+            "Increase --max-actions and --timeout within their supported limits, then re-run "
+            f"`faultline gate {url} --json`. If exploration still cannot finish, investigate "
+            "the unfinished flows and retain independent business checks. "
+            "Do not deploy until the gate exits 0."
+        )
     return (
         f"The FaultLine gate could not explore {url} ({code}): {message} "
         "Make sure the preview server is running and the browser runner is built, then re-run "
@@ -549,13 +596,25 @@ def gate_result(report: dict[str, Any], url: str) -> dict[str, Any]:
     trail = [str(step) for step in summary["reproduction_trail"]]
     failure = summary["failure"]
     status = report.get("status")
+    stop_reason = summary["stop_reason"]
+    passed = status == "clean" and stop_reason == "exhausted"
     error: dict[str, str] | None = None
     prompt: str | None = None
-    if status == "clean":
+    if passed:
         text = (
-            f"No defects found: explored {_plural(explored, 'element')} across "
-            f"{_plural(len(screens), 'screen')} with {_plural(summary['actions_taken'], 'action')}."
+            f"No defects found in explored flows: explored {_plural(explored, 'element')} across "
+            f"{_plural(len(screens), 'screen')} with "
+            f"{_plural(summary['actions_taken'], 'action')}. "
+            "This does not establish business completeness."
         )
+    elif status == "clean":
+        message = (
+            f"Exploration stopped with {stop_reason or 'no completion reason'} after "
+            f"{_plural(summary['actions_taken'], 'action')}; completion was not established."
+        )
+        error = {"code": "incomplete_crawl", "message": message}
+        text = f"Gate inconclusive: {message}"
+        prompt = _error_prompt("incomplete_crawl", message, target)
     elif isinstance(failure, dict):
         if not trail:
             # Reports from older runners carry breadcrumbs only.
@@ -571,7 +630,6 @@ def gate_result(report: dict[str, Any], url: str) -> dict[str, Any]:
         error = {"code": "crawl_error", "message": message}
         text = f"Gate could not complete the crawl: {message}"
         prompt = _error_prompt("crawl_error", message, target)
-    passed = status == "clean"
     return {
         "gate_status": GATE_PASSED if passed else GATE_FAILED,
         "verdict": SAFE_TO_DEPLOY if passed else DEPLOYMENT_BLOCKED,
@@ -579,6 +637,8 @@ def gate_result(report: dict[str, Any], url: str) -> dict[str, Any]:
         "target_url": target,
         "summary": text,
         "elements_explored": explored,
+        "actions_taken": summary["actions_taken"],
+        "stop_reason": stop_reason,
         "screens_visited": screens,
         "failure": failure if isinstance(failure, dict) else None,
         "reproduction_trail": trail,
@@ -597,6 +657,8 @@ def gate_error_result(code: str, message: str, url: str) -> dict[str, Any]:
         "target_url": url,
         "summary": f"Gate could not run: {message}",
         "elements_explored": 0,
+        "actions_taken": 0,
+        "stop_reason": None,
         "screens_visited": [],
         "failure": None,
         "reproduction_trail": [],

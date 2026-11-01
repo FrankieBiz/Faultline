@@ -6,7 +6,7 @@ through the flow they changed. Unit tests pass, the PR merges, and checkout
 returns HTTP 500.
 
 `faultline gate` is that last step as a command. It points headless Chromium
-at a running preview, explores every same-origin screen, fills forms with
+at a running preview, explores discovered same-origin screens, fills forms with
 realistic values, clicks in shopping-funnel order, and stops at the first
 defect. The result is one verdict an agent or a pipeline can obey:
 
@@ -16,8 +16,8 @@ faultline gate http://127.0.0.1:3000 --json
 
 | Exit | `verdict` | Meaning |
 | --- | --- | --- |
-| **0** | `SAFE_TO_DEPLOY` | Every explored flow was clean. |
-| **1** | `DEPLOYMENT_BLOCKED` | A defect was intercepted, or the site could not be explored. |
+| **0** | `SAFE_TO_DEPLOY` | The crawler exhausted its discovered work without finding defects in explored flows. |
+| **1** | `DEPLOYMENT_BLOCKED` | A defect was intercepted, exploration was incomplete, or the site could not be explored. |
 | **2** | `DEPLOYMENT_BLOCKED` | Invalid arguments or URL. |
 
 A blocked verdict carries the evidence, the numbered steps that reproduce it,
@@ -64,7 +64,12 @@ Fix the server-side exception handling for POST /api/checkout so it no longer re
   are skipped.
 - **It fails closed.** A server that does not answer, a page that will not load, or a
   missing browser runner gives `DEPLOYMENT_BLOCKED` with `error` set, never a
-  pass. Only a completed, clean crawl exits 0.
+  pass. Only raw `status: "clean"` with `stop_reason: "exhausted"` exits 0.
+  Reaching `max_actions`, timing out, or missing a completion reason is
+  inconclusive: exit 1, `error.code: "incomplete_crawl"`, and `failure: null`.
+  Increase the action/time budgets and retry; unresolved exploration stays blocked.
+  A completed clean crawl finds no defects in explored flows; it does not establish
+  business completeness or replace independent assertions and normal project CI.
 - **Read-only.** The gate never patches code. Repair stays behind
   `faultline scan` / `faultline run`, where candidates are verified in the
   sandbox before anything is applied.
@@ -92,11 +97,13 @@ and `--timeout` seconds (1-300, default 90) bound the crawl.
   "target_url": "http://127.0.0.1:3000/",
   "summary": "Defect intercepted: HTTP 500 on POST /api/checkout after 3 actions across 2 screens.",
   "elements_explored": 20,
+  "actions_taken": 3,
+  "stop_reason": "exhausted" | "max_actions" | "timeout" | "..." | null,
   "screens_visited": [{"url": "...", "path": "/checkout", "title": "Checkout", "elements": 11, "forms": 1}],
   "failure": {"kind": "http_error", "method": "POST", "endpoint": "/api/checkout", "status": 500, "...": "..."} | null,
   "reproduction_trail": ["1. Open http://127.0.0.1:3000/", "..."],
   "agent_remediation_prompt": "FaultLine caught ..." | null,
-  "error": {"code": "invalid_url" | "runner_unavailable" | "runner_failed" | "crawl_error", "message": "..."} | null
+  "error": {"code": "invalid_url" | "invalid_request" | "runner_unavailable" | "runner_failed" | "crawl_error" | "incomplete_crawl", "message": "..."} | null
 }
 ```
 
@@ -104,6 +111,25 @@ and `--timeout` seconds (1-300, default 90) bound the crawl.
 (`failure` set) from "the gate could not look" (`error` set), so an agent
 fixes the right thing. When the gate itself could not run,
 `agent_remediation_prompt` explains how to restore the environment.
+Both result and error JSON always include integer `actions_taken` and nullable
+string `stop_reason`; a crawl that could not start reports `0` and `null`.
+Unknown string stop reasons remain visible and cannot pass the gate.
+
+### Scan repair origin binding
+
+`faultline scan` requires both a matching registered method/path and a failing
+request origin in the controller readiness response's `repair_origins` list.
+For the seeded controller, the list comes from `FAULTLINE_LIVE_STORE_URL`
+(backend) and `FAULTLINE_STOREFRONT_URL` (storefront proxy). The storefront defaults
+to `http://127.0.0.1:3000`, or the validated `BUGGYSHOP_PORT` when configured.
+Origins compare scheme, hostname and effective port; no DNS aliases or arbitrary
+ports are inferred. Missing advertisements and foreign origins decline dispatch.
+Generic project mode advertises no seeded origins and requires an explicit
+project reproduction contract through `faultline run`.
+
+The crawler subprocess receives only browser discovery and basic system
+environment variables. Provider keys, controller credentials and Node injection
+settings are not forwarded; this does not add a browser resource or network sandbox.
 
 ## Integrations
 
