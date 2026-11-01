@@ -1,5 +1,12 @@
 # Agent handoff state
 
+## November 1: resilient native Windows bootstrap (codex-windows-fix)
+
+- Native platform CI now invokes `setup.ps1` directly in its `pwsh` step. `setup.bat` prefers `pwsh.exe` and falls back to `powershell.exe` only when PowerShell 7 is unavailable, preserving arguments and exit codes. This avoids the observed PowerShell 7 to Windows PowerShell 5.1 module-path mismatch.
+- Windows uv setup attempts the Security module import and catches installer download/script errors, nonzero native exit status, and missing uv. It then downloads Astral's official x64 Windows release zip, extracts `uv.exe` and `uvx.exe` into `$HOME\.local\bin`, and removes temporary files even when fallback fails. Dependencies do not install after fallback errors.
+- Bootstrap regression tests use real PowerShell, extraction, discovery, and native tool dispatch with mocked downloads: official success, module/download/script/native/discovery failures, and failed/corrupt/incomplete zip fallback. The focused nine cases passed locally using `FAULTLINE_TEST_PWSH=/tmp/faultline-pwsh-validation/pwsh`; native Windows evidence must come from the new Actions run.
+- Verification: `FAULTLINE_TEST_PWSH=/tmp/faultline-pwsh-validation/pwsh make check` exited 0: 335 backend/script + 914 orchestrator/CLI + 123 runner tests = 1,372 passed, plus lint/format, strict typing, provenance, all frontend/runner/Inspector builds, and both Python distribution builds. Native CI is checked after pushing.
+
 ## November 1: native macOS/Windows setup and pre-flight CLI (cross-platform-fix)
 
 - Setup discovers uv on PATH and standard local/Homebrew paths, installs it with Astral's official installer if missing, explicitly installs Python 3.13, syncs both locked environments, installs all three Node projects, builds the browser runner, and installs Chromium. Native Windows uses `setup.ps1` / `setup.bat` and `faultline.ps1` / `faultline.cmd`; Unix symlink resolution works with BSD readlink. The locked toolchain requires Node 20.19+, 22.13+, or 24+; recommend 24+.

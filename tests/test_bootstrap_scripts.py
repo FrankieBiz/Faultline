@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -400,7 +401,21 @@ def test_demo_without_setsid_or_system_python_cleans_owned_sessions(machine, sto
 
 
 @pytest.mark.skipif(not PWSH, reason="PowerShell is optional on Unix")
-def test_powershell_setup_installs_uv_from_official_script(machine) -> None:
+@pytest.mark.parametrize(
+    "failure",
+    [
+        None,
+        "module",
+        "download",
+        "script",
+        "native",
+        "discovery",
+        "zip_download",
+        "zip_invalid",
+        "zip_missing",
+    ],
+)
+def test_powershell_setup_installs_uv_from_official_script_or_zip(machine, failure) -> None:
     repo, bin_dir, env = machine
     setup_tools(bin_dir)
     executable(bin_dir / "node", f"#!{sys.executable}\nprint('v24.0.0')\n")
@@ -411,14 +426,51 @@ def test_powershell_setup_installs_uv_from_official_script(machine) -> None:
         f"[IO.File]::WriteAllText('{destination}', '{TOOL.replace(chr(39), chr(39) * 2)}')\n"
         f"& /bin/chmod 755 '{destination}'\n"
     )
+    if failure == "script":
+        installer = "throw 'Get-ExecutionPolicy: Microsoft.PowerShell.Security could not be loaded'"
+    elif failure == "native":
+        installer = "$global:LASTEXITCODE = 23"
+    elif failure == "discovery":
+        installer = "# Installer returned without installing uv"
     installer_path = repo.parent / "mock-install.ps1"
     installer_path.write_text(installer)
+    archive = repo.parent / "uv.zip"
+    with zipfile.ZipFile(archive, "w") as bundle:
+        for binary in ("uv.exe", "uvx.exe"):
+            if failure != "zip_missing":
+                bundle.writestr(binary, TOOL)
+    if failure == "zip_invalid":
+        archive.write_bytes(b"not a zip file")
+    env["INSTALL_FAILURE"] = failure or ""
+    env["MOCK_UV_ZIP"] = str(archive)
+    env["INSTALL_TEMP"] = str(repo.parent / "install-temp")
+    Path(env["INSTALL_TEMP"]).mkdir()
+    env["TMPDIR"] = env["INSTALL_TEMP"]
     wrapper = repo.parent / "install-wrapper.ps1"
     wrapper.write_text(
+        "function Import-Module { param($Name, $ErrorAction)\n"
+        "if ($Name -eq 'Microsoft.PowerShell.Security' -and $env:INSTALL_FAILURE -eq 'module') "
+        "{ throw 'Microsoft.PowerShell.Security could not be loaded' }\n"
+        "Microsoft.PowerShell.Core\\Import-Module $Name -ErrorAction $ErrorAction\n}\n"
         "function Invoke-RestMethod { param($Uri)\n"
         "if ($Uri -ne 'https://astral.sh/uv/install.ps1') { throw 'Unexpected installer URL' }\n"
+        "if ($env:INSTALL_FAILURE -eq 'download' -or $env:INSTALL_FAILURE -like 'zip_*') "
+        "{ throw 'Installer download failed' }\n"
         f"[IO.File]::ReadAllText('{installer_path}')\n}}\n"
+        "function Invoke-WebRequest { param($Uri, $OutFile, [switch]$UseBasicParsing)\n"
+        "if (-not $env:INSTALL_FAILURE) { throw 'Successful installer must not download zip' }\n"
+        "if ($Uri -ne 'https://github.com/astral-sh/uv/releases/latest/download/"
+        "uv-x86_64-pc-windows-msvc.zip') { throw 'Unexpected zip URL' }\n"
+        "if ($env:INSTALL_FAILURE -eq 'zip_download') { throw 'Zip download failed' }\n"
+        "[IO.File]::Copy($env:MOCK_UV_ZIP, $OutFile)\n}\n"
+        # Zip permissions are executable on Windows; make the fake .exe executable on Unix.
+        "function Expand-Archive { param($LiteralPath, $DestinationPath)\n"
+        "Microsoft.PowerShell.Archive\\Expand-Archive -LiteralPath $LiteralPath "
+        "-DestinationPath $DestinationPath\n"
+        "Get-ChildItem $DestinationPath -Filter '*.exe' | "
+        "ForEach-Object { & /bin/chmod 755 $_.FullName }\n}\n"
         f"& '{repo / 'setup.ps1'}'\n"
+        "exit $LASTEXITCODE\n"
     )
     result = subprocess.run(
         [PWSH, "-NoProfile", "-File", str(wrapper)],
@@ -428,8 +480,16 @@ def test_powershell_setup_installs_uv_from_official_script(machine) -> None:
         text=True,
         timeout=20,
     )
+    assert not list(Path(env["INSTALL_TEMP"]).glob("faultline-uv-*"))
+    if failure and failure.startswith("zip_"):
+        assert result.returncode == 1, result.stdout + result.stderr
+        assert not calls(env)
+        return
     assert result.returncode == 0, result.stdout + result.stderr
     uv_calls = [c for c in calls(env) if c["tool"] == "uv.exe"]
     assert uv_calls[0]["args"] == ["python", "install", "3.13"]
     assert len(uv_calls) == 3
     assert calls(env)[-1]["args"] == ["playwright", "install", "chromium"]
+    if failure:
+        assert (destination.parent / "uvx.exe").is_file()
+        assert "zip" in result.stdout.lower()

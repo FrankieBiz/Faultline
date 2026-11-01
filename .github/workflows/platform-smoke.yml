@@ -35,7 +35,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          & .\setup.bat
+          & .\setup.ps1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Add-Content -LiteralPath $env:GITHUB_PATH -Value "$HOME\.local\bin"
           Add-Content -LiteralPath $env:GITHUB_PATH -Value "$HOME\.cargo\bin"

@@ -25,9 +25,32 @@ try {
     $uv = Find-Uv
     if (-not $uv) {
         Write-Host 'Installing uv from https://astral.sh/uv/install.ps1 ...'
-        $global:LASTEXITCODE = 0
-        Invoke-RestMethod 'https://astral.sh/uv/install.ps1' | Invoke-Expression
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        try {
+            Import-Module Microsoft.PowerShell.Security -ErrorAction SilentlyContinue
+            $global:LASTEXITCODE = 0
+            Invoke-RestMethod 'https://astral.sh/uv/install.ps1' | Invoke-Expression
+            if ($LASTEXITCODE -ne 0) { throw "uv installer failed (exit $LASTEXITCODE)." }
+            if (-not (Find-Uv)) { throw 'uv installer did not provide uv.' }
+        }
+        catch {
+            Write-Warning "uv installer failed: $_. Trying the official Windows zip instead."
+            $temporary = Join-Path ([IO.Path]::GetTempPath()) "faultline-uv-$([guid]::NewGuid())"
+            try {
+                New-Item -ItemType Directory -Path $temporary | Out-Null
+                $archive = Join-Path $temporary 'uv.zip'
+                Invoke-WebRequest -UseBasicParsing -Uri 'https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-pc-windows-msvc.zip' -OutFile $archive
+                $extracted = Join-Path $temporary 'extracted'
+                Expand-Archive -LiteralPath $archive -DestinationPath $extracted
+                $destination = Join-Path $HOME '.local\bin'
+                New-Item -ItemType Directory -Force -Path $destination | Out-Null
+                foreach ($binary in @('uv.exe', 'uvx.exe')) {
+                    Copy-Item -LiteralPath (Join-Path $extracted $binary) -Destination $destination -Force
+                }
+            }
+            finally {
+                if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary -Recurse -Force }
+            }
+        }
         $uv = Find-Uv
         if (-not $uv) { throw 'uv installation did not provide uv. Add uv to PATH and rerun .\setup.ps1.' }
     }
