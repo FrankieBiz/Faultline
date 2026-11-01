@@ -33,6 +33,14 @@ Reproduce:
 Fix the server-side exception handling for POST /api/checkout so it no longer returns HTTP 500 before deploying, then re-run `faultline gate http://127.0.0.1:5051/ --json` and continue only when it exits 0.
 ```
 
+## Platform Compatibility
+
+`faultline gate` is cross-platform and runs natively on **macOS**, **Linux**, and **Windows**:
+- Exploration is executed using standard Playwright (headless Chromium) and Python/TypeScript CLI tooling.
+- It requires zero Linux Bubblewrap or cgroup v2 privileges.
+- Developers, coding agents, and CI pipelines on any operating system can run `faultline gate <url> --json` as an automated pre-deployment check.
+*(Note: Only backend candidate repair synthesis and sandboxed candidate execution via `faultline run` requires a Linux host with unprivileged user namespaces and cgroup v2).*
+
 ## Architecture
 
 ```
