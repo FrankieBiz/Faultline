@@ -43,3 +43,14 @@ def test_snippets_only_use_the_gate_command_the_cli_defines() -> None:
     for source in (INSPECTOR, JUDGE):
         commands = set(re.findall(r"faultline (\w+) ", source.read_text(encoding="utf-8")))
         assert "gate" in commands
+
+
+def test_skill_and_judge_page_never_call_an_unfinished_crawl_a_pass() -> None:
+    skill = SKILL.read_text(encoding="utf-8")
+    assert '"incomplete_crawl"' in skill
+    assert '"stop_reason"' in skill
+    assert 'only "exhausted" passes' in skill
+    judge = JUDGE.read_text(encoding="utf-8")
+    # The recorded clean verdict predates stop_reason, so the page must caption it as historical.
+    assert "recorded before the gate reported" in judge
+    assert "Safe to deploy (earlier contract)" in judge

@@ -14,18 +14,19 @@ Author: Francis Bisignano (`FrankieBiz`). Indie Developer Track.
 
 ## Elevator pitch
 
-A browser reproduces a checkout crash. Meta's model proposes a source patch. Independent browser and business checks decide whether the candidate earns a green result.
+A browser reproduces a checkout crash. Meta's model proposes a source patch. Independently authored browser and business checks decide whether the candidate earns a green result, while a kernel-limited sandbox confines it. A pre-flight gate gives coding agents and CI the same crawl as an exit code.
 
 ## Evidence at a glance
 
 | Claim | What is recorded |
 | --- | --- |
-| Meta's model repaired the seeded defect under the gates | One retained controller job on October 28, 2026 ([replay](https://frankiebiz.github.io/Faultline/replay/3573b32b-09bd-4f14-897d-cf6dccf9b118/index.html), [provenance review](https://github.com/FrankieBiz/Faultline/blob/main/docs/evidence/2026-10-28-meta-replay-review.md)). `muse-spark-1.3` returned a one-line patch in 6.9 s using 1,569 prompt and 1,685 completion tokens. The baseline failed with the seeded `TypeError`. The candidate passed 44 of 44 assertions, and cleanup succeeded. The whole job took 13.0 s. |
+| Meta's model repairs the seeded defect repeatedly | Three live `muse-spark-1.3` trials on October 31, 2026, all verified on the first attempt at 44 of 44 assertions, median wall time 10.5 s (10.4 to 12.6 s), cleanup confirmed each time ([ledger](https://github.com/FrankieBiz/Faultline/blob/main/docs/evidence/2026-10-31-controller-ledger-meta.md)). The ledger script refuses any non-Meta response. Scope: one registered scenario. |
+| One Meta repair is replayable step by step | One retained controller job on October 28, 2026 ([replay](https://frankiebiz.github.io/Faultline/replay/3573b32b-09bd-4f14-897d-cf6dccf9b118/index.html), [provenance review](https://github.com/FrankieBiz/Faultline/blob/main/docs/evidence/2026-10-28-meta-replay-review.md)). `muse-spark-1.3` returned a one-line patch in 6.9 s using 1,569 prompt and 1,685 completion tokens. The baseline failed with the seeded `TypeError`. The candidate passed 44 of 44 assertions, and cleanup succeeded. The whole job took 13.0 s. |
 | Verification catches what a symptom check misses | Six plausible but wrong repairs were authored for the seeded defect. A "does the request now return 201" check accepted five of them. FaultLine accepted none, and it accepted both correct repairs ([evaluation](https://github.com/FrankieBiz/Faultline/blob/main/docs/EVALUATION.md#what-verification-catches)). |
 | The loop handles defects the model was not told about | Measured only with a labeled **non-Meta** model, DeepSeek `deepseek-v4-pro`. Over two trials, it verified 18 of 20 runs across the seeded defect and nine variants. The gates rejected its two wrong patches. Meta has not yet been run on this corpus. |
 | Candidates run contained | Each candidate backend runs in Linux namespaces inside a cgroup v2 scope (512 MiB, no swap, 64 tasks, one CPU), and those limits are read back from the kernel. Both executions in the Meta job recorded verified limits, as did every backend session in both recorded evaluation runs (48 of 48 and 19 of 19). |
 
-The two retained Meta jobs are single runs, not a reliability rate. The seeded defect is deliberately simple; the deterministic fallback's patch makes the same change. The contribution is the verification around the patch, not the difficulty of the fix.
+Three live trials on one scenario are a small sample, not a reliability rate, and a Meta run over the full unfamiliar-defect corpus is still unmeasured. The seeded defect is deliberately simple; the deterministic fallback's patch makes the same change. The contribution is the verification around the patch, not the difficulty of the fix. The authored business checks are what catch a wrong patch; the sandbox confines execution and does not judge correctness.
 
 ## Inspiration
 
@@ -44,7 +45,9 @@ FaultLine makes that repair claim inspectable. The checkout defect is deliberate
 3. **Gate:** the patch policy enforces exact paths and source hashes, bounded size (16 KiB diff, 100 changed lines), valid syntax, approved imports only, no dynamic execution, and no catch-all exception handlers. Miscounted hunk headers are recounted without altering content.
 4. **Verify:** the candidate runs in Linux namespaces inside a cgroup v2 scope whose limits are read back from the kernel. It must pass the same browser journey (16 checks), 27 independent HTTP business checks, and a combined confirmation check, for 44 assertions in total.
 5. **Retry with findings:** if a gate rejects the first proposal, the model receives the failing checks with expected and observed values, or the exact policy error, for one more attempt.
-6. **Record:** screenshots, traces, logs, reports, and a checksummed evidence bundle that `tools/verify_bundle.py` re-checks offline. The digest is a checksum, not a signature. A verified candidate is not a production deployment.
+6. **Record:** screenshots, traces, logs, reports, and a checksummed evidence bundle that `tools/verify_bundle.py` re-checks offline. The digest is a checksum, not a signature. A verified candidate is not a production deployment. In the local Inspector, "Apply" writes a verified fix only to the bundled demo store; project repairs stay in the sandbox.
+
+Separately, `faultline gate URL --json` runs the deterministic Playwright crawler (heuristics, not a model) against a running preview and returns one verdict for coding agents and CI. Exit 1 blocks a defect, with a reproduction trail and a fix prompt, and also blocks a crawl that ran out of actions or time before it finished. Exit 0 means exploration finished with no defect in the flows the crawler reached. It is a bounded smoke signal, not proof of business correctness or complete coverage.
 
 ## How Meta's model is used
 
@@ -52,7 +55,7 @@ The adapter targets the Meta Model API (`muse-spark-1.3` by default). It records
 
 In the retained job, the model explained its patch as: "Empty/null coupon produced None discount causing TypeError on subtotal-discount. Default missing coupon lookup to 0 so absent/empty/whitespace means zero discount, while valid coupons still use integer arithmetic and invalid coupons still 400 before pricing." The replay and its evidence bundle are controller records with matching checksums, not provider-signed attestations.
 
-Without credentials, an explicitly labeled deterministic provider (`deterministic-checkout-v1`, no model call) exercises the workflow. Its runs are never counted as Meta results. Repeated Meta trials and a Meta run on the unfamiliar-defect corpus remain outstanding.
+Without credentials, an explicitly labeled deterministic provider (`deterministic-checkout-v1`, no model call) exercises the workflow. Its runs are never counted as Meta results. Beyond the retained replay, a [trial ledger](https://github.com/FrankieBiz/Faultline/blob/main/docs/evidence/2026-10-31-controller-ledger-meta.md) records 3 of 3 live Meta trials verified on the first attempt (44/44, median 10.5 s) on the same scenario. A Meta run on the unfamiliar-defect corpus remains outstanding.
 
 ## How it was built
 
@@ -73,11 +76,11 @@ Built with: Python 3.13, FastAPI, Pydantic, SQLite, Next.js, React, TypeScript, 
 
 ## Limits
 
-AST checks are policy, not a sandbox. Containment is Linux namespaces plus cgroup limits on a shared kernel. It is not a VM, and there is no seccomp filter or external security review yet. The live demo has one registered defect, and the evaluation corpus covers one checkout route. A green suite supports the tested behaviors. It does not prove general production safety or compliance.
+AST checks are policy, not a sandbox. Containment is Linux namespaces plus cgroup limits on a shared kernel. It is not a VM, and there is no seccomp filter or external security review yet. The live demo has one registered defect, and the evaluation corpus covers one checkout route. Repairs are single-file diffs, and nothing is deployed automatically. A clean gate covers only the flows the crawler explored. A green suite supports the tested behaviors. It does not prove general production safety or compliance.
 
 ## What's next
 
-Repeated Meta trials and a Meta run on the unfamiliar-defect corpus, defects outside the checkout route, a seccomp filter and external sandbox review, and human-reviewed pull requests. Production rollout and monitoring integrations remain future work.
+A Meta run on the unfamiliar-defect corpus, more Meta trials beyond one scenario, defects outside the checkout route, multi-file repairs, a seccomp filter and external sandbox review, and human-reviewed pull requests. Production rollout and monitoring integrations remain future work.
 
 ## Reproduce
 
