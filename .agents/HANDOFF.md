@@ -1,5 +1,12 @@
 # Agent handoff state
 
+## November 1: hosted generic Chromium preflight (systems-codex-eval)
+
+- Hosted Verify at `94b99d7` failed the real generic Node repair before capture: Chromium exited with the fixed `No usable sandbox` marker, produced no captures, and its `JSONDecodeError` was obscured as a baseline `artifact_error`. This same issue appeared before filming work at `6ddd1f0`.
+- Commit `7c6deec` runs the shared `chromiumSandbox: true` driver as part of project-runtime reconciliation. Readiness fails closed when this exact browser profile is unavailable; later spawn/EOF/handshake/timeout failures map to a bounded infrastructure result after owned cleanup. No sandbox flag or artifact cap was relaxed. Safe test diagnostics retain only byte counts and fixed stderr tags.
+- Fresh root verification on this code: `make check` **1,290 passed** (290 + 877 + 123), `make browser` **45 passed** (43 + 2), strict real isolation subset **9 passed, zero skips**. Full strict test is still required on Fedora; hosted `Verify` may truthfully skip optional isolation when its Chromium sandbox capability is unavailable.
+- `7594a6c` diagnostic-test commit and `7c6deec` runtime fix are integrated. Do not merge the child branch's temporary `72d3b6a` diagnostic workflow into main. Await current main GitHub checks before claiming hosted green. F5's prepared mandatory hosted isolation lane remains open.
+
 ## November 1: pre-filming safety fixes and verified rehearsal (systems-codex-eval)
 
 - **Integrated code:** `b3f5bfe` includes CLI `80ca294`, proof `a071c6d`, UI contract `b1c0eae`, and filming claims/storyboard `e3dc207`. Four real Orca children worked in `film-cli-safety`, `film-proof-safety`, `film-demo-claims`, and `film-checkout-race`; all completed and were released. No fresh Meta repair trial was made.
