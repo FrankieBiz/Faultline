@@ -213,7 +213,7 @@ interaction with `ok`), `failure` (null when clean), and `reproduction_trail`
 (numbered plain-language steps with selectors), plus `stop_reason`
 (`exhausted`, `max_actions`, or `timeout`) for a crawl that found nothing. Only
 `exhausted` means exploration finished; the gate and the Inspector treat the
-others as inconclusive. The Inspector's **Unleash Autonomous Agent** button
+others as inconclusive. The Inspector's **Run Autonomous Exploration** button
 streams it live through `POST /api/faultline/crawl`, whose closing `done` event
 carries the same telemetry.
 
@@ -289,7 +289,7 @@ Static AST inspection and Git worktrees are policy and source-management tools; 
 ### Web Inspector studio (`localhost:4000`)
 
 - **1-2-3 guided demo.** The Demo Playground (sample store) runs **Break it** (the Playwright chaos crawler clicks through the store until checkout returns HTTP 500), the sandbox repair (labeled **Repair with Meta** only when the engine reports the Meta Model API), and **Apply fix** (hot-patch, then a live check confirms HTTP 201). Each step advances on recorded evidence, not clicks.
-- **Paste and go.** The hero arena at the top takes any URL (or a Storefront / Backend API / Custom Localhost preset); nothing asks for an expected status or error. **Unleash Autonomous Agent** (or Enter) streams a chaos crawl (`POST /api/faultline/crawl`) into the Live Agent Mission HUD: agent status, screens explored, actions, and defects; a step ticker of the crawler's real actions; then the intercepted failing request with its click trail and a one-click sandbox repair that carries on to the verified assertion count and **Apply Verified Fix to Demo Store** (bundled store only). Until the engine serves a crawler endpoint, a real two-session HTTP check stands in and the HUD labels it as such. **Quick HTTP Ping** sends a GET from two fresh sessions. Bare `localhost:3000/path` means http.
+- **Paste and go.** The hero arena at the top takes any URL (or a Storefront / Backend API / Custom Localhost preset); nothing asks for an expected status or error. **Run Autonomous Exploration** (or Enter) streams a chaos crawl (`POST /api/faultline/crawl`) into the Live Agent Mission HUD: agent status, screens explored, actions, and defects; a step ticker of the crawler's real actions; then the intercepted failing request with its click trail and a one-click sandbox repair that carries on to the verified assertion count and **Apply Verified Fix to Demo Store** (bundled store only). Until the engine serves a crawler endpoint, a real two-session HTTP check stands in and the HUD labels it as such. **Quick HTTP Ping** sends a GET from two fresh sessions. Bare `localhost:3000/path` means http.
 - **Scenario rail.** Repairable defects, project checks from `faultline.toml`, and your saved URLs, each with a status line: cyan while work is in flight, emerald only for evidence-verified repairs, red for failures.
 - **Live invariant tester.** Runs `[[invariants.rule]]` and `[scenarios.*]` from `faultline.toml` against the running store, in two sessions each.
 - **Custom URL check dialog.** Any method, JSON body, and expected status, validated in place.

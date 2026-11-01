@@ -1,5 +1,11 @@
 # Agent handoff state
 
+## November 1: Inspector immune-system branding (claude-immune-branding)
+
+- Inspector copy now matches the "Autonomous Immune System" identity. The h1 is **FaultLine Autonomous Immune System**; the hero button is **Run Autonomous Exploration** (busy: "Scanning preview…"); Guided Flow step 1 reads "Run Playwright crawler to reproduce defect". The terms "FaultLine Autonomous Bug Hunter", "Unleash Autonomous Agent", and "Run Playwright Chaos Crawler" are retired from the UI, the tests, and the README. They survive only in historical evaluation docs and in the older HANDOFF entries below.
+- Tests updated to match: the heading is a regex, the button name is exact, and the Break-it description is `/Playwright crawler/`. Counts are unchanged.
+- Verified: `make check` exit 0 (290 + 877 + 123), `make browser` exit 0 (43 + 2). In a fresh worktree run `npm ci` in all three Node packages and run `make check` before `make browser`, because the storefront suite needs the `.next` build that `make check` creates.
+
 ## November 1: hosted generic Chromium preflight (systems-codex-eval)
 
 - Hosted Verify at `94b99d7` failed the real generic Node repair before capture: Chromium exited with the fixed `No usable sandbox` marker, produced no captures, and its `JSONDecodeError` was obscured as a baseline `artifact_error`. This same issue appeared before filming work at `6ddd1f0`.

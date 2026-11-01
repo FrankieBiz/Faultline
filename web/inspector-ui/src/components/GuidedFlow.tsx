@@ -98,7 +98,7 @@ export default function GuidedFlow(props: {
     : { tone: "idle", text: "Unlocks after a verified repair" };
 
   const steps = [
-    { n: 1, title: "Break it", detail: "Run Playwright Chaos Crawler", status: step1, done: step1Done, enabled: canBreak, onClick: props.onBreak },
+    { n: 1, title: "Break it", detail: "Run Playwright crawler to reproduce defect", status: step1, done: step1Done, enabled: canBreak, onClick: props.onBreak },
     { n: 2, title: run.label, detail: "Sandboxed, verified by every check", status: step2, done: step2Done, enabled: canRepair, onClick: props.onRepair },
     { n: 3, title: "Apply fix", detail: "Checkout returns HTTP 201", status: step3, done: step3Done, enabled: canApply, onClick: props.onApply },
   ];

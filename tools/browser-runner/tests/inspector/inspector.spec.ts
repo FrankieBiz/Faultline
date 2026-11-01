@@ -414,7 +414,7 @@ test("the guided demo advances Break it, repair, and Apply fix on recorded evide
   await expect(flow.getByRole("button", { name: "Apply fix" })).toBeDisabled();
 
   // This engine has no crawler endpoint, so the store's checkout check stands in and the HUD says so.
-  await expect(flow.getByRole("button", { name: "Break it" })).toHaveAccessibleDescription(/Run Playwright Chaos Crawler/);
+  await expect(flow.getByRole("button", { name: "Break it" })).toHaveAccessibleDescription(/Playwright crawler/);
   await flow.getByRole("button", { name: "Break it" }).click();
   await expect(page.getByRole("heading", { name: "Failing", exact: true })).toBeVisible();
   expect(calls.crawls).toEqual([{ url: "http://127.0.0.1:3000", max_steps: 25 }]);
@@ -478,8 +478,8 @@ test("the header tests any URL without asking for an expected status, reusing it
   const field = page.getByRole("textbox", { name: "Target URL" });
   const ping = quick.getByRole("button", { name: "Quick HTTP Ping" });
   await expect(field).toHaveAttribute("placeholder", "http://localhost:3000/...");
-  await expect(page.getByRole("heading", { name: "FaultLine Autonomous Bug Hunter", level: 1 })).toBeVisible();
-  await expect(quick.getByRole("button", { name: "Unleash Autonomous Agent" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /FaultLine Autonomous Immune System/, level: 1 })).toBeVisible();
+  await expect(quick.getByRole("button", { name: "Run Autonomous Exploration" })).toBeVisible();
   // Presets fill the field; nothing runs until the agent is unleashed.
   await quick.getByRole("button", { name: "Storefront (port 3000)" }).click();
   await expect(field).toHaveValue("http://127.0.0.1:3000");
@@ -599,7 +599,7 @@ test("the mission HUD traces a seismograph, clocks the agent, and maps the journ
   await page.route("**/api/faultline/crawl", async (route) => { await held; await route.fallback(); });
   await page.goto("/");
   await page.getByRole("textbox", { name: "Target URL" }).fill("http://127.0.0.1:3000");
-  await page.getByRole("button", { name: "Unleash Autonomous Agent" }).click();
+  await page.getByRole("button", { name: "Run Autonomous Exploration" }).click();
   const hud = page.getByRole("region", { name: "Live Agent Mission · Playwright" });
   const clock = hud.locator(".hud-telemetry .hud-clock dd");
   await expect(hud).toHaveAttribute("data-seismic", "hunt");
@@ -637,7 +637,7 @@ test("a crawl defect no sandbox repair covers is detection only", async ({ page 
   ] } }) });
   await page.goto("/");
   await page.getByRole("textbox", { name: "Target URL" }).fill("localhost:5000/");
-  await page.getByRole("button", { name: "Unleash Autonomous Agent" }).click();
+  await page.getByRole("button", { name: "Run Autonomous Exploration" }).click();
   const banner = page.getByRole("region", { name: "Live Agent Mission · Playwright" }).getByRole("alert");
   await expect(banner).toContainText("HTTP 500 on GET /api/export");
   await expect(banner.getByRole("button", { name: "Auto-repair" })).toBeDisabled();
@@ -866,7 +866,7 @@ test("the mission HUD repairs, verifies, and applies the fix it caught", async (
   // A verified record from an earlier session is not this mission's repair.
   await page.goto("/");
   await page.getByRole("textbox", { name: "Target URL" }).fill("http://127.0.0.1:3000");
-  await page.getByRole("button", { name: "Unleash Autonomous Agent" }).click();
+  await page.getByRole("button", { name: "Run Autonomous Exploration" }).click();
   const hud = page.getByRole("region", { name: "Live Agent Mission · Playwright" });
   await expect(hud.getByRole("alert").getByRole("list", { name: "Click trail" }).getByRole("listitem")).toHaveText(["/", "“Place order”"]);
   await expect(hud).not.toContainText("Fix verified");
