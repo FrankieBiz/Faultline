@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { crawlCompleted, stopReasonOf } from "@/lib/agent-gate";
 import type { CheckRecord, CrawlEvent, CrawlTelemetry, Tone } from "@/lib/faultline-api";
 import { checkVerdict } from "@/lib/faultline-api";
 
@@ -76,6 +77,18 @@ const pathOf = (url: string) => {
   }
 };
 
+const STOPPED_BY: Record<string, string> = { max_actions: "its action budget", timeout: "its time limit" };
+
+/** Why a crawl that found nothing is still not a clean result. */
+function incompleteNote(telemetry: CrawlTelemetry | null): string {
+  const reason = stopReasonOf(telemetry);
+  const actions = telemetry?.actions_taken;
+  const stopped = !telemetry ? "The engine did not report how the crawl ended"
+    : reason ? `The crawl stopped at ${STOPPED_BY[reason] ?? `"${reason}"`}${typeof actions === "number" ? ` after ${plural(actions, "action")}` : ""}`
+    : "The crawler did not report whether it finished exploring";
+  return `No defect in the flows it explored, but this is inconclusive, not clean. ${stopped}, so unexplored flows remain. faultline gate blocks a run like this (incomplete_crawl).`;
+}
+
 /** Folds one crawler event into the HUD state. */
 export function applyCrawlEvent(state: CrawlState, event: CrawlEvent): CrawlState {
   const next: CrawlState = { ...state, phase: state.phase === "connecting" || state.phase === "retrying" ? "running" : state.phase, note: null };
@@ -108,8 +121,13 @@ export function applyCrawlEvent(state: CrawlState, event: CrawlEvent): CrawlStat
       const lines = at < 0 ? next.lines : next.lines.map((line, i) => i === at ? { ...line, caught } : line);
       return { ...next, phase: "caught", lines, defect: { ...event } };
     }
-    case "done":
-      return { ...next, phase: next.defect ? "caught" : "clean", telemetry: event.telemetry ?? null };
+    case "done": {
+      const telemetry = event.telemetry ?? null;
+      if (next.defect) return { ...next, phase: "caught", telemetry };
+      // Clean only when exploration finished; a budget or deadline stop found nothing in what it covered.
+      return crawlCompleted(telemetry) ? { ...next, phase: "clean", telemetry }
+        : { ...next, phase: "incomplete", telemetry, note: incompleteNote(telemetry) };
+    }
     case "error":
       return { ...next, phase: "failed", note: event.message };
   }
@@ -134,7 +152,7 @@ export function crawlFromCheck(state: CrawlState, record: CheckRecord, title: st
 
 const PHASE_LABEL: Record<CrawlState["phase"], string> = {
   connecting: "Launching", retrying: "Waking crawler", running: "Hunting", fallback: "Direct check",
-  caught: "Defect caught", clean: "Clean", incomplete: "Ended early", failed: "Stopped",
+  caught: "Defect caught", clean: "Clean", incomplete: "Inconclusive", failed: "Stopped",
 };
 const PHASE_TONE: Record<CrawlState["phase"], Tone | "active"> = {
   connecting: "active", retrying: "active", running: "active", fallback: "active",
@@ -337,7 +355,7 @@ export default function CrawlerHud(props: {
           <p className="hud-shield">
             <span aria-hidden="true">✅ </span>
             {crawler
-              ? `All screens and actions clean. 0 defects found across ${plural(screens, "screen")} and ${plural(actions, "action")}.`
+              ? `Exploration finished clean. 0 defects found across ${plural(screens, "screen")} and ${plural(actions, "action")}. A smoke signal for the flows explored, not a business-logic check.`
               : `Clean. 0 defects found in ${plural(telemetry[0][1], "fresh session")}.`}
           </p>
         )}

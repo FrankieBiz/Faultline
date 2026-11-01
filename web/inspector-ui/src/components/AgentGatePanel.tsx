@@ -2,14 +2,17 @@
 
 import { useId, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { crawlInFlight, crawlSummary, plural, Seismograph, type CrawlState, type Seismic } from "@/components/CrawlerHud";
-import { agentSnippets, DEFAULT_GATE_URL, gateErrorResult, gateResult, trailAction, type GateResult } from "@/lib/agent-gate";
+import { agentSnippets, crawlCompleted, DEFAULT_GATE_URL, gateErrorResult, gateResult, trailAction, type GateResult } from "@/lib/agent-gate";
 import type { CrawlTelemetry } from "@/lib/faultline-api";
 
 type Verdict = "idle" | "running" | "safe" | "blocked" | "inconclusive";
 
+// Only a crawl that finished exploring clears the gate. A direct HTTP check is not a gate crawl, so
+// even a passing one leaves the gate inconclusive, as `faultline gate` would be without its crawler.
 const verdictOf = (state: CrawlState | null): Verdict =>
   !state ? "idle" : crawlInFlight(state) ? "running"
-    : state.phase === "clean" ? "safe" : state.phase === "caught" ? "blocked" : "inconclusive";
+    : state.phase === "caught" ? "blocked"
+    : state.phase === "clean" && state.source === "playwright" && crawlCompleted(state.telemetry) ? "safe" : "inconclusive";
 
 const SEISMIC: Record<Verdict, Seismic> = { idle: "still", running: "hunt", safe: "resonance", blocked: "rupture", inconclusive: "still" };
 
@@ -90,7 +93,8 @@ function Payload({ result, exact, onCopied }: { result: GateResult; exact: boole
       <p className="gate-payload-note">
         {exact ? <>The same <code>agent_remediation_prompt</code> and verdict that <code>faultline gate --json</code> returns for this run.</>
           : <>Built from this run in the <code>faultline gate --json</code> format.</>}{" "}
-        Hand it to the coding agent, then fix the bug and run the gate again.
+        {result.failure ? "Hand it to the coding agent, then fix the bug and run the gate again."
+          : "Hand it to the coding agent: it says why the gate could not pass and what to do before deploying."}
       </p>
     </figure>
   );
@@ -193,8 +197,14 @@ export default function AgentGatePanel(props: {
 
   // The crawler's final report is authoritative; fields it lacks come from the run's own lines.
   const exact = Boolean(state?.telemetry?.status);
+  // A crawl that found nothing but stopped early has a report, and the CLI's own inconclusive verdict.
+  const unfinished = verdict === "inconclusive" && state?.source === "playwright" && state.telemetry?.status === "clean";
   const result: GateResult | null = !state || verdict === "idle" || verdict === "running" ? null
-    : verdict === "inconclusive" ? gateErrorResult(state.note ?? "the crawl ended before it reported a result", state.target)
+    : unfinished ? gateResult({ ...telemetryFromState(state), ...state.telemetry }, state.target)
+    : verdict === "inconclusive" ? gateErrorResult(
+      state.source === "check" && state.phase === "clean"
+        ? "The Playwright crawler did not run. A direct HTTP check passed, but one request is not a crawl of the preview."
+        : state.note ?? "the crawl ended before it reported a result", state.target)
     : gateResult({ ...telemetryFromState(state), ...state.telemetry }, state.target);
   const elements = state?.telemetry?.elements_explored ?? null;
 
@@ -268,8 +278,8 @@ export default function AgentGatePanel(props: {
                     <div data-tone="ok"><dt>Defects</dt><dd>0</dd></div>
                   </dl>
                   <p className="gate-confirm">
-                    {exact && result ? result.summary : `Zero defects. ${crawler ? `Every action across ${plural(summary.screens, "screen")} completed without a failing request.` : state.note ?? "Both fresh sessions passed."}`}{" "}
-                    <code>faultline gate</code> exits 0, so the deploy may proceed.
+                    {exact && result ? result.summary : `Zero defects. Every action across ${plural(summary.screens, "screen")} completed without a failing request.`}{" "}
+                    <code>faultline gate</code> exits 0: a smoke signal for the flows it explored, not proof the business logic is right.
                   </p>
                   <div className="gate-actions"><button type="button" className="btn quiet" onClick={props.onReset}>Clear</button></div>
                 </div>
@@ -308,11 +318,21 @@ export default function AgentGatePanel(props: {
 
               {verdict === "inconclusive" && state && (
                 <div className="gate-result" data-tone="warn">
-                  <p className="gate-badge" data-tone="warn"><span aria-hidden="true">🛡️ </span>Verdict: Deployment blocked</p>
+                  <p className="gate-badge" data-tone="warn"><span aria-hidden="true">🛡️ </span>Verdict: Inconclusive · deployment blocked</p>
+                  {unfinished && summary && (
+                    <dl className="gate-stats">
+                      {elements !== null && <div><dt>Elements</dt><dd>{elements}</dd></div>}
+                      <div><dt>Actions</dt><dd>{summary.actions}</dd></div>
+                      <div><dt>Screens</dt><dd>{summary.screens}</dd></div>
+                      <div data-tone="warn"><dt>Stopped by</dt><dd>{result?.stop_reason ?? "unknown"}</dd></div>
+                    </dl>
+                  )}
                   <p className="gate-confirm">
-                    The gate could not finish, so it fails closed. {sentence(state.note ?? "The crawl ended before it reported a result.")} <code>faultline gate</code> exits 1 here too.
+                    {unfinished && result ? <>No defect in the flows it explored, but exploration did not finish, so this is not a pass. {result.summary}</>
+                      : <>The gate could not finish, so it fails closed. {sentence(result?.error?.message ?? state.note ?? "The crawl ended before it reported a result.")}</>}{" "}
+                    <code>faultline gate</code> exits 1 here too.
                   </p>
-                  {result && <Payload key={state.startedAt} result={result} exact={false} onCopied={setCopied} />}
+                  {result && <Payload key={state.startedAt} result={result} exact={unfinished && exact} onCopied={setCopied} />}
                   <div className="gate-actions"><button type="button" className="btn quiet" onClick={props.onReset}>Clear</button></div>
                 </div>
               )}

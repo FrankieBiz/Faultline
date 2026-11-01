@@ -1,6 +1,6 @@
 /**
- * The Pre-Flight Agent Gate in the Inspector: a TypeScript port of `gate_result` and
- * `remediation_prompt` in services/repair-orchestrator/app/cli_crawl.py, so a gate run here
+ * The Pre-Flight Agent Gate in the Inspector: a TypeScript port of `gate_result`,
+ * `gate_error_result`, and `remediation_prompt` in services/repair-orchestrator/app/cli_crawl.py, so a gate run here
  * reports the same verdict, summary, and agent fix prompt as `faultline gate URL --json`.
  * Keep the two in step. docs/index.html carries the same snippets; the "Agent Skill" tab is
  * .agents/skills/faultline-gate/SKILL.md verbatim (tests/test_agent_gate_snippets.py checks both).
@@ -18,6 +18,9 @@ export interface GateResult {
   target_url: string;
   summary: string;
   elements_explored: number;
+  actions_taken: number;
+  /** The crawler's stop reason; only "exhausted" (exploration finished) can pass. */
+  stop_reason: string | null;
   screens_visited: NonNullable<CrawlTelemetry["screens_visited"]>;
   failure: CrawlFailure | null;
   reproduction_trail: string[];
@@ -99,29 +102,47 @@ export function remediationPrompt(telemetry: CrawlTelemetry, failure: CrawlFailu
   return lines.join("\n");
 }
 
-/** The verdict for a crawl, in the documented JSON contract. */
+/** `stop_reason` as `crawler_service.telemetry` passes it on: a string, or null. */
+export const stopReasonOf = (telemetry: CrawlTelemetry | null | undefined): string | null =>
+  typeof telemetry?.stop_reason === "string" ? telemetry.stop_reason : null;
+
+/** Whether a crawl may pass the gate: it found nothing and finished exploring (`stop_reason` "exhausted"). */
+export const crawlCompleted = (telemetry: CrawlTelemetry | null | undefined) =>
+  telemetry?.status === "clean" && stopReasonOf(telemetry) === "exhausted";
+
+/**
+ * The verdict for a crawl, in the documented JSON contract. A clean crawl passes only when it
+ * finished exploring; one stopped by its action budget or deadline (or that does not say why it
+ * stopped) is inconclusive and blocks, with no failure and an `incomplete_crawl` error.
+ */
 export function gateResult(telemetry: CrawlTelemetry, url: string): GateResult {
   const screens = telemetry.screens_visited ?? [];
   const explored = telemetry.elements_explored ?? 0;
   const actions = telemetry.actions_taken ?? telemetry.actions?.length ?? 0;
+  const stopReason = stopReasonOf(telemetry);
   const target = telemetry.target_url || url;
   const trail = telemetry.reproduction_trail ?? [];
   const failure = telemetry.failure ?? null;
+  const passed = crawlCompleted(telemetry);
   let summary: string;
   let prompt: string | null = null;
   let error: GateResult["error"] = null;
-  if (telemetry.status === "clean") {
-    summary = `No defects found: explored ${plural(explored, "element")} across ${plural(screens.length, "screen")} with ${plural(actions, "action")}.`;
+  if (passed) {
+    summary = `No defects found in explored flows: explored ${plural(explored, "element")} across ${plural(screens.length, "screen")} with ${plural(actions, "action")}. This does not establish business completeness.`;
+  } else if (telemetry.status === "clean") {
+    const message = `Exploration stopped with ${stopReason || "no completion reason"} after ${plural(actions, "action")}; completion was not established.`;
+    error = { code: "incomplete_crawl", message };
+    summary = `Gate inconclusive: ${message}`;
+    prompt = incompletePrompt(message, target);
   } else if (failure) {
     summary = `Defect intercepted: ${describeSignal(failure)} after ${plural(actions, "action")} across ${plural(screens.length, "screen")}.`;
     prompt = remediationPrompt({ ...telemetry, reproduction_trail: trail }, failure, target);
   } else {
-    const message = "the crawl ended without a verdict";
+    const message = String(telemetry.error || "the crawl ended without a verdict");
     error = { code: "crawl_error", message };
     summary = `Gate could not complete the crawl: ${message}`;
     prompt = gateErrorPrompt(message, target);
   }
-  const passed = telemetry.status === "clean";
   return {
     gate_status: passed ? "PASSED" : "FAILED",
     verdict: passed ? "SAFE_TO_DEPLOY" : "DEPLOYMENT_BLOCKED",
@@ -129,6 +150,8 @@ export function gateResult(telemetry: CrawlTelemetry, url: string): GateResult {
     target_url: target,
     summary,
     elements_explored: explored,
+    actions_taken: actions,
+    stop_reason: stopReason,
     screens_visited: screens,
     failure,
     reproduction_trail: trail,
@@ -137,6 +160,9 @@ export function gateResult(telemetry: CrawlTelemetry, url: string): GateResult {
   };
 }
 
+const incompletePrompt = (message: string, url: string) =>
+  `The FaultLine gate is inconclusive for ${url}: ${message} Increase --max-actions and --timeout within their supported limits, then re-run \`faultline gate ${url} --json\`. If exploration still cannot finish, investigate the unfinished flows and retain independent business checks. Do not deploy until the gate exits 0.`;
+
 const gateErrorPrompt = (message: string, url: string) =>
   `The FaultLine gate could not explore ${url} (crawl_error): ${message} Make sure the preview server is running and the browser runner is built, then re-run \`faultline gate ${url} --json\`. Do not deploy until the gate exits 0.`;
 
@@ -144,7 +170,7 @@ const gateErrorPrompt = (message: string, url: string) =>
 export function gateErrorResult(message: string, url: string): GateResult {
   return {
     gate_status: "FAILED", verdict: "DEPLOYMENT_BLOCKED", exit_code: 1, target_url: url,
-    summary: `Gate could not run: ${message}`, elements_explored: 0, screens_visited: [], failure: null,
+    summary: `Gate could not run: ${message}`, elements_explored: 0, actions_taken: 0, stop_reason: null, screens_visited: [], failure: null,
     reproduction_trail: [], agent_remediation_prompt: gateErrorPrompt(message, url), error: { code: "crawl_error", message },
   };
 }
@@ -179,11 +205,18 @@ description: Use before declaring a web-app task done, opening or updating a pul
 
 ## Overview
 
-\`faultline gate\` points headless Chromium at a running site, explores every
-same-origin screen, fills forms, clicks controls, and stops at the first
-defect: an HTTP 4xx/5xx from the app's own API, a failed request, an uncaught
-JavaScript exception, or a \`console.error\`. It returns one verdict:
-\`SAFE_TO_DEPLOY\` (exit 0) or \`DEPLOYMENT_BLOCKED\` (exit 1).
+\`faultline gate\` points headless Chromium at a running site and explores
+same-origin screens with deterministic heuristics: it fills forms, clicks
+controls, and stops at the first defect: an HTTP 4xx/5xx from the app's own
+API, a failed request, an uncaught JavaScript exception, or a \`console.error\`.
+It returns one verdict: \`SAFE_TO_DEPLOY\` (exit 0) or \`DEPLOYMENT_BLOCKED\`
+(exit 1).
+
+The gate passes only when the crawl found nothing **and** finished exploring
+(\`stop_reason: "exhausted"\`). A crawl that ran out of actions or time, or did
+not say why it stopped, is inconclusive and blocks. Even a pass is a bounded
+smoke signal for the flows the crawler reached. It does not check business
+rules such as prices or totals; keep the project's own tests and assertions.
 
 **Core rule:** a change to a web app is not done until the gate exits 0
 against the running app. Unit tests passing is not the same as the clicked
@@ -220,9 +253,10 @@ that does not change the app). Say that you skipped it and why.
 
 | Exit | Verdict | What it means | What you do |
 | --- | --- | --- | --- |
-| \`0\` | \`SAFE_TO_DEPLOY\` | Every explored flow was clean. | Proceed. Mention the gate result (elements and screens explored) in your summary or PR body. |
+| \`0\` | \`SAFE_TO_DEPLOY\` | Exploration finished and every explored flow was clean. | Proceed. Mention the gate result (elements and screens explored) in your summary or PR body. |
 | \`1\` | \`DEPLOYMENT_BLOCKED\` with \`failure\` set | FaultLine intercepted a defect. | Enter the self-healing loop below. Do **not** commit as done, open the PR, or deploy. |
-| \`1\` | \`DEPLOYMENT_BLOCKED\` with \`error\` set and \`failure: null\` | The gate could not explore the site (server down, page would not load, browser runner not built). | Fix the environment named in \`error.message\`, then re-run. This is not a pass. |
+| \`1\` | \`DEPLOYMENT_BLOCKED\` with \`error.code: "incomplete_crawl"\` and \`failure: null\` | Inconclusive: no defect in what was explored, but the crawl stopped at \`stop_reason\` (\`max_actions\`, \`timeout\`, or none) before exploring everything. | Re-run with higher \`--max-actions\` and \`--timeout\` within their limits. If it still cannot finish, report the unfinished flows to the user. This is not a pass. |
+| \`1\` | \`DEPLOYMENT_BLOCKED\` with another \`error\` and \`failure: null\` | The gate could not explore the site (server down, page would not load, browser runner not built). | Fix the environment named in \`error.message\`, then re-run. This is not a pass. |
 | \`2\` | \`DEPLOYMENT_BLOCKED\` | Invalid arguments or URL. | Correct the command (absolute \`http://\` or \`https://\` URL) and re-run. |
 
 ## JSON schema
@@ -235,6 +269,8 @@ that does not change the app). Say that you skipped it and why.
   "target_url": "http://127.0.0.1:3000/",
   "summary": "Defect intercepted: HTTP 500 on POST /api/checkout after 3 actions across 2 screens.",
   "elements_explored": 20,
+  "actions_taken": 3,
+  "stop_reason": null,               // "exhausted" | "max_actions" | "timeout" | null; only "exhausted" passes
   "screens_visited": [{"url": "...", "path": "/checkout", "title": "Checkout", "elements": 11, "forms": 1}],
   "failure": {                       // null when the gate passed or could not run
     "kind": "http_error" | "request_failed" | "page_error" | "console_error",
@@ -249,7 +285,7 @@ that does not change the app). Say that you skipped it and why.
     "4. Click button \\"Place order\\" on /checkout [button:has-text(\\"Place order\\")] -> HTTP 500 on POST /api/checkout"
   ],
   "agent_remediation_prompt": "FaultLine caught an unhandled HTTP 500 error on POST /api/checkout. Triggered by clicking ...",
-  "error": null                      // {"code": "...", "message": "..."} when the gate could not run
+  "error": null                      // {"code": "...", "message": "..."} when the gate could not run or was inconclusive
 }
 \`\`\`
 
@@ -263,6 +299,8 @@ required fix. Treat it as your next instruction.
 gate --json
   exit 0 ──────────────► done: report the verdict, continue to commit / PR / deploy
   exit 2 ──────────────► fix the command, re-run
+  exit 1, incomplete ──► raise --max-actions / --timeout within limits, re-run;
+                         still incomplete: report the unfinished flows, do not deploy
   exit 1, error set ───► fix the environment (start server, build runner), re-run
   exit 1, failure set ─► 1. read agent_remediation_prompt and failure
                          2. reproduce: follow reproduction_trail; find the handler for
@@ -285,7 +323,7 @@ Rules for the loop:
 
 When the gate passes, include one line in your final summary or PR body:
 
-> FaultLine gate: SAFE_TO_DEPLOY, 20 elements across 2 screens explored on http://127.0.0.1:3000.
+> FaultLine gate: SAFE_TO_DEPLOY (exploration finished), 20 elements across 2 screens explored on http://127.0.0.1:3000. Explored flows only; business rules are covered by the project's tests.
 
 When you hand a blocked gate to the user, paste \`summary\`, the
 \`reproduction_trail\`, and the \`agent_remediation_prompt\` verbatim.
@@ -308,9 +346,11 @@ export const agentSnippets = (url: string = DEFAULT_GATE_URL): AgentSnippet[] =>
 Before you call a web change done, commit it, open or update a pull request, or deploy:
 1. Start the preview server and wait until it answers.
 2. Run: faultline gate ${url} --json
-3. Exit 0 (SAFE_TO_DEPLOY): continue, and report the elements and screens explored.
-4. Exit 1 (DEPLOYMENT_BLOCKED): treat \`agent_remediation_prompt\` as your next
-   instruction. Follow \`reproduction_trail\`, fix the root cause in source
+3. Exit 0 (SAFE_TO_DEPLOY): exploration finished with no defect in the flows it
+   reached. Continue, and report the elements and screens explored.
+4. Exit 1 (DEPLOYMENT_BLOCKED): a defect, or a crawl that stopped early
+   (inconclusive). Treat \`agent_remediation_prompt\` as your next instruction.
+   For a defect, follow \`reproduction_trail\`, fix the root cause in source
    (never swallow the error or hide the control), and run the gate again.
 5. Exit 2: fix the command. Never deploy or report success until the gate exits 0.`,
   },
@@ -356,7 +396,7 @@ jobs:
 ./faultline gate ${url} --json            # one JSON verdict for agents
 ./faultline gate ${url} --format agent    # plain text for an LLM prompt
 ./faultline gate ${url} --markdown        # PR comment or job summary
-# exit 0 SAFE_TO_DEPLOY · exit 1 DEPLOYMENT_BLOCKED · exit 2 invalid input`,
+# exit 0 SAFE_TO_DEPLOY (finished, clean) · exit 1 DEPLOYMENT_BLOCKED (defect or incomplete) · exit 2 invalid input`,
   },
   {
     id: "skill",
