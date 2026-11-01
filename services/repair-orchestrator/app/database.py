@@ -2,13 +2,15 @@
 
 Connections may be shared with FastAPI's thread pool. A reentrant lock protects
 each connection, while BEGIN IMMEDIATE arbitrates admission between connections
-and processes. No transaction spans an await or an external side effect.
+and processes. No transaction spans an await. Final proof publication alone
+holds a transaction across bounded, local evidence writes so registrations and
+the terminal outcome commit together.
 """
 
 import hashlib
 import json
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -156,14 +158,21 @@ class Database:
     @contextmanager
     def _transaction(self) -> Iterator[None]:
         with self._lock:
-            self._connection.execute("BEGIN IMMEDIATE")
+            savepoint = f"nested_{uuid4().hex}" if self._connection.in_transaction else None
+            self._connection.execute(f"SAVEPOINT {savepoint}" if savepoint else "BEGIN IMMEDIATE")
             try:
                 yield
+                if savepoint:
+                    self._connection.execute(f"RELEASE {savepoint}")
+                else:
+                    self._connection.commit()
             except BaseException:
-                self._connection.rollback()
+                if savepoint:
+                    self._connection.execute(f"ROLLBACK TO {savepoint}")
+                    self._connection.execute(f"RELEASE {savepoint}")
+                else:
+                    self._connection.rollback()
                 raise
-            else:
-                self._connection.commit()
 
     def close(self) -> None:
         """Close the owned connection after worker and streams have stopped."""
@@ -458,6 +467,29 @@ class Database:
                 self._save_job(job)
                 self._event(job, "cancel_requested", "Cancellation requested.")
             return job
+
+    def finalize_verified(
+        self, job_id: str, publish: Callable[[OrchestratorJob], None]
+    ) -> OrchestratorJob:
+        """Commit final proof registrations, outcome and lease release atomically.
+
+        A publication/terminal write failure rolls back all registrations. Files
+        from a process crash may remain unregistered; exports cannot serve them.
+        The caller owns deletion on ordinary publication failures and records an
+        artifact_error after rollback. Cancellation cannot race publication.
+        """
+        with self._transaction():
+            job = self._job(job_id)
+            if (
+                job.state != JobState.RUNNING
+                or job.stage != JobStage.CLEANUP
+                or (job.cleanup_status != CleanupStatus.SUCCEEDED)
+            ):
+                raise DatabaseError("proof_requires_confirmed_cleanup", 409, job_id)
+            if job.cancel_requested:
+                return self.finish_job(job_id, TerminalOutcome.CANCELLED, clean=True)
+            publish(job)
+            return self.finish_job(job_id, TerminalOutcome.VERIFIED, clean=True)
 
     def finish_job(
         self,

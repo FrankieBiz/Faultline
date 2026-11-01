@@ -18,8 +18,10 @@ from typing import Any
 from shared.contracts.models import (
     ArtifactSummary,
     ContractModel,
+    ExecutionRecord,
     ExecutionReport,
     OrchestratorJob,
+    RepairAttempt,
 )
 
 DESCRIPTIONS = {
@@ -60,6 +62,11 @@ class ProofBundle(ContractModel):
     assertions_total: int
     regressions_count: int
     evidence_manifest: list[EvidenceDigest]
+    lifecycle: dict[str, Any]
+    source: dict[str, Any]
+    generation: dict[str, Any]
+    executions: list[dict[str, Any]]
+    containment: str
     bundle_digest: str
 
 
@@ -81,8 +88,50 @@ class ProofBundleCompiler:
         verification_report: ExecutionReport,
         diff: str,
         artifacts: Sequence[ArtifactSummary] | None = None,
+        *,
+        executions: Sequence[ExecutionRecord],
+        attempt: RepairAttempt,
     ) -> tuple[ProofBundle, str]:
-        """Return the bundle and its summary, deriving every value from the reports."""
+        """Bind final cleanup to recorded provenance, without inventing containment.
+
+        The worker calls this synchronously after confirmed cleanup, immediately
+        before terminal persistence. It must never pass a synthetic completed job.
+        """
+        if job.cleanup_status.value != "succeeded" or job.cancel_requested:
+            raise ValueError("Final proof requires confirmed cleanup and no cancellation")
+        if job.state.value != "running" or job.stage.value != "cleanup" or job.outcome is not None:
+            raise ValueError("Final proof requires an active finalization transaction")
+        if attempt.job_id != job.id or attempt.parsed_diff != diff:
+            raise ValueError("Proof attempt identity or diff mismatch")
+        if any(e.job_id != job.id or e.report.scenario_id != job.scenario_id for e in executions):
+            raise ValueError("Proof execution identity mismatch")
+        if any(a.job_id != job.id for a in artifacts or []):
+            raise ValueError("Proof artifact identity mismatch")
+        baseline = next((e for e in executions if e.report == baseline_report), None)
+        verification = next((e for e in executions if e.report == verification_report), None)
+        validation = attempt.validation_result or {}
+        if (
+            baseline is None
+            or baseline.phase != "baseline"
+            or baseline.report.execution_id != job.baseline_execution_id
+            or baseline.report.verdict.value != "failed"
+            or verification is None
+            or verification.phase != "verification"
+            or verification.attempt_id != attempt.id
+            or verification.report.verdict.value != "passed"
+            or not verification.report.assertions
+            or any(not a.passed for a in verification.report.assertions)
+            or validation.get("verification_execution_id") != verification.report.execution_id
+            or validation.get("candidate_sha256") != verification.candidate_snapshot_sha256
+            or validation.get("app_generation_id") != verification.app_generation_id
+            or validation.get("base_sha256") != job.seed_source_hash
+            or not validation.get("target_sha256")
+            or not job.seed_source_hash
+            or not job.seed_commit
+        ):
+            raise ValueError(
+                "Final proof requires matching source, generation and verified reports"
+            )
         manifest = [
             EvidenceDigest(
                 id=item.id,
@@ -104,7 +153,7 @@ class ProofBundleCompiler:
         )
         regressions = sum(1 for item in verification_report.assertions if not item.passed)
         fields: dict[str, Any] = {
-            "schema_version": "2.0",
+            "schema_version": "3.0",
             "job_id": job.id,
             "scenario_id": job.scenario_id,
             "timestamp": datetime.now(UTC).isoformat(),
@@ -119,6 +168,62 @@ class ProofBundleCompiler:
             "assertions_total": len(verification_report.assertions),
             "regressions_count": regressions,
             "evidence_manifest": [item.model_dump() for item in manifest],
+            "lifecycle": {
+                "finalized": True,
+                "state": "succeeded",
+                "outcome": "verified",
+                "cleanup_status": job.cleanup_status.value,
+            },
+            "source": {
+                "seed_commit": job.seed_commit,
+                "seed_source_sha256": job.seed_source_hash,
+                "fixture_version": job.fixture_version,
+                "scenario_version": job.scenario_version,
+            },
+            "generation": {
+                "attempt_id": attempt.id,
+                "baseline_execution_id": baseline_report.execution_id,
+                "verification_execution_id": verification_report.execution_id,
+                **{
+                    key: (attempt.validation_result or {}).get(key)
+                    for key in (
+                        "provider",
+                        "model",
+                        "base_sha256",
+                        "target_sha256",
+                        "candidate_sha256",
+                        "app_generation_id",
+                    )
+                },
+            },
+            "executions": [
+                {
+                    "execution_id": e.report.execution_id,
+                    "phase": e.phase,
+                    "attempt_id": e.attempt_id,
+                    "app_generation_id": e.app_generation_id,
+                    "candidate_snapshot_sha256": e.candidate_snapshot_sha256,
+                    "runtime_kind": e.runtime_kind,
+                    "resource_limits": e.resource_limits.model_dump()
+                    if e.resource_limits
+                    else None,
+                    "artifact_ids": e.artifact_ids,
+                    "verdict": e.report.verdict.value,
+                    "assertions_total": len(e.report.assertions),
+                    "regressions_count": sum(not a.passed for a in e.report.assertions),
+                }
+                for e in executions
+            ],
+            "containment": "recorded-isolated"
+            if executions
+            and all(
+                e.runtime_kind == "isolated-browser"
+                and e.resource_limits is not None
+                and e.resource_limits.mode == "cgroup-v2-scope"
+                and e.resource_limits.verified
+                for e in executions
+            )
+            else "not-established",
         }
         bundle = ProofBundle.model_validate({**fields, "bundle_digest": bundle_digest(fields)})
         return bundle, self._markdown(bundle, verification_report)
@@ -139,6 +244,8 @@ class ProofBundleCompiler:
             f"| Assertions passed | {bundle.assertions_total - bundle.regressions_count} "
             f"of {bundle.assertions_total} |",
             f"| Bundle status | `{bundle.status}` |",
+            "| Final cleanup | `succeeded` |",
+            f"| Recorded containment | `{bundle.containment}` |",
             f"| Bundle SHA-256 | `{bundle.bundle_digest}` |",
             "",
             "## Patch",
