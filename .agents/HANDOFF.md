@@ -1,5 +1,12 @@
 # Agent handoff state
 
+## November 1: crawler commit safety, merge rollback, audit record (claude-crawler-safety)
+
+- The autonomous crawler never clicks COMMIT-named controls (Place order, Pay, Purchase, Submit, Send, Save, …) unless the start origin is disposable (`isLocalHost`: `localhost`/`*.localhost`, 127/8, 0/8, RFC 1918, `::1`, `fc00::/7`, IPv4-mapped forms) or `allowCommitActions` / runner `--allow-commit-actions` is set. Hostnames are not resolved. The report schema is unchanged. Known gaps: unlabeled submit buttons and "Continue"-style checkout steps are still clicked on external sites, and the Python `gate`/`scan`/`crawl` commands do not yet expose the opt-in.
+- `scripts/orca-child.sh merge` refuses a dirty tracked tree, records the pre-merge HEAD, and on a failed `make check` runs `git reset --hard` back to it and exits 1. Verified against a scratch repo (fail → rolled back, dirty → refused, pass → kept).
+- `docs/FULL_CODEBASE_AUDIT_REPORT.md` holds the `koi` session's static audit word for word, plus a status addendum.
+- Verification: `npm run check` in `tools/browser-runner` passed 126 tests (the package has no `npm test` script). `make check` exited 0: 324 passed + 23 skipped, then 926, then 126. A fresh worktree needs `npm ci` in all three Node packages first.
+
 ## November 1: Windows controller import and demo builds (codex-windows-fcntl-fix)
 
 - Guarded the `app.run` import of `fcntl`, which `app.main` reaches through `project_budgets`. `run_project` falls back to a nonblocking `msvcrt` byte lock and releases it on success or worker failure; Unix retains `flock`.

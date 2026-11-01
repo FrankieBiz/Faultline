@@ -164,14 +164,26 @@ cmd_merge() {
     exit 1
   fi
 
-  local branch
+  # A failed check rolls back with `git reset --hard`, which would also discard
+  # uncommitted tracked changes, so refuse to merge into a dirty tree.
+  if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
+    echo "Error: uncommitted changes in $(pwd); commit them before merging" >&2
+    exit 1
+  fi
+
+  local branch merge_head
   branch="$(git -C "$wt_path" rev-parse --abbrev-ref HEAD)"
+  merge_head="$(git rev-parse HEAD)"
   echo "==> Fetching branch '${branch}' from child worktree '${wt_path}'"
   git fetch "$wt_path" "$branch"
   echo "==> Merging FETCH_HEAD..."
   git merge --no-edit FETCH_HEAD
   echo "==> Running verification gate: make check"
-  make check
+  if ! make check; then
+    echo "Error: make check failed after merging '${branch}'; rolling back to ${merge_head}" >&2
+    git reset --hard "$merge_head"
+    exit 1
+  fi
   echo "==> Child worktree '${name}' merged and verified successfully!"
 }
 

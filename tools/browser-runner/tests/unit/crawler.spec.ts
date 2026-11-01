@@ -9,6 +9,7 @@ import {
   formatCrawlEvent,
   formatReproductionTrail,
   isFailureResponse,
+  isLocalHost,
   labelOf,
   normalizeUrl,
   primarySignal,
@@ -69,7 +70,8 @@ function field(overrides: Partial<FieldInfo>): FieldInfo {
 }
 
 test.describe("crawler heuristics", () => {
-  const context = { origin: ORIGIN, visited: new Set([`${ORIGIN}/`]) };
+  // shop.test is not a local host; these heuristics tests opt in to commit clicks.
+  const context = { origin: ORIGIN, visited: new Set([`${ORIGIN}/`]), allowCommit: true };
   const score = (overrides: Partial<ClickableInfo>) => scoreClickable(clickable(overrides), context);
 
   test("walks a shopping funnel: commit, checkout, content link, add to cart, other", () => {
@@ -99,6 +101,32 @@ test.describe("crawler heuristics", () => {
     expect(score({ tag: "a", text: "Home", href: `${ORIGIN}/#top` })).toBeNull();
     expect(score({ tag: "a", text: "Invoice", href: `${ORIGIN}/invoice.pdf` })).toBeNull();
     expect(score({ tag: "a", text: "Broken", href: "not a url" })).toBeNull();
+  });
+
+  test("classifies localhost, loopback, and private addresses as disposable", () => {
+    for (const host of ["localhost", "app.localhost", "127.0.0.1", "127.8.9.10", "0.0.0.0", "10.1.2.3", "172.16.0.1", "172.31.255.255", "192.168.1.20", "[::1]", "::1", "[fd12:3456::1]", "[::ffff:7f00:1]", "::ffff:192.168.0.1"]) {
+      expect(isLocalHost(host), host).toBe(true);
+    }
+    for (const host of ["example.com", "shop.test", "localhost.example.com", "10.example.com", "8.8.8.8", "172.15.0.1", "172.32.0.1", "192.169.0.1", "[2001:db8::1]", "[fe80::1]", "[::ffff:808:808]"]) {
+      expect(isLocalHost(host), host).toBe(false);
+    }
+  });
+
+  test("never clicks commit buttons on an external origin unless allowed", () => {
+    const placeOrder = clickable({ text: "Place order", type: "submit", submit: true });
+    const visited = new Set<string>();
+    for (const text of ["Place order", "Pay now", "Purchase", "Buy now", "Submit", "Confirm", "Create account", "Send"]) {
+      expect(scoreClickable(clickable({ text }), { origin: "https://shop.example.com", visited }), text).toBeNull();
+    }
+    expect(scoreClickable(placeOrder, { origin: "https://shop.example.com", visited, allowCommit: false })).toBeNull();
+    expect(scoreClickable(placeOrder, { origin: "https://shop.example.com", visited, allowCommit: true })).toBe(50);
+    expect(scoreClickable(placeOrder, { origin: "http://127.0.0.1:3000", visited })).toBe(50);
+    expect(scoreClickable(placeOrder, { origin: "http://[::1]:3000", visited })).toBe(50);
+    expect(scoreClickable(placeOrder, { origin: "http://192.168.1.20:8080", visited })).toBe(50);
+    // An explicit false wins even on a local origin.
+    expect(scoreClickable(placeOrder, { origin: "http://localhost:3000", visited, allowCommit: false })).toBeNull();
+    // Other controls on an external site are still explored.
+    expect(scoreClickable(clickable({ text: "Add to cart" }), { origin: "https://shop.example.com", visited })).toBe(25);
   });
 
   test("labels symbol-only controls by their accessible name", () => {
@@ -433,6 +461,27 @@ test.describe("runAutonomousCrawler in Chromium", () => {
       submit: true,
       ok: false,
     });
+  });
+
+  test("does not place orders on an external origin without --allow-commit-actions", async () => {
+    // Resolve a public-looking hostname to the fixture so the crawl sees an external origin.
+    const external = await chromium.launch({ headless: true, args: ["--host-resolver-rules=MAP shop.example.com 127.0.0.1"] });
+    try {
+      const url = `${shop.origin.replace("127.0.0.1", "shop.example.com")}/`;
+      const report = await runAutonomousCrawler({ url, browser: external });
+      expect(report.status).toBe("clean");
+      expect(report.breadcrumbs.map(({ label }) => label)).toEqual(expect.arrayContaining(["Add to cart", "Proceed to checkout", "Name", "Email"]));
+      expect(report.breadcrumbs.map(({ label }) => label)).not.toContain("Place order");
+      expect(shop.hits).toContain("GET /checkout");
+      expect(shop.hits).not.toContain("POST /api/checkout");
+
+      shop.hits.length = 0;
+      const allowed = await runAutonomousCrawler({ url, browser: external, allowCommitActions: true });
+      expect(allowed.status).toBe("failure");
+      expect(shop.hits).toContain("POST /api/checkout");
+    } finally {
+      await external.close();
+    }
   });
 
   test("clicks script-driven product cards through to the checkout failure", async () => {

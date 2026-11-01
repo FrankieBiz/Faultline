@@ -59,7 +59,13 @@ async function crawl(command: Extract<CliCommand, { kind: "crawl" }>): Promise<n
   };
   let report: CrawlReport;
   try {
-    report = await runAutonomousCrawler({ url: command.url, maxActions: command.maxActions, timeoutMs: command.timeoutMs, onEvent });
+    report = await runAutonomousCrawler({
+      url: command.url,
+      maxActions: command.maxActions,
+      timeoutMs: command.timeoutMs,
+      allowCommitActions: command.allowCommitActions,
+      onEvent,
+    });
   } catch (error) {
     if (error instanceof CrawlOptionsError) {
       process.stderr.write(`${error.message}\n`);

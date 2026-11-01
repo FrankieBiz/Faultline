@@ -12,6 +12,7 @@ import { MAX_TIMEOUT_MS, type CheckoutScenarioOptions } from "./oracle.js";
 /** Usage text printed for `--help` and argument errors. */
 export const USAGE = `Usage: faultline-browser-runner --base-url <url> [options]
        faultline-browser-runner --crawl <url> [--max-actions <n>] [--timeout-ms <ms>] [--ndjson]
+                                [--allow-commit-actions]
 
 Runs the trusted checkout scenario once and writes a canonical ExecutionReport.
 
@@ -36,6 +37,10 @@ Autonomous crawl:
   --max-actions <n>        Interactions before stopping clean, 1-${MAX_CRAWL_ACTIONS} (default: ${DEFAULT_MAX_ACTIONS})
   --timeout-ms <ms>        Crawl budget, 1000-${MAX_CRAWL_TIMEOUT_MS} (default: ${DEFAULT_CRAWL_TIMEOUT_MS})
   --ndjson                 Print one JSON event per line, ending with {"type":"report"}
+  --allow-commit-actions   Also click Place order, Pay, Submit, and similar
+                           buttons when the URL is not localhost, loopback, or a
+                           private network address. Only use on a disposable
+                           environment: on a real site this can place orders.
 
 Exit codes: 0 passed, 1 assertion failed, 2 runner/infrastructure error, 3 timed out.
 Crawl exit codes: 0 clean, 1 defect found, 2 runner/infrastructure error.`;
@@ -51,7 +56,7 @@ export class CliUsageError extends Error {
 /** Parsed CLI invocation. */
 export type CliCommand =
   | { kind: "help" }
-  | { kind: "crawl"; url: string; maxActions: number; timeoutMs: number; ndjson: boolean }
+  | { kind: "crawl"; url: string; maxActions: number; timeoutMs: number; ndjson: boolean; allowCommitActions: boolean }
   | { kind: "run"; scenario: CheckoutScenarioOptions & { artifactsDir: string; executionId: string }; outputJson: string };
 
 function parseTimeout(raw: string | undefined): number | undefined {
@@ -94,6 +99,7 @@ export function parseCliArgs(argv: readonly string[], cwd: string = process.cwd(
         crawl: { type: "string" },
         "max-actions": { type: "string" },
         ndjson: { type: "boolean" },
+        "allow-commit-actions": { type: "boolean" },
         help: { type: "boolean", short: "h" },
       },
     }));
@@ -113,10 +119,11 @@ export function parseCliArgs(argv: readonly string[], cwd: string = process.cwd(
       maxActions: parseBoundedInteger("--max-actions", values["max-actions"], 1, MAX_CRAWL_ACTIONS) ?? DEFAULT_MAX_ACTIONS,
       timeoutMs: parseBoundedInteger("--timeout-ms", values["timeout-ms"], 1_000, MAX_CRAWL_TIMEOUT_MS) ?? DEFAULT_CRAWL_TIMEOUT_MS,
       ndjson: values.ndjson === true,
+      allowCommitActions: values["allow-commit-actions"] === true,
     };
   }
-  if (values["max-actions"] !== undefined || values.ndjson) {
-    throw new CliUsageError("--max-actions and --ndjson require --crawl.");
+  if (values["max-actions"] !== undefined || values.ndjson || values["allow-commit-actions"]) {
+    throw new CliUsageError("--max-actions, --ndjson, and --allow-commit-actions require --crawl.");
   }
 
   const baseUrl = values["base-url"];
