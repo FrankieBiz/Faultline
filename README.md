@@ -2,28 +2,38 @@
 
 **A real browser finds the failure. A Meta model proposes a patch. Independently authored business checks decide whether it works, while a kernel sandbox confines the candidate.**
 
-**Judges: start at the [FaultLine judge page](https://frankiebiz.github.io/Faultline/).** It needs no install: play the recorded Meta repair, plant a bug yourself, and try to fool the gates.
+**Judges: start at the [FaultLine judge page](https://frankiebiz.github.io/Faultline/).** It needs no install and works in any desktop or mobile browser: play the recorded Meta repair, plant a bug yourself, and try to fool the gates.
 
 ---
 
-## 🧭 Quick Guide for Hackathon Judges: Public vs. Local
+## 🧭 Quick Guide for Hackathon Judges
 
-| Surface | URL | Audience & Setup | What It Does & How to Judge It |
+Pick the row that fits your time and your machine.
+
+| Time | Where | You need | What you will see |
 | :--- | :--- | :--- | :--- |
-| **Public Judge Page** *(Recommended First Stop)* | [frankiebiz.github.io/Faultline/](https://frankiebiz.github.io/Faultline/) | **Judges & Evaluators**<br>*(Zero install, works in any browser on desktop/mobile)* | **The Primary Hackathon Showcase:**<br>1. **Recorded Meta repair**: replay one retained `muse-spark-1.3` job that took the checkout crash to 44/44 passing assertions in 13.0 s. The [Oct 31 ledger](docs/evidence/2026-10-31-controller-ledger-meta.md) adds 3 of 3 live trials verified on the first attempt (median 10.5 s, one scenario).<br>2. **Pre-Flight Agent Gate replays**: two recorded `faultline gate --json` verdicts (a blocked run against AuraScale, a scratch app outside this repo, and a clean storefront run from the earlier contract) with the agent fix prompt.<br>3. **Patch explorer**: 11 candidate patches show a naive status check accepting 5 of 6 wrong fixes, while FaultLine's authored business assertions reject all six.<br>4. **Static evidence replays**: SHA-256 checksummed, script-free records. |
-| **Local Inspector Studio** | `http://127.0.0.1:4000`<br>*(via `./faultline demo`)* | **Engineers & SREs**<br>*(Requires Linux for sandbox repairs; Pre-Flight Gate runs cross-platform on macOS/Linux/Windows)* | **Local execution:**<br>1. A headless Playwright crawler with deterministic heuristics explores a `localhost` app (the bundled store on `:3000`, or any URL you paste).<br>2. Talks to the local repair orchestrator (`:9000`), which calls the Meta Model API when a key is set and otherwise uses the labeled deterministic fallback.<br>3. Runs candidate diffs inside Bubblewrap namespaces under 512 MiB / 64 task / 1 CPU cgroup limits.<br>4. Applies a verified fix only to the bundled demo store; project repairs stay in the sandbox and never touch your working source. |
-| **Demo Target Store** | `http://127.0.0.1:3000`<br>*(API: `:8000`)* | **Local Test Target**<br>*(Part of `./faultline demo`)* | **BuggyShop E-Commerce App:** A real Next.js + FastAPI shop with a seeded coupon discount exception on checkout that triggers HTTP 500. |
-| **AuraScale Cloud** *(historical, not in this repo)* | was `http://127.0.0.1:5050` | **External scratch app**<br>*(Not shipped or needed)* | Used once on November 1 for the recorded blocked-gate replay on the judge page. Nothing here starts it, and no filming or test depends on it. |
+| **3 min** *(start here)* | [**Judge page**](https://frankiebiz.github.io/Faultline/) | A browser. Nothing to install. | The recorded `muse-spark-1.3` repair taking a crashing checkout to **44/44** passing checks in **13.0 s**, two recorded gate verdicts, and wrong patches that a naive check accepts but FaultLine rejects. Follow [the 3-minute tour](#the-3-minute-judging-tour). |
+| **10 min** | [**macOS**](#-macos) or [**Windows**](#-windows) terminal | Git, Node.js 24+ (20.19+ and 22.13+ also work), internet. Setup installs uv, Python 3.13, and Chromium. | The Pre-Flight Gate on your own machine: `doctor`, `test`, `scan`, and `gate` against a running web app. |
+| **15 min** | [**Linux**](#-linux-fedora-or-ubuntu) terminal | The above, plus Bubblewrap and systemd with cgroup v2. | The whole loop: `./faultline demo` opens the Inspector, the crawler crashes the seeded checkout, and a candidate patch is verified inside the kernel sandbox. |
 
-### ⏱️ The 3-Minute Judging Tour
+### The four surfaces
 
-If you have 3 minutes to evaluate FaultLine, follow this sequence on the **[Public Judge Page](https://frankiebiz.github.io/Faultline/)**:
+| Surface | Address | What it is |
+| :--- | :--- | :--- |
+| **Judge page** | [frankiebiz.github.io/Faultline](https://frankiebiz.github.io/Faultline/) | The static hackathon showcase: the recorded Meta repair, the gate replays, the patch explorer, live bug planting, and checksummed evidence replays. [Details below](#what-judges-can-do-on-the-hosted-page). |
+| **Inspector studio** | `http://127.0.0.1:4000` via `./faultline demo` | The local web studio for engineers and SREs. A headless Playwright crawler explores a `localhost` app (the bundled store on `:3000`, or any URL you paste). The repair orchestrator on `:9000` calls the Meta Model API when a key is set and otherwise uses the labeled deterministic fallback. Candidate diffs run inside Bubblewrap namespaces under 512 MiB / 64 task / 1 CPU cgroup limits. A verified fix is applied only to the bundled demo store; project repairs stay in the sandbox and never touch your working source. Full repair on Linux; macOS runs it without repair. |
+| **Demo store (BuggyShop)** | `http://127.0.0.1:3000` (API `:8000`) | A real Next.js + FastAPI shop, started by `./faultline demo`, with a seeded coupon discount exception that makes checkout return HTTP 500. |
+| **AuraScale Cloud** *(historical, not in this repo)* | was `http://127.0.0.1:5050` | An external scratch app, used once on November 1 for the recorded blocked-gate replay on the judge page. Nothing here starts it, and no filming or test depends on it. |
 
-1. **Watch the recorded Meta repair (top of the page)**:
+### The 3-Minute Judging Tour
+
+If you have 3 minutes to evaluate FaultLine, follow this sequence on the **[judge page](https://frankiebiz.github.io/Faultline/)**:
+
+1. **Watch the recorded Meta repair (top of the page).**
    Click **Play the recorded Meta repair**. The retained job replays at its recorded timing (13.0 s): the checkout rupture, Meta's `muse-spark-1.3` single-file diff, the policy check, the sandboxed run, and 44 authored checks turning green. Nothing is merged or deployed.
-2. **Replay the Pre-Flight Agent Gate (section 01)**:
+2. **Replay the Pre-Flight Agent Gate (section 01).**
    Click **Test Broken Site**. The recorded verdict is `DEPLOYMENT_BLOCKED` with the click-by-click reproduction trail and the fix prompt an agent would receive. **Test Clean Site** replays a pass recorded under the earlier contract, before the gate reported whether exploration finished; it is captioned as such.
-3. **Try to fool the gates (section 05)**:
+3. **Try to fool the gates (section 05).**
    Pick wrong patches from the authored corpus. A naive "returns HTTP 201" check accepts 5 of 6; FaultLine's business assertions reject all six. The sandbox confines each run; the assertions are what catch the regression.
 
 ---
@@ -58,10 +68,11 @@ The output is a **verified candidate with proof**, never a silent production cha
 
 The [judge page](https://frankiebiz.github.io/Faultline/) is static and works without cloning anything:
 
-- **Play the recorded Meta repair.** A retained `muse-spark-1.3` controller job replays at its recorded timing (13.0 s for that job), from the crashing checkout to 44 of 44 passing checks. The Oct 31 ledger's three live trials took 10.4 to 12.6 s.
+- **Play the recorded Meta repair.** A retained `muse-spark-1.3` controller job replays at its recorded timing (13.0 s for that job), from the crashing checkout to 44 of 44 passing checks. The [Oct 31 ledger](docs/evidence/2026-10-31-controller-ledger-meta.md) adds 3 of 3 live trials verified on the first attempt (median 10.5 s, one scenario); they took 10.4 to 12.6 s.
+- **Replay the Pre-Flight Agent Gate.** Two recorded `faultline gate --json` verdicts, each with the agent fix prompt: a blocked run against AuraScale (a scratch app outside this repo) and a clean storefront run from the earlier contract.
 - **Break it yourself.** Plant one of ten corpus bugs and watch the model repair it live in the isolated runtime, under the same gates. The model is never told which bug you picked. When the live service is offline, the page says so and offers the recording instead.
-- **Try to fool the gates.** Compare eleven recorded candidate patches under a naive "did it return 201?" check and under FaultLine.
-- **Read the raw record.** The [replays](https://frankiebiz.github.io/Faultline/replay/3573b32b-09bd-4f14-897d-cf6dccf9b118/) are static, script-free, and checksummed.
+- **Try to fool the gates.** Compare eleven recorded candidate patches under a naive "did it return 201?" check and under FaultLine. The naive check accepts 5 of 6 wrong fixes; FaultLine's authored business assertions reject all six.
+- **Read the raw record.** The [replays](https://frankiebiz.github.io/Faultline/replay/3573b32b-09bd-4f14-897d-cf6dccf9b118/) are static, script-free, and SHA-256 checksummed.
 
 ![Inspector after a local run: the failed baseline, the five recorded steps, and 44 of 44 candidate checks passing, with the patch source labeled as the deterministic fallback and not a Meta trial](docs/assets/inspector.png)
 
@@ -71,63 +82,97 @@ The [judge page](https://frankiebiz.github.io/Faultline/) is static and works wi
 
 ## Installation and quickstart
 
+### What runs where
+
+The **Pre-Flight Gate** is cross-platform. **Sandboxed candidate verification** is Linux-native, because it relies on Bubblewrap namespaces and cgroup v2 limits.
+
+| Capability | Commands | macOS | Windows | Linux |
+| :--- | :--- | :---: | :---: | :---: |
+| Health report | `doctor` | ✅ | ✅ | ✅ |
+| HTTP invariants | `test`, `check`, `init` | ✅ | ✅ | ✅ |
+| Browser crawl and deploy gate | `scan --no-repair`, `crawl`, `gate` | ✅ | ✅ | ✅ |
+| Local demo stack (Inspector + seeded store) | `demo` | ✅ explore only | ➖ use the judge page | ✅ |
+| Sandboxed candidate repair | `run`, `scan` repair, `check --repair`, Inspector repair | ➖ | ➖ | ✅ |
+
+Native macOS and Windows setup, the launchers, HTTP checks, and real Chromium gate runs are exercised on GitHub Actions (`macos-latest` and `windows-latest`) by [`platform-smoke.yml`](.github/workflows/platform-smoke.yml). The sandbox is developed and verified on Fedora. **WSL2 is untested**; it would need systemd enabled (`systemd=true` in `/etc/wsl.conf`) and cgroup v2.
+
 ### Prerequisites
 
-| Requirement | Notes |
-| --- | --- |
-| macOS, Windows, or Linux | Pre-Flight Gate (`gate`, `check`, `test`, `scan --no-repair`, `init`) runs natively. Sandboxed repair execution requires Linux. **WSL2 is untested** and needs systemd enabled (`systemd=true` in `/etc/wsl.conf`) and cgroup v2. |
-| Node.js and npm | Install Node.js 24+ (recommended) before setup. The locked dependencies also support Node 20.19+ and 22.13+. Setup explains missing or unsupported versions. |
-| [`uv`](https://docs.astral.sh/uv/) and Python 3.13 | Setup discovers an existing uv or installs it using [Astral's official installer](https://docs.astral.sh/uv/getting-started/installation/), then downloads standalone Python 3.13. No system Python installation is needed. |
-| Git; curl on macOS/Linux; PowerShell on Windows | Use a **full clone**, not `--depth 1` or a ZIP. The seeded fixture is pinned to a commit in this repository's history. macOS does not need GNU `readlink` or `setsid`. |
-| Linux repair only: Bubblewrap (`bwrap`) | Unprivileged user namespaces must work. Fedora: `sudo dnf install bubblewrap`. |
-| Linux repair only: cgroup v2 + systemd user session | Run from a desktop terminal or a user service, so `systemd-run --user` can create a delegated scope. |
+| Requirement | macOS | Windows | Linux |
+| :--- | :--- | :--- | :--- |
+| **Node.js with npm** | 24+ recommended; 20.19+ and 22.13+ also work | same | same |
+| **Git** | Xcode Command Line Tools (`xcode-select --install`), which also provide `make` | [Git for Windows](https://git-scm.com/download/win) | Your distribution's `git` package |
+| **Shell** | Terminal (zsh or bash) with `curl` | PowerShell 5.1 or 7, or Command Prompt | bash with `curl` |
+| **uv and Python 3.13** | Installed by setup | Installed by setup | Installed by setup |
+| **Internet** | Required during setup | Required during setup | Required during setup |
+| **Sandbox (repair only)** | n/a | n/a | Bubblewrap (`bwrap`) with working unprivileged user namespaces, cgroup v2, and a systemd user session |
 
-FaultLine **fails closed**. If namespaces or enforced aggregate resource limits are unavailable, it refuses to run candidates instead of running them unconfined.
+Setup finds [`uv`](https://docs.astral.sh/uv/) on your PATH or in the standard local and Homebrew directories. If it is missing, setup installs it with [Astral's official installer](https://docs.astral.sh/uv/getting-started/installation/). It then downloads a standalone Python 3.13, syncs both locked Python environments, runs `npm ci` for the storefront, runner, and Inspector, builds the browser runner, and installs Playwright Chromium. No system Python is needed. Setup names any missing or unsupported Node.js version.
 
-### 1. Clone and set up (macOS / Linux)
+Use a **full clone**, not `--depth 1` or a ZIP download. The seeded fixture is pinned to a commit in this repository's history.
+
+### 🌐 Zero install
+
+Open **<https://frankiebiz.github.io/Faultline/>** on any desktop or phone. Everything in the [3-minute tour](#the-3-minute-judging-tour) runs there.
+
+### 🍎 macOS
 
 ```bash
 git clone https://github.com/FrankieBiz/Faultline.git
 cd Faultline
-make setup
+make setup                  # or: bash scripts/setup.sh
+./faultline doctor
 ```
 
-You can also run `bash scripts/setup.sh` if `make` is unavailable. Setup finds uv in PATH or standard local/Homebrew directories, installs it if missing, installs Python 3.13, syncs both locked Python environments, runs `npm ci` for the storefront, runner, and Inspector, builds the browser runner, and installs Playwright Chromium. On Fedora, Playwright prints an "OS is not officially supported" warning and downloads its Ubuntu fallback Chromium.
-
-On a Mac, start with native checks against your running application:
+You need a running web app to check. To use the bundled seeded store, start the demo stack in this terminal. It runs in the foreground and opens the Inspector at `http://127.0.0.1:4000`:
 
 ```bash
-./faultline doctor
-./faultline test http://localhost:3000
-./faultline scan http://localhost:3000 --no-repair
-./faultline gate http://localhost:3000 --json
+./faultline demo
 ```
 
-`./faultline demo` starts the local demo services on macOS/Linux. macOS can explore the seeded bug and use the Inspector; candidate repair remains unavailable without Linux isolation. The hosted [judge page](https://frankiebiz.github.io/Faultline/) also replays the retained repair without local setup.
+Then, in a second terminal in the same folder:
 
-### Windows quickstart (PowerShell or Command Prompt)
+```bash
+./faultline test http://127.0.0.1:3000                 # two fresh GET sessions, expects 200
+./faultline scan http://127.0.0.1:3000 --no-repair     # crawl until something breaks
+./faultline gate http://127.0.0.1:3000 --json          # one deploy verdict for agents and CI
+```
 
-Install Git and Node.js 24+ with npm, then open PowerShell:
+Against the seeded store, `test` passes, `scan` stops at **Place order** with `HTTP 500 on POST /api/checkout`, and `gate` returns `DEPLOYMENT_BLOCKED` with exit code 1. Point the same commands at any app you already run, such as `http://localhost:5173`. On macOS the demo explores the bug and drives the Inspector, but candidate repair stays unavailable without Linux isolation. To stop it, press Ctrl+C in its terminal; macOS refuses `--restart` because it cannot verify process ownership.
+
+### 🪟 Windows
+
+**PowerShell**
 
 ```powershell
 git clone https://github.com/FrankieBiz/Faultline.git
 cd Faultline
-.\setup.bat
+.\setup.ps1
 .\faultline.cmd doctor
-# Start your application separately, then check it:
+```
+
+If PowerShell says that running scripts is disabled, run `.\setup.bat` instead. It starts `setup.ps1` with the execution policy bypassed for that one process, preferring PowerShell 7 (`pwsh`) and falling back to Windows PowerShell.
+
+**Command Prompt**
+
+```bat
+git clone https://github.com/FrankieBiz/Faultline.git
+cd Faultline
+setup.bat
+.\faultline.cmd doctor
+```
+
+Then check your app. The local demo stack does not run on native Windows, so start your own dev server first (for example `npm run dev`). These commands work the same in PowerShell and Command Prompt:
+
+```powershell
 .\faultline.cmd test http://localhost:3000
 .\faultline.cmd scan http://localhost:3000 --no-repair
 .\faultline.cmd gate http://localhost:3000 --json
 ```
 
-The `.bat` / `.cmd` wrappers also work in Command Prompt and require no Make, Bash, or preinstalled Python. To invoke PowerShell scripts directly where script execution is restricted:
+No app running yet? `.\faultline.cmd test https://frankiebiz.github.io/Faultline/` is a harmless first check: two GET requests that expect HTTP 200.
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File .\faultline.ps1 doctor
-```
-
-Setup uses Astral's official PowerShell uv installer when needed and installs the same Python, locked dependencies, and Chromium as the Unix setup. The CLI launchers preserve your current directory, so you can initialize another project without copying FaultLine into it:
+Setup needs no Make, Bash, or preinstalled Python. If Astral's PowerShell installer is blocked or fails, setup downloads the official uv release zip instead and installs `uv.exe` into `%USERPROFILE%\.local\bin`. `faultline.cmd` and `faultline.ps1` keep your current directory, so one checkout can serve every project:
 
 ```powershell
 $faultline = (Resolve-Path .\faultline.cmd).Path
@@ -136,17 +181,42 @@ cd C:\code\my-app
 & $faultline check --config faultline.toml --port 3000
 ```
 
-Native Windows supports pre-flight commands; the local demo launcher and sandboxed repairs require Linux/WSL2. Use the hosted judge page for the recorded repair, or run the Linux quickstart inside a suitably configured WSL2 distribution. WSL2 isolation has not been verified by this project.
+For the recorded repair, use the judge page. Running the Linux quickstart inside WSL2 has not been verified by this project.
 
-### 2. Check system health
+### 🐧 Linux (Fedora or Ubuntu)
+
+Install Bubblewrap for the sandbox, then set up:
+
+```bash
+sudo dnf install bubblewrap        # Fedora
+sudo apt install bubblewrap        # Ubuntu / Debian
+
+git clone https://github.com/FrankieBiz/Faultline.git
+cd Faultline
+make setup
+./faultline doctor
+./faultline demo
+```
+
+The Inspector opens at **<http://127.0.0.1:4000>**. Click **Break it**, then the repair button, then **Apply fix**. Without `META_API_KEY`, the repair uses the clearly labeled deterministic fallback; see [Connect Meta](#connect-meta-optional) to use `muse-spark-1.3`.
+
+Run FaultLine from a desktop terminal or a user service so `systemd-run --user` can create a delegated cgroup scope. On Fedora, Playwright prints an "OS is not officially supported" warning and downloads its Ubuntu fallback Chromium; that is expected. Fedora is the verified sandbox host. Ubuntu 24.04 and later restrict unprivileged user namespaces through AppArmor by default, so the runner's enforcement preflight may refuse to launch candidates there even when `doctor` finds `bwrap`.
+
+FaultLine **fails closed**. If namespaces or enforced aggregate resource limits are unavailable, it refuses to run candidates instead of running them unconfined.
+
+---
+
+## Using FaultLine
+
+### Check system health
 
 ```bash
 ./faultline doctor
 ```
 
-`doctor` reports your platform, uv, Node.js, Playwright Chromium, optional `META_API_KEY`, and whether the controller and storefront API are reachable. On macOS/Windows, optional inference and offline demo services do not block a healthy pre-flight installation. Linux also checks Bubblewrap, cgroup v2, and systemd. Finding the tools only means the prerequisites exist. The isolation guarantee comes from the runner's own enforcement preflight, which runs before every candidate launch.
+`doctor` reports your platform, uv, Node.js, Playwright Chromium, optional `META_API_KEY`, and whether the controller and storefront API are reachable. On macOS and Windows, optional inference and offline demo services do not block a healthy pre-flight installation. Linux also checks Bubblewrap, cgroup v2, and systemd. Finding the tools only means the prerequisites exist. The isolation guarantee comes from the runner's own enforcement preflight, which runs before every candidate launch.
 
-### 3. Launch the demo stack
+### Launch the demo stack
 
 ```bash
 ./faultline demo
@@ -178,14 +248,16 @@ FAULTLINE_INSPECTOR_URL=http://127.0.0.1:4400 ./scripts/rehearse-demo.sh
 
 `./scripts/rehearse-demo.sh` drives a full run headlessly. It exits non-zero for failed, cancelled, interrupted, timed-out, or unverified jobs.
 
-### 4. Install the CLI globally
+### Install the CLI globally
 
-The root `faultline` launcher resolves its own installation through symlinks and keeps your working directory, so one checkout can serve every project:
+The root `faultline` launcher resolves its own installation through symlinks and keeps your working directory, so one checkout can serve every project (on Windows, use the `$faultline` pattern above):
 
 ```bash
 mkdir -p ~/.local/bin
 ln -sf "$(pwd)/faultline" ~/.local/bin/faultline
 ```
+
+### Test any URL
 
 To test any running HTTP service without project configuration:
 
@@ -201,6 +273,8 @@ also run twice and may change the target's state. Exit codes are **0** for pass,
 **130** for interruption. `--json` emits one result with the actual session count;
 transport errors can stop after the first session. This checks HTTP behavior and
 does not perform repairs or require sandbox prerequisites.
+
+### Scan a site
 
 To hunt for a defect without stating any expectation, paste a URL:
 
@@ -261,7 +335,9 @@ others as inconclusive. The Inspector's **Run Autonomous Exploration** button
 streams it live through `POST /api/faultline/crawl`, whose closing `done` event
 carries the same telemetry.
 
-Then, inside any Next.js, Vite, Express, or FastAPI repository:
+### Gate a project on its HTTP invariants
+
+Inside any Next.js, Vite, Express, or FastAPI repository:
 
 ```bash
 cd ~/code/my-app
@@ -273,7 +349,7 @@ faultline check --config faultline.toml --port 3000 --json  # one JSON object on
 
 `init` detects Next.js App/Pages routers, Vite (React/Vue/Svelte), Express and generic Node entrypoints, FastAPI/Starlette, Flask, and Django. It writes a starting invariant for you to review; it doesn't guess a repair target. The sandbox currently mounts Node/npm and uv only, so adapt pnpm, Yarn, or Bun commands to installed Node entrypoints before requesting repair. See [CLI checks, initialization, and CI](docs/CLI_CHECK.md) and [the project runner](docs/PROJECT_RUNNER.md).
 
-### 5. Connect Meta (optional)
+### Connect Meta (optional)
 
 ```bash
 export META_API_KEY=...        # or put it in an ignored .env at the repo root
@@ -318,13 +394,14 @@ Static AST inspection and Git worktrees are policy and source-management tools; 
 
 | Command | What it does |
 | --- | --- |
+| `faultline demo` | Starts or connects to the local demo stack and opens the Inspector (Linux; macOS without repair) |
 | `faultline init` | Detects the stack and writes a reviewable `faultline.toml` |
-| `faultline check` | Gates a running service on declared HTTP invariants, each measured in two fresh sessions; `--repair` asks for a sandbox-verified candidate without touching source |
-| `faultline scan URL` | Paste a URL: explores same-origin screens within an action and time budget, fills forms, catches the first defect, prints its reproduction journey, and offers to propose and verify a patch in the sandbox; alias `faultline auto` |
+| `faultline check` | Gates a running service on declared HTTP invariants, each measured in two fresh sessions; `--repair` asks for a sandbox-verified candidate without touching source (Linux) |
+| `faultline scan URL` | Paste a URL: explores same-origin screens within an action and time budget, fills forms, catches the first defect, prints its reproduction journey, and offers to propose and verify a patch in the sandbox (Linux; `--no-repair` reports only); alias `faultline auto` |
 | `faultline crawl URL` | Clicks through a site in headless Chromium until something breaks, then prints the failure and its reproduction breadcrumbs; alias `faultline break` |
 | `faultline gate URL` | Pre-deployment smoke gate for coding agents and CI: the same crawl, one verdict (`SAFE_TO_DEPLOY` exit 0 only when exploration finished with no defect; `DEPLOYMENT_BLOCKED` exit 1 for a defect or an unfinished crawl; bad input exit 2) with `--json`, `--markdown`, or `--format agent\|ci`, plus a ready-to-paste agent fix prompt |
-| `faultline doctor` | Checks sandbox prerequisites, the Meta key, and service health |
-| `faultline run [scenario]` | Freezes tracked source, needs two matching isolated failures, requests a Meta patch, verifies it, and writes a checksummed proof to `.faultline/runs`; `--detect` stops before the model call |
+| `faultline doctor` | Checks uv, Node.js, Playwright Chromium, the optional Meta key, service health, and on Linux the sandbox prerequisites |
+| `faultline run [scenario]` | Freezes tracked source, needs two matching isolated failures, requests a Meta patch, verifies it, and writes a checksummed proof to `.faultline/runs`; `--detect` stops before the model call (Linux) |
 | `faultline listen [job]` | Streams a job's stages as a live HUD with a cyan spinner and progress bar for in-flight work; `--plain` gives one line per stage for CI logs |
 | `faultline dashboard` | Opens the Inspector, starting the built app if nothing is serving it |
 
@@ -380,16 +457,16 @@ These results describe an authored corpus for one checkout route, not arbitrary 
 
 | Suite | Tests |
 | --- | ---: |
-| Backend, scripts, and fixtures (pytest) | 290 |
-| Repair orchestrator and CLI (pytest) | 877 |
+| Backend, scripts, fixtures, and setup bootstrap (pytest) | 335 |
+| Repair orchestrator and CLI (pytest) | 914 |
 | Browser runner unit tests | 123 |
-| **Unit and integration total** (`make check`) | **1,290** |
+| **Unit and integration total** (`make check`) | **1,372** |
 | Inspector browser tests (Playwright) | 43 |
 | Storefront browser tests (Playwright) | 2 |
 | **Browser total** (`make browser`) | **45** |
-| **All automated tests** | **1,335** |
+| **All automated tests** | **1,417** |
 
-`make check` also runs Ruff lint and format checks, strict mypy, fixture and corpus provenance, the storefront, runner, and Inspector builds, and both Python distribution builds. `make integration` exercises real isolated Chromium and cgroup enforcement, and `make evaluate` runs the corpus.
+The 11 PowerShell bootstrap tests skip on machines without `pwsh`. `make check` also runs Ruff lint and format checks, strict mypy, fixture and corpus provenance, the storefront, runner, and Inspector builds, and both Python distribution builds. `make integration` exercises real isolated Chromium and cgroup enforcement, and `make evaluate` runs the corpus.
 
 ---
 
@@ -426,6 +503,8 @@ These results describe an authored corpus for one checkout route, not arbitrary 
 | [shared](shared) / [fixtures](fixtures) | Canonical contracts, scenarios, pinned source provenance, evaluation corpus |
 | [scripts](scripts) | Setup, supervised startup, rehearsal, evaluation, trial ledger, replay export, live repair service |
 | [deploy](deploy) | Runbook and service files for the live repair service |
+| `faultline`, `faultline.ps1`, `faultline.cmd` | CLI launchers for macOS/Linux, PowerShell, and Command Prompt |
+| `setup.ps1`, `setup.bat`, [scripts/setup.sh](scripts/setup.sh) | One-command setup for Windows and macOS/Linux |
 
 ## Hackathon materials
 
@@ -433,4 +512,4 @@ These results describe an authored corpus for one checkout route, not arbitrary 
 
 The official event pages list submission on November 4, 2026 at 9 PM ET, subject to organizer changes ([Meta](https://dev.meta.ai/events/global-hackathon), [Cerebral Valley](https://events.cerebralvalley.ai/e/meta-ai-developer-hackathon); retrieved October 27, 2026). Preserved webinar materials in `meta-provided/` are immutable.
 
-Built by Francis Bisignano (`FrankieBiz`) for the Meta Global AI Developer Hackathon.
+Built by Francis Bisignano ([`FrankieBiz`](https://github.com/FrankieBiz), <frankabisignano@gmail.com>) for the Meta Global AI Developer Hackathon.

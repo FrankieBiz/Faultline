@@ -1,5 +1,12 @@
 # Agent handoff state
 
+## November 1: README per-OS quickstarts (claude-readme-polish-2)
+
+- README top now reads: judge quick guide (3 / 10 / 15 minute rows), the four surfaces, the 3-minute tour, story, hosted page, then **Installation and quickstart** with a "What runs where" capability matrix, prerequisites by OS, and separate Zero install / macOS / Windows (PowerShell + Command Prompt) / Linux (Fedora or Ubuntu) blocks. The old numbered setup steps became unnumbered "Using FaultLine" subsections; anchors `#-macos`, `#-windows`, `#-linux-fedora-or-ubuntu`, `#connect-meta-optional` are linked from the guide.
+- Facts checked against `app/cli.py`: flags, defaults (crawl 15/60 s, scan and gate 25/90 s), exit codes, `demo` refusing on win32 and refusing `--restart` on darwin, `run` Linux-only. Docker is **not** an implemented sandbox engine (Phase 2 spec only), so the README does not claim it. Ubuntu 24.04+ AppArmor userns restriction is noted; Fedora is the verified sandbox host.
+- Windows guidance: `.\setup.ps1` first, `.\setup.bat` when execution policy blocks scripts. Smoke check with no app running: `.\faultline.cmd test https://frankiebiz.github.io/Faultline/` (verified PASS from Linux).
+- Scorecard updated from a fresh `make check` (exit 0): 335 (324 passed + 11 PowerShell skips without `pwsh`) + 914 + 123 = 1,372; browser 43 + 2 = 45 via `playwright --list`; total 1,417. `make browser` was not run here. Hosted `Verify` on `53fd8f9` failed one Inspector test (`#workspace .check` toBeInViewport, inspector.spec.ts:514); Native platform smoke is green.
+
 ## November 1: resilient native Windows bootstrap (codex-windows-fix)
 
 - Native platform CI now invokes `setup.ps1` directly in its `pwsh` step. `setup.bat` prefers `pwsh.exe` and falls back to `powershell.exe` only when PowerShell 7 is unavailable, preserving arguments and exit codes. This avoids the observed PowerShell 7 to Windows PowerShell 5.1 module-path mismatch.
