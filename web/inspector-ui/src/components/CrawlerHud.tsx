@@ -420,7 +420,7 @@ export default function CrawlerHud(props: {
                 ) : repair.canApply || repair.applying ? (
                   <div className="hud-defect-actions">
                     <button type="button" className="btn primary hud-apply" onClick={props.onApply} disabled={!repair.canApply}>
-                      <span aria-hidden="true">✅ </span>{repair.applying ? "Applying the verified fix…" : "Apply Verified Fix to Live Codebase"}
+                      <span aria-hidden="true">✅ </span>{repair.applying ? "Applying the verified fix…" : "Apply Verified Fix to Demo Store"}
                     </button>
                   </div>
                 ) : repair.applyNote ? <p className="hud-repair-line muted">{repair.applyNote}</p> : null}

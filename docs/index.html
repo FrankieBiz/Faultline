@@ -9,7 +9,7 @@
   <meta name="referrer" content="no-referrer">
   <meta name="color-scheme" content="dark">
   <title>FaultLine: verified checkout repair with Meta muse-spark-1.3</title>
-  <meta name="description" content="A browser reproduces a checkout failure, Meta's muse-spark-1.3 proposes a patch, and independent checks in an isolated runtime decide whether it works. Every number on this page links to its recorded evidence.">
+  <meta name="description" content="A browser reproduces a checkout failure, Meta's muse-spark-1.3 proposes a patch, and independently authored checks, run in an isolated runtime, decide whether it works. Every number on this page links to its recorded evidence.">
   <meta property="og:title" content="FaultLine: verified checkout repair">
   <meta property="og:description" content="A browser finds the checkout failure. A model proposes a patch. Independent checks decide whether it works.">
   <meta property="og:type" content="website">
@@ -577,7 +577,7 @@
         <span>for AI coding agents and web applications.</span>
       </h1>
       <p class="lede">
-        FaultLine catches <strong>silent regressions before code goes live</strong>. A real browser hunts the failure, <strong>Meta's <code>muse-spark-1.3</code> writes the fix</strong>, and nothing counts until <strong>independent checks in an isolated sandbox</strong> prove it works.
+        FaultLine catches <strong>silent regressions before code goes live</strong>. A real browser hunts the failure, <strong>Meta's <code>muse-spark-1.3</code> writes the fix</strong>, and nothing counts until <strong>independently authored business checks</strong> pass while a kernel-limited sandbox confines the candidate.
       </p>
       <p class="core-chip"><span class="core-dot" aria-hidden="true"></span><span class="core-chip-k">Repair core</span><b>Meta Model API · muse-spark-1.3</b><a href="#core">Recorded fix: 44 / 44 checks</a></p>
       <div class="actions">
@@ -596,7 +596,7 @@
             <a href="#repair" data-play-recorded>
               <span class="tour-t num">0:00 – 0:45</span>
               <strong>Watch Meta repair a crash</strong>
-              <span>The recorded run at real speed: HTTP 500, Meta's patch, <b>44 / 44 checks</b> green in 13 s.</span>
+              <span>One retained run at its recorded speed: HTTP 500, Meta's patch, <b>44 / 44 checks</b> green in 13.0 s.</span>
               <span class="tour-go" aria-hidden="true">Play &rarr;</span>
             </a>
           </li>
@@ -604,7 +604,7 @@
             <a href="#gate" data-run-gate="broken">
               <span class="tour-t num">0:45 – 1:45</span>
               <strong>Block a broken deploy</strong>
-              <span>Replay a real gate run: it crawled AuraScale, hit an HTTP 500, and returned <b>DEPLOYMENT_BLOCKED</b> with a fix prompt for the agent.</span>
+              <span>Replay a recorded gate run: it crawled AuraScale, a scratch app outside this repo, hit an HTTP 500, and returned <b>DEPLOYMENT_BLOCKED</b> with a fix prompt for the agent.</span>
               <span class="tour-go" aria-hidden="true">Run the gate &rarr;</span>
             </a>
           </li>
@@ -623,8 +623,8 @@
       <ol class="proof" aria-label="How FaultLine handles one regression, from the recorded run">
         <li data-tone="bad"><span class="proof-k">01 · Detect</span><b>HTTP 500 caught</b><span>Chromium walks the checkout and ties the crash to the server's own log.</span></li>
         <li data-tone="warn"><span class="proof-k">02 · Repair</span><b>Meta patch in 6.9 s</b><span>One-file diff written from the business rules. The model is never told the bug.</span></li>
-        <li data-tone="ok"><span class="proof-k">03 · Verify</span><b>44 / 44 checks</b><span>Browser journey plus 27 business checks, sandboxed and resource-limited.</span></li>
-        <li data-tone="active"><span class="proof-k">04 · Gate</span><b>Exit 1 blocks</b><span><code>faultline gate</code> stops agents and CI from shipping a broken preview.</span></li>
+        <li data-tone="ok"><span class="proof-k">03 · Verify</span><b>44 / 44 checks</b><span>Browser journey plus 27 authored business checks; the sandbox confines the run.</span></li>
+        <li data-tone="active"><span class="proof-k">04 · Gate</span><b>Exit 1 blocks</b><span><code>faultline gate</code> blocks a defect, or a crawl that did not finish, in the flows it explores.</span></li>
       </ol>
     </div>
 
@@ -636,14 +636,14 @@
         </div>
         <p class="gate-kicker"><span class="gate-lock" aria-hidden="true"></span>01 · Pre-Flight Agent Gate · Claude Code · Codex · Cursor · Devin · CI</p>
         <h2 id="gate-title">Nothing ships until the gate clears it.</h2>
-        <p class="intro">Before an AI agent or CI pipeline deploys, FaultLine crawls the preview: every screen, button, and form. <strong>Exit 0: safe to deploy. Exit 1: blocked</strong>, and the agent gets the exact reproduction to fix. Both runs below are real <code>faultline gate --json</code> verdicts from November 1, 2026, replayed in your browser with links to the raw JSON.</p>
+        <p class="intro">Before an AI agent or CI pipeline deploys, FaultLine crawls the preview with deterministic heuristics, within an action and time budget. <strong>Exit 1 blocks</strong> a defect, with the exact reproduction for the agent to fix, and also blocks a crawl that ran out of budget before it finished. <strong>Exit 0</strong> means exploration finished with no defect in the flows it reached: a bounded smoke signal, not proof that prices or totals are right. Both runs below are real <code>faultline gate --json</code> verdicts from November 1, 2026, recorded before the gate reported <code>stop_reason</code>, replayed in your browser with links to the raw JSON.</p>
         <div class="gate-grid">
           <div class="gate-sim">
             <p class="gate-label" id="gate-target-label">Target preview URL</p>
             <div class="gate-field" aria-labelledby="gate-target-label"><span class="gate-prompt" aria-hidden="true">$ faultline gate</span><code id="gate-target">http://localhost:3000</code></div>
             <div class="gate-pills" role="group" aria-label="Recorded gate runs">
-              <button class="gate-pill" type="button" data-gate="clean" aria-pressed="false"><span>Test Clean Site</span><span class="gate-expect ok">Storefront, fix applied &rarr; Safe to Deploy</span></button>
-              <button class="gate-pill" type="button" data-gate="broken" aria-pressed="false"><span>Test Broken Site (AuraScale :5050)</span><span class="gate-expect bad">Defect &rarr; Deployment Blocked</span></button>
+              <button class="gate-pill" type="button" data-gate="clean" aria-pressed="false"><span>Test Clean Site</span><span class="gate-expect ok">Storefront, fix applied &rarr; Safe to Deploy (earlier contract)</span></button>
+              <button class="gate-pill" type="button" data-gate="broken" aria-pressed="false"><span>Test Broken Site (AuraScale, outside this repo)</span><span class="gate-expect bad">Defect &rarr; Deployment Blocked</span></button>
             </div>
             <div class="gate-verdict" id="gate-verdict" aria-live="polite">
               <p class="gate-await"><span class="gate-await-mark" aria-hidden="true"></span>Gate armed. Pick a site to replay its recorded gate verdict.</p>
@@ -675,7 +675,7 @@
           <p>The model reads the contract and the evidence, returns a <strong>schema-checked one-file diff</strong>, and gets the gates' findings back for <strong>one retry</strong>. Provider labels come from the endpoint host and are recorded only when that provider answered.</p>
         </div>
         <ul class="core-models">
-          <li data-tone="ok"><code>muse-spark-1.3</code><span class="core-role">Default model</span><span class="core-proof">Recorded: verified on its first proposal, 44 / 44 checks</span></li>
+          <li data-tone="ok"><code>muse-spark-1.3</code><span class="core-role">Default model</span><span class="core-proof">3 of 3 live trials verified on the first proposal, 44 / 44 each, median 10.5 s (<a href="https://github.com/FrankieBiz/Faultline/blob/main/docs/evidence/2026-10-31-controller-ledger-meta.md">Oct 31 ledger</a>, one scenario)</span></li>
           <li><code>Llama-3.3-70B-Instruct</code><span class="core-role">Supported</span><span class="core-proof">Set <code>META_MODEL_NAME</code>; probed before use. No recorded run yet.</span></li>
           <li data-tone="warn"><code>deterministic-checkout-v1</code><span class="core-role">Fallback, not Meta</span><span class="core-proof">Runs without a key. Always labeled; never counted as a Meta trial.</span></li>
         </ul>
@@ -832,8 +832,8 @@
             </tr>
             <tr>
               <td>Use of Meta AI tooling<br><span class="muted">25%</span></td>
-              <td><p><strong>Meta's <code>muse-spark-1.3</code> is the repair core</strong>: it writes the patch from the business contract and failure evidence under a strict proposal schema, and gets the gates' findings back for a second attempt. <code>Llama-3.3-70B-Instruct</code> is supported through the same Meta Model API. Provider labels come from the endpoint host.</p><p class="muted">Not yet shown: repeated Meta trials, a recorded Llama run, or a Meta run of the unfamiliar-defect corpus.</p></td>
-              <td><a href="#core">Repair core</a><br><a href="replay/3573b32b-09bd-4f14-897d-cf6dccf9b118/index.html">One-attempt replay</a><br><a href="replay/82ac2dcc-e7f9-4ea7-9187-a0c0d79d8ba3/index.html">Two-attempt replay</a><br><a href="#live">Live tally</a></td>
+              <td><p><strong>Meta's <code>muse-spark-1.3</code> is the repair core</strong>: it writes the patch from the business contract and failure evidence under a strict proposal schema, and gets the gates' findings back for a second attempt. <code>Llama-3.3-70B-Instruct</code> is supported through the same Meta Model API. Provider labels come from the endpoint host.</p><p><strong>3 of 3 live <code>muse-spark-1.3</code> trials</strong> verified on the first attempt at 44 / 44, median 10.5 s, recorded by a ledger script that refuses non-Meta responses. Scope: one registered scenario.</p><p class="muted">Not yet shown: a Meta run of the unfamiliar-defect corpus (that corpus is measured with DeepSeek and the deterministic fallback only), a behavioral rejection followed by a Meta retry, or a recorded Llama run.</p></td>
+              <td><a href="#core">Repair core</a><br><a href="https://github.com/FrankieBiz/Faultline/blob/main/docs/evidence/2026-10-31-controller-ledger-meta.md">Meta trial ledger</a><br><a href="replay/3573b32b-09bd-4f14-897d-cf6dccf9b118/index.html">One-attempt replay</a><br><a href="replay/82ac2dcc-e7f9-4ea7-9187-a0c0d79d8ba3/index.html">Two-attempt replay</a><br><a href="#live">Live tally</a></td>
             </tr>
             <tr>
               <td>Technical depth<br><span class="muted">20%</span></td>
@@ -842,7 +842,7 @@
             </tr>
             <tr>
               <td>Demo<br><span class="muted">25%</span></td>
-              <td><p>The <strong>recorded Meta repair plays at real timing</strong>, the agent gate replays two real verdicts, "Break it yourself" runs a live repair when the service is on, and the <strong>local Inspector runs the whole job</strong>: hunt, propose, gate, verify, download evidence.</p></td>
+              <td><p>The <strong>recorded Meta repair plays at its recorded timing</strong>, the agent gate replays two recorded verdicts, "Break it yourself" runs a live repair when the service is on, and the <strong>local Inspector runs the whole job on the bundled demo store</strong>: hunt, propose, gate, verify, apply to the demo store, download evidence.</p></td>
               <td><a href="#repair" data-play-recorded>Play the recording</a><br><a href="#live">Break it yourself</a><br><a href="#run">Run it locally</a></td>
             </tr>
           </tbody>
@@ -896,9 +896,11 @@ FAULTLINE_INSPECTOR_URL=http://127.0.0.1:4400 ./scripts/rehearse-demo.sh</code><
       <h2 id="limits-title">What this does not claim</h2>
       <ul class="limits">
         <li>One registered live defect in one fixture store, plus an authored corpus of ten defects and eleven patches for the same route.</li>
-        <li>A verified result is a candidate with evidence. Nothing is deployed, merged, or routed to production traffic.</li>
+        <li>A verified result is a candidate with evidence. Nothing is deployed, merged, or routed to production traffic. "Apply" writes only to the bundled demo store's checkout file, never to another repository.</li>
+        <li>Repairs are single-file diffs. The crawler is deterministic heuristics, not a model; Meta writes the source patch. A clean gate covers only the flows the crawler reached, and only after exploration finished.</li>
+        <li>The kernel sandbox confines execution; it does not judge correctness. The authored business checks are what catch a patch that silences the error but breaks pricing or orders.</li>
         <li>Namespaces and cgroup limits on a shared kernel, not a VM, and no seccomp filter. Passing the suite is evidence for the tested behavior, not proof that arbitrary code is safe.</li>
-        <li>One retained Meta repair and one Meta retry are recorded; repeated Meta trials and a Meta corpus run are still outstanding.</li>
+        <li>Meta evidence covers one scenario: 3 of 3 live trials in the <a href="https://github.com/FrankieBiz/Faultline/blob/main/docs/evidence/2026-10-31-controller-ledger-meta.md">October 31 ledger</a>, plus the retained one- and two-attempt replays. The retained retry was a patch that failed to apply, not a behavioral rejection. A Meta run of the full unfamiliar-defect corpus is still unmeasured.</li>
         <li>The live service is one small, rate-limited server that may be switched off outside judging. When it is off, the page says so and plays the recording instead.</li>
         <li>The replay's two Playwright trace archives include file paths from the build workstation.</li>
       </ul>
@@ -1990,9 +1992,10 @@ jobs:
           stats.append(el("div", cls ? { class: cls } : {}, el("dt", {}, key), el("dd", { class: "num" }, String(value))));
         }
         return el("div", { class: "gate-result" },
-          el("p", { class: "gate-badge ok" }, el("span", { "aria-hidden": "true" }, "✅ "), "Verdict: Safe to deploy"),
+          el("p", { class: "gate-badge ok" }, el("span", { "aria-hidden": "true" }, "✅ "), "Verdict: Safe to deploy (earlier contract)"),
           stats,
-          el("p", { class: "gate-confirm" }, v.summary + " The screens included checkout. ", el("code", {}, "faultline gate"), " exits 0, so the deploy may proceed."),
+          el("p", { class: "gate-confirm" }, v.summary + " The screens included checkout. ", el("code", {}, "faultline gate"), " exited 0."),
+          el("p", { class: "gate-confirm muted" }, "Historical run, recorded before the gate reported ", el("code", {}, "stop_reason"), ". Its JSON does not show that exploration finished, which today's gate requires before it exits 0, so a fresh run is needed to show a pass under the current contract. Even then, a pass covers only the flows the crawler reached; it does not check prices or totals."),
           gateSource(run));
       }
       const f = v.failure;

@@ -143,7 +143,6 @@ export default function AgentGatePanel(props: {
       expect: storeState === "patched" ? { tone: "ok", text: "Clean → Safe to Deploy" }
         : storeState === "seeded" ? { tone: "bad", text: "Seeded defect → Blocked" } : null,
     },
-    { label: "AuraScale Cloud (:5050)", value: "http://127.0.0.1:5050", expect: { tone: "bad", text: "Defect → Deployment Blocked!" } },
   ];
 
   /** Normalizes the typed URL, or shows why it cannot be used and returns null. */
@@ -216,8 +215,9 @@ export default function AgentGatePanel(props: {
           <p className="gate-kicker"><span className="gate-lock" aria-hidden="true" />Pre-Flight Agent Gate · Claude Code · Codex · Cursor · Devin · CI</p>
           <h2 id={`${ids}-h`}>Nothing ships until the gate clears it.</h2>
           <p className="gate-lede">
-            Before an AI agent or CI pipeline deploys, FaultLine crawls the preview: every screen, button, and form.{" "}
-            <strong>Exit 0: safe to deploy. Exit 1: blocked</strong>, and the agent gets the exact reproduction to fix.
+            Before an AI agent or CI pipeline deploys, FaultLine crawls the preview with deterministic heuristics, within an action and time budget.{" "}
+            <strong>Exit 1 blocks</strong> a defect, with the exact reproduction for the agent, or a crawl that did not finish.{" "}
+            <strong>Exit 0</strong> means exploration finished clean: a smoke signal for the flows it reached, not proof of business logic.
           </p>
         </header>
 

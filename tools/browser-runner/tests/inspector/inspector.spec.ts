@@ -433,7 +433,7 @@ test("the guided demo advances Break it, repair, and Apply fix on recorded evide
   await expect(steps.nth(1).locator(".flow-status")).toHaveText("44 of 44 checks passed");
   // Step 2 repaired the defect on the HUD, so the mission follows that run to its verified fix.
   await expect(hud).toContainText("Fix verified: 44/44 assertions passed in the Bubblewrap sandbox");
-  await expect(hud.getByRole("button", { name: "Apply Verified Fix to Live Codebase" })).toBeEnabled();
+  await expect(hud.getByRole("button", { name: "Apply Verified Fix to Demo Store" })).toBeEnabled();
   await expect(steps.nth(1)).toHaveAttribute("data-state", "done");
   await expect(steps.nth(2)).toHaveAttribute("aria-current", "step");
 
@@ -486,8 +486,7 @@ test("the header tests any URL without asking for an expected status, reusing it
   await quick.getByRole("button", { name: "Backend API (port 8000)" }).click();
   await expect(field).toHaveValue("http://127.0.0.1:8000");
   await expect(quick.getByRole("button", { name: "Backend API (port 8000)" })).toHaveAttribute("aria-pressed", "true");
-  await quick.getByRole("button", { name: "AuraScale Cloud (port 5050)" }).click();
-  await expect(field).toHaveValue("http://127.0.0.1:5050");
+  await expect(quick.getByRole("button", { name: /AuraScale/ })).toHaveCount(0);
   await quick.getByRole("button", { name: "Custom Localhost" }).click();
   await expect(field).toHaveValue("http://localhost:");
   await expect(field).toBeFocused();
@@ -734,10 +733,12 @@ test("the pre-flight gate blocks with the CLI's exact fix prompt, clears a clean
   await page.getByRole("link", { name: "Pre-Flight Gate" }).click();
   const gate = page.getByRole("region", { name: "Nothing ships until the gate clears it." });
   await expect(gate).toHaveAttribute("data-verdict", "idle");
-  await expect(gate.getByRole("button", { name: /AuraScale Cloud \(:5050\)/ })).toContainText("Defect → Deployment Blocked!");
+  // AuraScale is an external app outside this repo, so there is no one-click pill for it.
+  await expect(gate.getByRole("button", { name: /AuraScale/ })).toHaveCount(0);
 
-  // One click runs the real crawl; the verdict shows in the gate, and the Mission HUD stays closed.
-  await gate.getByRole("button", { name: /AuraScale Cloud/ }).click();
+  // A typed URL runs the real crawl; the verdict shows in the gate, and the Mission HUD stays closed.
+  await gate.getByRole("textbox", { name: "Target preview URL" }).fill("127.0.0.1:5050");
+  await gate.getByRole("button", { name: "Run Pre-Flight Gate" }).click();
   await expect(gate).toHaveAttribute("data-verdict", "blocked");
   expect(calls.crawls).toEqual([{ url: "http://127.0.0.1:5050", max_steps: 25 }]);
   await expect(page.locator(".hud")).toHaveCount(0);
@@ -874,7 +875,7 @@ test("the mission HUD repairs, verifies, and applies the fix it caught", async (
   await expect(hud).toContainText("Fix verified: 44/44 assertions passed in the Bubblewrap sandbox");
   await expect(hud.getByRole("status")).toHaveText("Fix verified");
   await expect(hud).toHaveAttribute("data-seismic", "resonance");
-  await hud.getByRole("button", { name: "Apply Verified Fix to Live Codebase" }).click();
+  await hud.getByRole("button", { name: "Apply Verified Fix to Demo Store" }).click();
   await expect(hud).toContainText(`Applied to ${target}.`);
   await expect(hud).toContainText("Live checkout re-checked: HTTP 201 · defect gone.");
   await expect(hud.getByRole("status")).toHaveText("Fix applied");
