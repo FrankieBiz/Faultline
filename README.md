@@ -336,14 +336,14 @@ These results describe an authored corpus for one checkout route, not arbitrary 
 
 | Suite | Tests |
 | --- | ---: |
-| Backend, scripts, and fixtures (pytest) | 289 |
-| Repair orchestrator and CLI (pytest) | 799 |
+| Backend, scripts, and fixtures (pytest) | 290 |
+| Repair orchestrator and CLI (pytest) | 869 |
 | Browser runner unit tests | 123 |
-| **Unit and integration total** (`make check`) | **1,211** |
+| **Unit and integration total** (`make check`) | **1,282** |
 | Inspector browser tests (Playwright) | 43 |
-| Storefront browser test (Playwright) | 1 |
-| **Browser total** (`make browser`) | **44** |
-| **All automated tests** | **1,255** |
+| Storefront browser tests (Playwright) | 2 |
+| **Browser total** (`make browser`) | **45** |
+| **All automated tests** | **1,327** |
 
 `make check` also runs Ruff lint and format checks, strict mypy, fixture and corpus provenance, the storefront, runner, and Inspector builds, and both Python distribution builds. `make integration` exercises real isolated Chromium and cgroup enforcement, and `make evaluate` runs the corpus.
 

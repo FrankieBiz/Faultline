@@ -2,9 +2,39 @@
 
 **Assessment date:** November 1, 2026. **Reviewed revision:** `d8b84b3f317dc067204a37dc2b6efaecab3e6862`, branch `FrankieBiz/systems-codex-eval`.
 
-**Method:** implementation review, fresh builds and automated tests, real Linux isolation tests, and two targeted behavioral probes. This is an engineering assessment of the checked-out revision, not a penetration-test certification. No application implementation was changed, no live model inference was requested, and no protected Meta materials or credential files were opened. No Orca children were launched for this report-only task.
+**Baseline review method:** implementation review, fresh builds and automated tests, real Linux isolation tests, and two targeted behavioral probes. This is an engineering assessment of the checked-out revision, not a penetration-test certification. No application implementation was changed, no live model inference was requested, and no protected Meta materials or credential files were opened during that original report-only task. No Orca children were launched during the original review.
 
-## Executive decision
+## Pre-filming remediation and verification — November 1
+
+**Filming decision: ready for the bounded demonstration in the revised [three-minute storyboard](../../docs/VIDEO_STORYBOARD.md).** The original audit below is preserved as the baseline; its open findings must be read alongside this update. The integrated code verified for filming is `b3f5bfe901ac8958e96ba51c7d1cc06ca3a6fc04`. Exact measured results and child-dispatch provenance are retained in the [verification record](../../docs/evidence/2026-11-01-prefilm-verification.json).
+
+At the owner's request, two real `gpt-6.1-sol` high-effort Orca children and two real `claude-opus-5-5` high-effort Orca children implemented and self-verified disjoint changes. The coordinator reviewed the changes, integrated them, and independently ran the final checks and local rehearsal. All four children completed and were released.
+
+| Baseline finding | Adjustment and current boundary |
+| --- | --- |
+| F1: incomplete crawl approved deployment | Fixed in `80ca294`, with Inspector parity in `b1c0eae`. Only `clean` plus `stop_reason: exhausted` passes. An action/time limit or missing completion reason blocks as `incomplete_crawl`. JSON includes stop reason and action count. A completed crawl is still a bounded smoke signal, not proof of business completeness. |
+| F2: proof preceded cleanup | Fixed in `a071c6d`. Schema 3 proof registration and final verified job outcome commit in one SQLite transaction after successful cleanup. Compiler/write/read/finalization failures, cancellation, and simulated crashes are covered by fault-injection tests. Proof binds lifecycle, source, generation, actual execution-limit metadata and provider identity. Schema 2 artifacts remain untouched and are explicitly consistency-only legacy records. |
+| F3: route-only scan dispatch | The CLI now also requires a controller-advertised, operator-configured origin. The seeded storefront proxy and backend origins are advertised explicitly; unrelated origins and unsupported generic bindings are refused. Repair still proves the registered scenario's candidate, and does not automatically modify an arbitrary scanned application. |
+| F4: host-side trust boundaries | Crawler subprocesses now receive a minimal environment rather than inherited model/control credentials. Broader browser resource/network containment, shared-kernel exposure and artifact custody remain hardening work; no new VM or seccomp guarantee is claimed. |
+| Demo claims and dependencies | `e3dc207` distinguishes authored assertions from kernel confinement, limits Apply to the bundled demo store, cites the retained October 31 Meta ledger, labels historical replays, removes the Inspector's external AuraScale presets, and supplies explicit live/retained captions. AuraScale is not required for filming. |
+
+The final browser run also caught a pre-existing intermittent checkout failure that had previously been dismissed as a flake. Instrumentation established a real focus race: after an HTTP error re-enabled the form, the alert's passive effect could steal the next coupon-edit keystroke. `b3f5bfe` moves focus into the same render commit with `useLayoutEffect`; it preserves alert focus and coupon-review behavior. The new regression failed 10/10 before the fix, the child recorded 200/200 passing repetitions after it, and the coordinator's final storefront suite passed both tests. No assertion was weakened and no retry or sleep was added to hide the race.
+
+Fresh coordinator verification on the integrated code:
+
+- `make check`: **1,282 passed** (290 backend/script, 869 orchestrator/CLI, 123 runner), plus lint, format, strict typing, provenance and builds; exit 0.
+- `make browser`: **45 passed** (43 Inspector, 2 storefront); exit 0. The earlier storefront failure was investigated and fixed before this final run.
+- Required isolation-focused invocation documented below: **14 passed, zero skips**; exit 0. These overlap `make check` and are not additional unique tests.
+- Desktop/mobile visual checks of both live Inspector and judge page at 1440/390 px: **no console errors or horizontal overflow**. The actual Inspector job rendered “Verified repair,” 44 checks and the deterministic label. The retained Meta replay completed at its recorded 13.0-second clock.
+- The original one-action broken-checkout probe now blocks as incomplete; sufficient exploration reaches and reports the actual HTTP 500.
+
+The full local rehearsal used its own services on ports 8760/9760/3760/4760. Job `3a67d350-afaa-4649-9445-3c1d99dfb5b5` verified **44/44** assertions with confirmed cleanup in a six-second rehearsal. It was explicitly **deterministic fallback, not a Meta trial**. The downloaded schema 3 proof and all **12 listed artifact files** passed offline verification; both recorded executions carried verified 512 MiB/no-swap/64-task/100%-CPU cgroup limits. Bundle checksum: `3d52063e108a9b891ca9ae753ca37a06e96107e01ae514b3897cfe2c642ca20d`.
+
+The same storefront first returned `DEPLOYMENT_BLOCKED` for the seeded HTTP 500. After guarded Apply, an independent request returned HTTP 201, zero discount and the expected 3,998-cent total. Re-gating that same URL returned **`SAFE_TO_DEPLOY`, `stop_reason: exhausted`, 45 elements, 12 actions, four screens**. The store was then reverted, its tracked source was confirmed unchanged, and only this rehearsal's services were stopped. It is deliberately seeded again so recording can begin with the failure.
+
+**Keep these filming boundaries:** use the clearly captioned retained Meta clip for Meta generation; this session made no fresh Meta repair trial. Show the local run's actual provider. Do not claim auto-deployment, arbitrary-repository repair, complete exploratory coverage, signed evidence, a VM boundary, or a Meta corpus success rate. F5's mandatory hosted-isolation lane, F6's development dependency advisory, and the remaining F4 hardening are still open production work; they are not silently marked fixed by a successful filming rehearsal.
+
+## Original executive decision (baseline)
 
 **FaultLine is a working, carefully constrained repair system with credible kernel containment. It is suitable for a supervised local pilot. Its current deployment verdict and portable proof format need correction before either should independently authorize production changes.**
 
