@@ -1,5 +1,12 @@
 # Agent handoff state
 
+## November 1: Windows controller import and demo builds (codex-windows-fcntl-fix)
+
+- Guarded the `app.run` import of `fcntl`, which `app.main` reaches through `project_budgets`. `run_project` falls back to a nonblocking `msvcrt` byte lock and releases it on success or worker failure; Unix retains `flock`.
+- `scripts/start-demo.ps1` now invokes build/setup commands synchronously with the call operator, checks `$LASTEXITCODE`, restores the caller directory, and passes the npm CLI path without manual quotes. Long-running services still use the owned-process supervisor.
+- Regression checks reproduced the original controller import failure and the original PowerShell argument splitting in isolated fixtures, then passed with the fixes. The Windows locking tests cover success, contention, and worker failure.
+- `FAULTLINE_TEST_PWSH=/tmp/faultline-pwsh-validation/pwsh make check` exited 0: **345 backend/script + 926 orchestrator + 123 runner = 1,394 passed**, with two Windows-only skips; lint/format, strict typing over 94 source files, provenance, and all builds passed. Local PowerShell is 7.6.9. A real controller started successfully and its `/healthz` passed `faultline gate` (one screen, zero elements, exit 0). Native Windows demo execution under PowerShell 7 and 5.1 is covered by the platform-smoke workflow, not the Linux harness.
+
 ## November 1: native Windows demo (codex-windows-demo)
 
 - `faultline.cmd demo` now selects `pwsh`, falling back to `powershell.exe`, and runs the native `scripts/start-demo.ps1` supervisor. It starts the API/controller/storefront/Inspector on loopback, validates distinct free ports before building, generates or preserves the shared control token without printing it, validates backend health identities, and retains evidence. All build and service processes are owned and cleaned up on failure or interruption.

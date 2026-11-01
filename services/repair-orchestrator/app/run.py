@@ -1,6 +1,6 @@
 """Local command composition using the durable worker, policy, and proof store."""
 
-import fcntl
+import importlib
 from dataclasses import fields, replace
 from pathlib import Path
 from typing import Any
@@ -13,6 +13,11 @@ from app.project import ProjectRun, ProjectSnapshots
 from app.project_runtime import ProjectRuntime
 from app.worker import Budgets, RepairWorker
 from shared.contracts.models import CleanupStatus, JobMode, JobRequest, TerminalOutcome
+
+try:
+    import fcntl
+except ImportError:
+    fcntl = None  # type: ignore[assignment]
 
 
 def project_budgets(run: ProjectRun) -> Budgets:
@@ -85,7 +90,24 @@ async def run_project(
 ) -> dict[str, Any]:
     """Reserve this installation before reconciliation can touch any resources."""
     data_dir.mkdir(parents=True, exist_ok=True)
-    with (data_dir / ".run.lock").open("a") as lock:
+    with (data_dir / ".run.lock").open("a+b") as lock:
+        if fcntl is None:
+            msvcrt = importlib.import_module("msvcrt")
+            # Windows locks one byte starting at the current file position.
+            lock.seek(0, 2)
+            if lock.tell() == 0:
+                lock.write(b"\0")
+                lock.flush()
+            lock.seek(0)
+            try:
+                msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+            except OSError as exc:
+                raise RuntimeError("another run owns this data directory") from exc
+            try:
+                return await _run_project(root, run, data_dir, detect=detect)
+            finally:
+                lock.seek(0)
+                msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:

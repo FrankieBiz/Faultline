@@ -571,6 +571,39 @@ def powershell_demo(machine):
 
 
 @pytest.mark.skipif(not PWSH, reason="PowerShell is optional on Unix")
+def test_powershell_demo_build_preserves_arguments_and_cwd(powershell_demo):
+    repo, bin_dir, env = powershell_demo
+    wrapper = repo.parent / "build-helper.ps1"
+    wrapper.write_text(
+        "param($Root, $Program, $NpmCli)\n"
+        "$ErrorActionPreference = 'Stop'\n"
+        "$children = New-Object 'System.Collections.Generic.List[System.Diagnostics.Process]'\n"
+        "$services = New-Object 'System.Collections.Generic.List[System.Diagnostics.Process]'\n"
+        "$scriptPath = Join-Path $Root 'scripts/start-demo.ps1'\n"
+        "$ast = [System.Management.Automation.Language.Parser]::ParseFile(\n"
+        "    $scriptPath, [ref]$null, [ref]$null)\n"
+        "$ast.FindAll({param($node) $node -is "
+        "[System.Management.Automation.Language.FunctionDefinitionAst]}, $false) |\n"
+        "    ForEach-Object { Invoke-Expression $_.Extent.Text }\n"
+        "$caller = (Get-Location).Path\n"
+        "Invoke-Checked $Program @($NpmCli, '--prefix', 'project with spaces', 'run', 'build')\n"
+        "if ((Get-Location).Path -ne $caller) { throw 'Caller directory changed.' }\n"
+    )
+    npm_cli = repo.parent / "node tools with spaces/node_modules/npm/bin/npm-cli.js"
+    result = subprocess.run(
+        [PWSH, "-NoProfile", "-File", str(wrapper), str(repo), str(bin_dir / "node"), str(npm_cli)],
+        env=env,
+        cwd=repo.parent,
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    [call] = calls(env)
+    assert call["args"] == [str(npm_cli), "--prefix", "project with spaces", "run", "build"]
+
+
+@pytest.mark.skipif(not PWSH, reason="PowerShell is optional on Unix")
 @pytest.mark.parametrize(
     "case", ["stop", "service_exit", "startup_exit", "build", "timeout", "wrong_identity"]
 )

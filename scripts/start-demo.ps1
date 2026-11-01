@@ -27,9 +27,13 @@ function Start-Owned {
 
 function Invoke-Checked {
     param([string]$Program, [string[]]$Arguments)
-    $process = Start-Owned $root $Program $Arguments
-    while (-not $process.WaitForExit(200)) { Assert-Running }
-    if ($process.ExitCode -ne 0) { throw "Build/setup command failed (exit $($process.ExitCode)). Run .\setup.bat first." }
+    Assert-Running
+    Push-Location $root
+    try {
+        & $Program @Arguments
+        if ($LASTEXITCODE -ne 0) { throw "Build/setup command failed (exit $LASTEXITCODE). Run .\setup.bat first." }
+    }
+    finally { Pop-Location }
     Assert-Running
 }
 
@@ -86,12 +90,9 @@ try {
     # as executables by Start-Process with shell execution disabled.
     $npmCli = Join-Path (Split-Path -Parent $npm.Source) 'node_modules/npm/bin/npm-cli.js'
     if (-not (Test-Path -LiteralPath $npmCli)) { throw 'Cannot locate npm-cli.js beside npm. Reinstall Node.js with npm.' }
-    # npm-cli.js may live under Program Files. Quote only this path when Windows
-    # Start-Process joins ArgumentList into a native command line.
-    $npmArgument = '"' + $npmCli + '"'
     Invoke-Checked $uvPath @('sync', '--project', 'services/repair-orchestrator', '--python', '3.13', '--locked')
     foreach ($project in @('tools/browser-runner', 'apps/buggyshop-frontend', 'web/inspector-ui')) {
-        Invoke-Checked $node.Source @($npmArgument, '--prefix', $project, 'run', 'build')
+        Invoke-Checked $node.Source @($npmCli, '--prefix', $project, 'run', 'build')
     }
     if (-not $env:FAULTLINE_CONTROL_TOKEN) {
         $bytes = New-Object byte[] 32
