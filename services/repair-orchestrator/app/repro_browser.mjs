@@ -7,6 +7,11 @@ const origin = process.argv[3];
 const output = process.argv[4];
 const browser = await chromium.launch({ headless: true, chromiumSandbox: true });
 process.once("SIGTERM", async () => { await browser.close(); process.exit(143); });
+if (origin === '--preflight') {
+  await browser.close();
+  console.log(JSON.stringify({ ready: true }));
+  process.exit(0);
+}
 const context = await browser.newContext({ serviceWorkers: 'block' });
 await context.route('**/*', route => {
   const url = new URL(route.request().url());

@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -15,6 +16,7 @@ import pytest
 from app.cli import build_parser, cmd_run
 from app.database import Database, DatabaseError
 from app.evidence import EvidenceStore
+from app.isolated_runtime import ManagedProcess
 from app.model_adapter import (
     MetaRepairAdapter,
     ModelError,
@@ -381,6 +383,102 @@ def test_cli_uses_selected_config_and_reports_exit_code(
     assert invoke.call_args.args[0] == root
     assert invoke.call_args.args[1].scenario.id == "addition"
     assert json.loads(capsys.readouterr().out)["proof_bundle"] == "/proof"
+
+
+@pytest.mark.parametrize("failure", ["exit", "timeout", "handshake", "spawn"])
+async def test_browser_profile_failure_withholds_readiness_before_candidate_or_model(
+    project: tuple[Path, ProjectRun], tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    """Explicit process doubles exercise readiness; they do not establish isolation."""
+    root, run = project
+    runtime = ProjectRuntime(root, run)
+    runtime.node = "/trusted/node"
+    runtime.playwright = tmp_path / "playwright.mjs"
+    runtime.playwright.touch()
+    runtime._preflight = True  # Reconciliation must revoke even previously healthy readiness.
+    monkeypatch.setattr(runtime, "_release_leftover_scopes", AsyncMock())
+    monkeypatch.setattr(runtime, "backend_preflight", AsyncMock())
+    launch_service = AsyncMock()
+    monkeypatch.setattr(runtime, "_launch_service", launch_service)
+    process = SimpleNamespace(
+        stdout=bytearray(b"invalid" if failure == "handshake" else b'{"ready":true}\n'),
+        wait=AsyncMock(
+            return_value=1 if failure == "exit" else 0,
+            side_effect=TimeoutError if failure == "timeout" else None,
+        ),
+    )
+    start = AsyncMock(return_value=process)
+    if failure == "spawn":
+        start.side_effect = OSError("untrusted exception detail must not escape")
+    monkeypatch.setattr(ManagedProcess, "start", start)
+    worker = worker_for(root, run, tmp_path / "data", runtime)
+    try:
+        with pytest.raises(RuntimeUnavailable, match="^sandboxed_browser_(unavailable|timeout)$"):
+            await worker.reconcile()
+        assert not runtime.ready
+        assert not runtime.sessions
+        launch_service.assert_not_awaited()
+        assert isinstance(worker.adapter.propose_patch, AsyncMock)
+        worker.adapter.propose_patch.assert_not_awaited()
+        assert start.call_args.args == (
+            runtime.node,
+            str(runtime.driver),
+            str(runtime.playwright),
+            "--preflight",
+        )
+        assert start.call_args.kwargs == {"env": runtime._trusted_environment()}
+        if failure != "spawn":
+            process.wait.assert_awaited_once_with(10)
+    finally:
+        await worker.adapter.close()
+        worker.database.close()
+
+
+@pytest.mark.parametrize("failure", ["spawn", "eof", "handshake", "timeout"])
+async def test_browser_startup_failure_after_readiness_is_infrastructure(
+    project: tuple[Path, ProjectRun], tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    """Simulated service/bridge and failed driver spawn; no candidate or browser runs."""
+    root, run = project
+    runtime = ProjectRuntime(root, run)
+    runtime._preflight = True
+    monkeypatch.setattr(runtime, "_launch_service", AsyncMock())
+    monkeypatch.setattr(runtime, "_start_bridge", AsyncMock(return_value="http://127.0.0.1:1"))
+    monkeypatch.setattr(runtime, "scope_unit", lambda session_id: None)
+    browser = SimpleNamespace(
+        process=SimpleNamespace(
+            stdout=SimpleNamespace(
+                readline=AsyncMock(
+                    return_value=b'{"ready":false}\n' if failure == "handshake" else b"",
+                    side_effect=TimeoutError if failure == "timeout" else None,
+                )
+            )
+        ),
+        stop=AsyncMock(),
+    )
+    start = AsyncMock(return_value=browser)
+    if failure == "spawn":
+        start.side_effect = OSError("untrusted launch detail")
+    monkeypatch.setattr(ManagedProcess, "start", start)
+    worker = worker_for(root, run, tmp_path / "data", runtime)
+    try:
+        runtime._installation = worker.database.get_lease().installation_id
+        job = worker.database.create_job(
+            JobRequest(scenario_id="addition", idempotency_key=str(uuid4()))
+        )
+        done = await worker.run_job(job.id)
+        assert done.outcome == TerminalOutcome.INFRASTRUCTURE_ERROR, done.error_details
+        assert done.error_details is not None
+        assert done.error_details["reason"] == "sandboxed_browser_launch_failed"
+        assert not runtime.ready
+        assert not runtime.sessions
+        assert isinstance(worker.adapter.propose_patch, AsyncMock)
+        worker.adapter.propose_patch.assert_not_awaited()
+        if failure != "spawn":
+            browser.stop.assert_awaited_once()
+    finally:
+        await worker.adapter.close()
+        worker.database.close()
 
 
 async def test_real_node_repository_baseline_repair_and_proof(
