@@ -1,5 +1,14 @@
 # Agent handoff state
 
+## November 1: native Windows demo (codex-windows-demo)
+
+- `faultline.cmd demo` now selects `pwsh`, falling back to `powershell.exe`, and runs the native `scripts/start-demo.ps1` supervisor. It starts the API/controller/storefront/Inspector on loopback, validates distinct free ports before building, generates or preserves the shared control token without printing it, validates backend health identities, and retains evidence. All build and service processes are owned and cleaned up on failure or interruption.
+- Windows uses a nonblocking `msvcrt` byte lock instead of importing `fcntl`. Like macOS, the foreground CLI refuses occupied ports and `--restart` rather than inferring ownership. Ctrl+C requests PowerShell cleanup through a private stop marker; a stuck supervisor falls back to killing its own process tree. Selected child shells rediscover their standard modules instead of inheriting another PowerShell version's `PSModulePath`.
+- README now lists Windows demo as explore only and shows the Inspector at `http://127.0.0.1:4000`. Sandboxed repair still requires Linux. Earlier Windows-demo rejection notes below are superseded.
+- Verification: `FAULTLINE_TEST_PWSH=/tmp/faultline-pwsh-validation/pwsh make check` exited 0: 344 backend/script tests, 922 orchestrator/CLI tests, 123 runner tests (1,389 passed), two native-Windows-only skips; lint/format, strict mypy over 93 source files, provenance, frontend/runner/Inspector and Python package builds passed. Local PowerShell 7.6.9 exercises actual loopback stub services, token sharing/preservation, startup/health/build failures, collision refusal, cleanup of descendants, and preservation of unrelated processes. A separate real PTY Ctrl+C probe stopped all four listeners.
+- Native Windows evidence must come from the extended `tests/test_platform_smoke.py` cases in the existing platform-smoke workflow: the real four-service stack runs under both PowerShell 7 and Windows PowerShell 5.1 and stops through the cooperative marker. These cannot run on the Linux host; do not present the local PowerShell harness as Windows execution.
+
+
 ## November 1: README per-OS quickstarts (claude-readme-polish-2)
 
 - README top now reads: judge quick guide (3 / 10 / 15 minute rows), the four surfaces, the 3-minute tour, story, hosted page, then **Installation and quickstart** with a "What runs where" capability matrix, prerequisites by OS, and separate Zero install / macOS / Windows (PowerShell + Command Prompt) / Linux (Fedora or Ubuntu) blocks. The old numbered setup steps became unnumbered "Using FaultLine" subsections; anchors `#-macos`, `#-windows`, `#-linux-fedora-or-ubuntu`, `#connect-meta-optional` are linked from the guide.

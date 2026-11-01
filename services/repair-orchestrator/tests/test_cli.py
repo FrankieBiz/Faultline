@@ -2072,19 +2072,10 @@ def demo_ports(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[int, ..
     return cli_demo.DEFAULT_PORTS
 
 
-def test_demo_windows_guidance_without_linux_discovery(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    monkeypatch.setattr(sys, "platform", "win32")
-    with patch("app.cli_demo.processes", side_effect=AssertionError("Linux process discovery")):
-        assert _command("demo", "--no-open") == 1
-    error = capsys.readouterr().err
-    assert "WSL2" in error and "systemd" in error and "cgroup v2" in error
-    assert "unverified" in error
-
-
+@pytest.mark.parametrize("platform", ["darwin", "win32"])
 @pytest.mark.parametrize("restart,occupied", [(False, False), (False, True), (True, False)])
-def test_demo_macos_foreground_without_linux_discovery(
+def test_demo_native_foreground_without_linux_discovery(
+    platform: str,
     restart: bool,
     occupied: bool,
     tmp_path: Path,
@@ -2092,7 +2083,7 @@ def test_demo_macos_foreground_without_linux_discovery(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(sys, "platform", platform)
     monkeypatch.delenv("DISPLAY", raising=False)
     monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
 
@@ -2137,6 +2128,120 @@ def test_demo_macos_launcher_waits_for_health_without_proc(
         assert cli_demo.start_demo(tmp_path, cli_demo.DEFAULT_PORTS, ready) == 0
     assert health.call_count == 4
     ready.assert_called_once()
+
+
+@pytest.mark.parametrize("shell", ["pwsh", "powershell.exe", None])
+def test_demo_windows_launcher_health_and_shell_fallback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, shell: str | None
+) -> None:
+    from app import cli_demo
+
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setenv("PSModulePath", "caller-specific-PowerShell-modules")
+    process = MagicMock()
+    process.__enter__.return_value = process
+    process.poll.return_value = None
+    process.wait.return_value = 0
+    ready = MagicMock()
+    with (
+        patch(
+            "app.cli_demo.shutil.which", side_effect=lambda name: shell if name == shell else None
+        ),
+        patch("app.cli_demo.subprocess.Popen", return_value=process) as launch,
+        patch("app.cli_demo.processes", side_effect=AssertionError("Linux process discovery")),
+        patch("app.cli_demo._healthy", side_effect=[False, True, True, True, True]) as health,
+        patch("app.cli_demo.time.sleep"),
+    ):
+        if shell is None:
+            with pytest.raises(RuntimeError, match="PowerShell is required"):
+                cli_demo.start_demo(tmp_path, cli_demo.DEFAULT_PORTS, ready)
+            launch.assert_not_called()
+            ready.assert_not_called()
+            return
+        assert cli_demo.start_demo(tmp_path, cli_demo.DEFAULT_PORTS, ready) == 0
+    assert health.call_count == 5
+    command = launch.call_args.args[0]
+    assert command[:7] == [
+        shell,
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        str(tmp_path / "scripts/start-demo.ps1"),
+        "-StopFile",
+    ]
+    assert launch.call_args.kwargs["creationflags"] == 0x200
+    assert launch.call_args.kwargs["start_new_session"] is False
+    assert launch.call_args.kwargs["env"]["INSPECTOR_PORT"] == "4000"
+    assert "PSModulePath" not in launch.call_args.kwargs["env"]
+    ready.assert_called_once()
+    process.terminate.assert_not_called()
+    assert not Path(command[-1]).exists()
+
+
+@pytest.mark.parametrize("stuck", [False, True])
+def test_demo_windows_interrupt_requests_cleanup_before_tree_fallback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stuck: bool
+) -> None:
+    from app import cli_demo
+
+    monkeypatch.setattr(sys, "platform", "win32")
+    process = MagicMock()
+    process.__enter__.return_value = process
+    process.poll.return_value = None
+    process.pid = 45678
+    ready = MagicMock()
+    stop_file = None
+
+    def wait(timeout: float | None = None) -> int:
+        if timeout is None and stop_file is None:
+            raise KeyboardInterrupt
+        assert stop_file is not None and stop_file.exists()
+        if stuck and timeout is not None:
+            raise subprocess.TimeoutExpired("pwsh", timeout)
+        return 130
+
+    def stopping(*args: Any, **kwargs: Any) -> int:
+        nonlocal stop_file
+        stop_file = next((tmp_path / "data").glob("demo-stop-*"))
+        return wait(*args, **kwargs)
+
+    process.wait.side_effect = lambda **kw: stopping(**kw) if kw else wait()
+    with (
+        patch("app.cli_demo.shutil.which", return_value="pwsh"),
+        patch("app.cli_demo.subprocess.Popen", return_value=process),
+        patch("app.cli_demo.subprocess.run") as kill,
+        patch("app.cli_demo._healthy", return_value=True),
+    ):
+        with pytest.raises(KeyboardInterrupt):
+            cli_demo.start_demo(tmp_path, cli_demo.DEFAULT_PORTS, ready)
+    assert kill.call_count == int(stuck)
+    if stuck:
+        assert kill.call_args.args[0] == ["taskkill.exe", "/PID", "45678", "/T", "/F"]
+    assert stop_file is not None and not stop_file.exists()
+    process.terminate.assert_not_called()
+
+
+def test_demo_windows_file_lock_is_nonblocking_and_released(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import types
+
+    from app import cli_demo
+
+    locking = MagicMock()
+    windows_lock = types.SimpleNamespace(locking=locking, LK_NBLCK=1, LK_UNLCK=2)
+    # Keep pathlib native on the Unix test host while exercising the Windows lock.
+    monkeypatch.setattr(cli_demo, "os", types.SimpleNamespace(name="nt", SEEK_END=os.SEEK_END))
+    with patch.dict(sys.modules, msvcrt=windows_lock):
+        with cli_demo.launch_lock(tmp_path) as release:
+            release()
+        assert [c.args[1:] for c in locking.call_args_list] == [(1, 1), (2, 1)]
+        assert (tmp_path / "data/demo.lock").read_bytes() == b"\0"
+        locking.side_effect = OSError("already locked")
+        with pytest.raises(RuntimeError, match="already in progress"):
+            with cli_demo.launch_lock(tmp_path):
+                pytest.fail("contended Windows lock was acquired")
 
 
 def _demo_snapshot(root: Path, ports: tuple[int, ...], *, count: int = 4) -> dict[int, Any]:

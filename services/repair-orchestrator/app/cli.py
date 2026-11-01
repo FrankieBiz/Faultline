@@ -1674,14 +1674,6 @@ def cmd_gate(args: argparse.Namespace) -> int:
 
 def cmd_demo(args: argparse.Namespace) -> int:
     """Connect to the complete demo, or launch it with the existing session supervisor."""
-    if sys.platform == "win32":
-        print(
-            "faultline demo: Run the demo from WSL2 with systemd enabled and cgroup v2 "
-            "(WSL2 is unverified), or use Linux. Native Windows supports check, test, scan, "
-            "init, gate; sandbox repairs do not run natively.",
-            file=sys.stderr,
-        )
-        return 1
     from app import cli_demo
 
     c = _palette(args)
@@ -1698,7 +1690,7 @@ def cmd_demo(args: argparse.Namespace) -> int:
     def ready() -> None:
         print(f"{c.bold}FaultLine Inspector{c.reset}  {c.cyan}{url}{c.reset}")
         if not args.no_open:
-            if sys.platform != "darwin" and not (
+            if sys.platform not in {"darwin", "win32"} and not (
                 os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")
             ):
                 print("No graphical display detected; open the URL above in a browser.")
@@ -1724,12 +1716,12 @@ def cmd_demo(args: argparse.Namespace) -> int:
         return False
 
     try:
-        if sys.platform == "darwin":
-            # /proc and pidfds cannot establish ownership on macOS. Keep the lock
+        if sys.platform in {"darwin", "win32"}:
+            # /proc and pidfds cannot establish ownership here. Keep the lock
             # for the foreground launch's entire lifetime; never attach or kill by port.
             if args.restart:
                 raise RuntimeError(
-                    "macOS cannot verify demo process ownership for --restart. "
+                    "This platform cannot verify demo process ownership for --restart. "
                     "Stop the demo in its original terminal, then run faultline demo."
                 )
             with cli_demo.launch_lock(root):

@@ -1,10 +1,13 @@
 """Exercise the actual entry scripts with clean-machine tools and no downloads."""
 
+import hashlib
 import json
 import os
 import shutil
+import socket
 import subprocess
 import sys
+import time
 import zipfile
 from pathlib import Path
 
@@ -31,6 +34,7 @@ def machine(tmp_path: Path) -> tuple[Path, Path, dict[str, str]]:
         "faultline",
         "scripts/setup.sh",
         "scripts/start-demo.sh",
+        "scripts/start-demo.ps1",
         "setup.ps1",
         "faultline.ps1",
     ):
@@ -493,3 +497,193 @@ def test_powershell_setup_installs_uv_from_official_script_or_zip(machine, failu
     if failure:
         assert (destination.parent / "uvx.exe").is_file()
         assert "zip" in result.stdout.lower()
+
+
+@pytest.fixture
+def powershell_demo(machine):
+    repo, bin_dir, env = machine
+    for project in ("apps/buggyshop-frontend", "tools/browser-runner", "web/inspector-ui"):
+        (repo / project / "node_modules").mkdir()
+    npm_bin = bin_dir / "npm tools with spaces"
+    npm_cli = npm_bin / "node_modules/npm/bin/npm-cli.js"
+    npm_cli.parent.mkdir(parents=True)
+    npm_cli.touch()
+    executable(npm_bin / "npm", TOOL)
+    env["PATH"] = str(npm_bin) + os.pathsep + env["PATH"]
+    service = (
+        "import hashlib, threading, time\n"
+        "from http.server import BaseHTTPRequestHandler, HTTPServer\n"
+        "is_uv = 'uvicorn' in sys.argv\n"
+        "port = int(sys.argv[sys.argv.index('--port' if is_uv else '-p') + 1])\n"
+        "app = 'buggyshop-api' if Path.cwd().name == 'buggyshop-backend' "
+        "else 'faultline-orchestrator'\n"
+        "token = os.environ.get('FAULTLINE_CONTROL_TOKEN', '')\n"
+        "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+        "record = {'pid': os.getpid(), 'child': child.pid, 'port': port, "
+        "'cwd': os.getcwd(), 'args': sys.argv[1:], 'token_length': len(token), "
+        "'token_hash': hashlib.sha256(token.encode()).hexdigest(), "
+        "'runtime': os.environ.get('FAULTLINE_RUNTIME'), "
+        "'backend': os.environ.get('BUGGYSHOP_BACKEND_URL'), "
+        "'controller': os.environ.get('FAULTLINE_ORCHESTRATOR_URL')}\n"
+        "with open(os.environ['SESSIONS'], 'a') as log: log.write(json.dumps(record)+'\\n')\n"
+        "if os.environ.get('DEMO_CASE') == 'startup_exit': "
+        "child.terminate(); child.wait(); sys.exit(37)\n"
+        "class Handler(BaseHTTPRequestHandler):\n"
+        "    def do_GET(self):\n"
+        "        healthy = os.environ.get('DEMO_CASE') != 'timeout'\n"
+        "        self.send_response(200 if healthy else 503)\n"
+        "        self.send_header('Content-Type', 'application/json'); self.end_headers()\n"
+        "        name = 'foreign' if os.environ.get('DEMO_CASE') == 'wrong_identity' else app\n"
+        "        self.wfile.write(json.dumps({'app': name, 'status': 'ok'}).encode())\n"
+        "    def log_message(self, *_): pass\n"
+        "server = HTTPServer(('127.0.0.1', port), Handler)\n"
+        "threading.Thread(target=server.serve_forever, daemon=True).start()\n"
+        "while True:\n"
+        "    if Path(os.environ['EXIT_SERVICE']).exists() and Path.cwd().name == 'inspector-ui':\n"
+        "        child.terminate(); child.wait(); sys.exit(37)\n"
+        "    time.sleep(0.05)\n"
+    )
+    stub = (
+        f"#!{sys.executable}\nimport json, os, subprocess, sys\nfrom pathlib import Path\n"
+        f"service = {service!r}\n"
+        "if '--version' in sys.argv: print('v24.0.0'); sys.exit(0)\n"
+        "if 'uvicorn' in sys.argv or 'node_modules/next/dist/bin/next' in sys.argv: "
+        "exec(service)\n"
+        "with open(os.environ['CALLS'], 'a') as log:\n"
+        "    log.write(json.dumps({'args': sys.argv[1:]})+'\\n')\n"
+        "sys.exit(37 if os.environ.get('DEMO_CASE') == 'build' else 0)\n"
+    )
+    executable(bin_dir / "uv", stub)
+    executable(bin_dir / "node", stub)
+    env["SESSIONS"] = str(repo.parent / "sessions.jsonl")
+    env["EXIT_SERVICE"] = str(repo.parent / "exit-service")
+    env["DEMO_STOP"] = str(repo.parent / "stop-demo")
+    # Reserve four different ephemeral ports for the fixture before releasing them.
+    with socket.socket() as a, socket.socket() as b, socket.socket() as c, socket.socket() as d:
+        for listener, name in zip(
+            (a, b, c, d),
+            ("BUGGYSHOP_API_PORT", "FAULTLINE_PORT", "BUGGYSHOP_PORT", "INSPECTOR_PORT"),
+            strict=True,
+        ):
+            listener.bind(("127.0.0.1", 0))
+            env[name] = str(listener.getsockname()[1])
+    return repo, bin_dir, env
+
+
+@pytest.mark.skipif(not PWSH, reason="PowerShell is optional on Unix")
+@pytest.mark.parametrize(
+    "case", ["stop", "service_exit", "startup_exit", "build", "timeout", "wrong_identity"]
+)
+def test_powershell_demo_supervises_health_credentials_and_child_trees(powershell_demo, case):
+    repo, _, env = powershell_demo
+    env["DEMO_CASE"] = case
+    if case == "service_exit":
+        env["FAULTLINE_CONTROL_TOKEN"] = "test-session-credential-preserved"
+    if case in {"timeout", "wrong_identity"}:
+        script = repo / "scripts/start-demo.ps1"
+        script.write_text(script.read_text().replace("AddSeconds(120)", "AddSeconds(1)"))
+    output = repo.parent / "powershell-demo.log"
+    process = None
+    unrelated = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    try:
+        with output.open("w") as log:
+            process = subprocess.Popen(
+                [
+                    PWSH,
+                    "-NoProfile",
+                    "-File",
+                    str(repo / "scripts/start-demo.ps1"),
+                    "-StopFile",
+                    env["DEMO_STOP"],
+                ],
+                env=env,
+                cwd=repo.parent,
+                stdout=log,
+                stderr=log,
+            )
+            if case in {"stop", "service_exit"}:
+                deadline = time.monotonic() + 15
+                while "FaultLine Inspector:" not in output.read_text():
+                    assert process.poll() is None, output.read_text()
+                    assert time.monotonic() < deadline, output.read_text()
+                    time.sleep(0.05)
+                Path(env["DEMO_STOP"] if case == "stop" else env["EXIT_SERVICE"]).touch()
+            code = process.wait(timeout=20)
+        log = output.read_text()
+        assert code == (130 if case == "stop" else 1), log
+        assert unrelated.poll() is None
+        records = calls({"CALLS": env["SESSIONS"]})
+        if case == "build":
+            assert not records
+            assert "command failed (exit 37)" in log
+        elif case != "startup_exit":
+            assert len(records) == 4, log
+            assert len({record["token_hash"] for record in records}) == 1
+            assert all(record["token_length"] >= 32 for record in records)
+            if case == "service_exit":
+                assert (
+                    records[0]["token_hash"]
+                    == hashlib.sha256(env["FAULTLINE_CONTROL_TOKEN"].encode()).hexdigest()
+                )
+            assert all(record["runtime"] == "isolated" for record in records)
+            assert {record["cwd"] for record in records} == {
+                str(repo / directory)
+                for directory in (
+                    "apps/buggyshop-backend",
+                    "services/repair-orchestrator",
+                    "apps/buggyshop-frontend",
+                    "web/inspector-ui",
+                )
+            }
+            assert all("127.0.0.1" in record["args"] for record in records)
+            if case in {"timeout", "wrong_identity"}:
+                assert "timed out" in log and "FaultLine Inspector:" not in log
+            else:
+                assert f"http://127.0.0.1:{env['INSPECTOR_PORT']}" in log
+                assert f"http://127.0.0.1:{env['BUGGYSHOP_PORT']}" in log
+        assert "test-session-credential-preserved" not in log
+        for record in records:
+            for pid in (record["pid"], record["child"]):
+                stat = Path(f"/proc/{pid}/stat")
+                assert not stat.exists() or stat.read_text().rsplit(")", 1)[1].split()[0] == "Z"
+        # Rebind every service port: cleanup releases the actual listeners.
+        for name in ("BUGGYSHOP_API_PORT", "FAULTLINE_PORT", "BUGGYSHOP_PORT", "INSPECTOR_PORT"):
+            with socket.socket() as probe:
+                probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                probe.bind(("127.0.0.1", int(env[name])))
+    finally:
+        if process is not None and process.poll() is None:
+            Path(env["DEMO_STOP"]).touch()
+            process.wait(timeout=10)
+        unrelated.terminate()
+        unrelated.wait(timeout=5)
+
+
+@pytest.mark.skipif(not PWSH, reason="PowerShell is optional on Unix")
+@pytest.mark.parametrize("case", ["occupied", "duplicate", "invalid"])
+def test_powershell_demo_rejects_ports_before_building(powershell_demo, case):
+    repo, _, env = powershell_demo
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen()
+        if case == "occupied":
+            env["INSPECTOR_PORT"] = str(listener.getsockname()[1])
+        elif case == "duplicate":
+            env["INSPECTOR_PORT"] = env["BUGGYSHOP_PORT"]
+        else:
+            env["INSPECTOR_PORT"] = "65536"
+        result = subprocess.run(
+            [PWSH, "-NoProfile", "-File", str(repo / "scripts/start-demo.ps1")],
+            env=env,
+            cwd=repo.parent,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        assert result.returncode == 1, result.stdout + result.stderr
+        assert {"occupied": "occupied", "duplicate": "distinct", "invalid": "Invalid"}[
+            case
+        ] in result.stderr
+        assert listener.fileno() >= 0
+    assert not calls(env)
+    assert not Path(env["SESSIONS"]).exists()

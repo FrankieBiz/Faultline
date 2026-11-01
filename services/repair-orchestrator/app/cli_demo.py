@@ -1,15 +1,18 @@
-"""Linux demo ownership and a foreground macOS launcher, without process environments."""
+"""Linux demo ownership and native foreground launchers, without process environments."""
 
 from __future__ import annotations
 
 import http.client
+import importlib
 import json
 import os
+import shutil
 import signal
 import socket
 import subprocess
 import sys
 import time
+import uuid
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -31,21 +34,45 @@ STOP_TIMEOUT = 10.0
 @contextmanager
 def launch_lock(root: Path) -> Iterator[Callable[[], None]]:
     """Serialize this installation's startup; release at readiness or on any failure."""
-    import fcntl
-
     path = root / "data/demo.lock"
     path.parent.mkdir(parents=True, exist_ok=True)
     # Keep the inode after release: unlinking would let contenders lock different files.
-    with path.open("a") as lock:
+    with path.open("a+b") as lock:
+        if os.name == "nt":
+            msvcrt = importlib.import_module("msvcrt")
+
+            # Windows locks a byte range starting at the current file position.
+            lock.seek(0, os.SEEK_END)
+            if lock.tell() == 0:
+                lock.write(b"\0")
+                lock.flush()
+
+            def set_lock(acquire: bool) -> None:
+                lock.seek(0)
+                msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK if acquire else msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            def set_lock(acquire: bool) -> None:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB if acquire else fcntl.LOCK_UN)
+
         try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
+            set_lock(True)
+        except OSError:
             raise RuntimeError("Demo launch already in progress for this installation.") from None
 
-        def release() -> None:
-            fcntl.flock(lock, fcntl.LOCK_UN)
+        held = True
 
-        yield release
+        def release() -> None:
+            nonlocal held
+            if held:
+                set_lock(False)
+                held = False
+
+        try:
+            yield release
+        finally:
+            release()
 
 
 @dataclass(frozen=True)
@@ -284,11 +311,35 @@ def stop_stack(
 def start_demo(root: Path, ports: tuple[int, ...], ready: Callable[[], None]) -> int:
     """Keep the existing launcher in the foreground and preserve its cleanup trap."""
     env = {**os.environ, **dict(zip(PORT_NAMES, map(str, ports), strict=True))}
+    windows = sys.platform == "win32"
+    stop_file = root / "data" / f"demo-stop-{uuid.uuid4().hex}"
+    command = ["bash", str(root / "scripts/start-demo.sh")]
+    if windows:
+        # Let the selected PowerShell version discover its own standard modules;
+        # a caller's PowerShell 7 paths can break Windows PowerShell 5.1 imports.
+        env.pop("PSModulePath", None)
+        shell = shutil.which("pwsh") or shutil.which("powershell.exe")
+        if shell is None:
+            raise RuntimeError("PowerShell is required for the demo (pwsh or powershell.exe).")
+        command = [
+            shell,
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(root / "scripts/start-demo.ps1"),
+            "-StopFile",
+            str(stop_file),
+        ]
+        stop_file.parent.mkdir(parents=True, exist_ok=True)
     with subprocess.Popen(
-        ["bash", str(root / "scripts/start-demo.sh")],
+        command,
         cwd=root,
         env=env,
-        start_new_session=True,
+        start_new_session=not windows,
+        # Only the CLI handles console Ctrl+C; it asks PowerShell to unwind its
+        # finally block rather than killing the supervisor ahead of its children.
+        creationflags=0x00000200 if windows else 0,  # CREATE_NEW_PROCESS_GROUP
     ) as process:
         try:
             deadline = time.monotonic() + START_TIMEOUT
@@ -296,9 +347,9 @@ def start_demo(root: Path, ports: tuple[int, ...], ready: Callable[[], None]) ->
                 code = process.poll()
                 if code is not None:
                     raise RuntimeError(f"Demo launcher exited during startup (code {code}).")
-                if sys.platform == "darwin":
+                if sys.platform in {"darwin", "win32"}:
                     # This foreground invocation owns the launcher, but cannot attest
-                    # service process ownership through Linux /proc on macOS.
+                    # service process ownership through Linux /proc on these platforms.
                     active = all(_healthy(index, port) for index, port in enumerate(ports))
                 else:
                     stack = inspect_stack(ports, processes())
@@ -309,7 +360,25 @@ def start_demo(root: Path, ports: tuple[int, ...], ready: Callable[[], None]) ->
                 time.sleep(0.5)
             raise RuntimeError("Demo startup timed out; stopping this launcher's session.")
         finally:
-            if process.poll() is None:
-                process.terminate()
-                # The launcher's trap kills only its own children and waits for cleanup.
-                process.wait()
+            try:
+                if process.poll() is None:
+                    if windows:
+                        stop_file.touch()
+                        try:
+                            process.wait(timeout=STOP_TIMEOUT)
+                        except subprocess.TimeoutExpired:
+                            # A stuck supervisor cannot poll StopFile. Kill only this
+                            # invocation's process tree, including build children.
+                            subprocess.run(
+                                ["taskkill.exe", "/PID", str(process.pid), "/T", "/F"],
+                                check=False,
+                                capture_output=True,
+                            )
+                            process.wait()
+                    else:
+                        process.terminate()
+                        # The launcher's trap owns child cleanup.
+                        process.wait()
+            finally:
+                if windows:
+                    stop_file.unlink(missing_ok=True)

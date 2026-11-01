@@ -21,7 +21,7 @@ Pick the row that fits your time and your machine.
 | Surface | Address | What it is |
 | :--- | :--- | :--- |
 | **Judge page** | [frankiebiz.github.io/Faultline](https://frankiebiz.github.io/Faultline/) | The static hackathon showcase: the recorded Meta repair, the gate replays, the patch explorer, live bug planting, and checksummed evidence replays. [Details below](#what-judges-can-do-on-the-hosted-page). |
-| **Inspector studio** | `http://127.0.0.1:4000` via `./faultline demo` | The local web studio for engineers and SREs. A headless Playwright crawler explores a `localhost` app (the bundled store on `:3000`, or any URL you paste). The repair orchestrator on `:9000` calls the Meta Model API when a key is set and otherwise uses the labeled deterministic fallback. Candidate diffs run inside Bubblewrap namespaces under 512 MiB / 64 task / 1 CPU cgroup limits. A verified fix is applied only to the bundled demo store; project repairs stay in the sandbox and never touch your working source. Full repair on Linux; macOS runs it without repair. |
+| **Inspector studio** | `http://127.0.0.1:4000` via `./faultline demo` | The local web studio for engineers and SREs. A headless Playwright crawler explores a `localhost` app (the bundled store on `:3000`, or any URL you paste). The repair orchestrator on `:9000` calls the Meta Model API when a key is set and otherwise uses the labeled deterministic fallback. Candidate diffs run inside Bubblewrap namespaces under 512 MiB / 64 task / 1 CPU cgroup limits. A verified fix is applied only to the bundled demo store; project repairs stay in the sandbox and never touch your working source. Full repair on Linux; macOS and Windows run it without repair. |
 | **Demo store (BuggyShop)** | `http://127.0.0.1:3000` (API `:8000`) | A real Next.js + FastAPI shop, started by `./faultline demo`, with a seeded coupon discount exception that makes checkout return HTTP 500. |
 | **AuraScale Cloud** *(historical, not in this repo)* | was `http://127.0.0.1:5050` | An external scratch app, used once on November 1 for the recorded blocked-gate replay on the judge page. Nothing here starts it, and no filming or test depends on it. |
 
@@ -91,7 +91,7 @@ The **Pre-Flight Gate** is cross-platform. **Sandboxed candidate verification** 
 | Health report | `doctor` | ✅ | ✅ | ✅ |
 | HTTP invariants | `test`, `check`, `init` | ✅ | ✅ | ✅ |
 | Browser crawl and deploy gate | `scan --no-repair`, `crawl`, `gate` | ✅ | ✅ | ✅ |
-| Local demo stack (Inspector + seeded store) | `demo` | ✅ explore only | ➖ use the judge page | ✅ |
+| Local demo stack (Inspector + seeded store) | `demo` | ✅ explore only | ✅ explore only | ✅ |
 | Sandboxed candidate repair | `run`, `scan` repair, `check --repair`, Inspector repair | ➖ | ➖ | ✅ |
 
 Native macOS and Windows setup, the launchers, HTTP checks, and real Chromium gate runs are exercised on GitHub Actions (`macos-latest` and `windows-latest`) by [`platform-smoke.yml`](.github/workflows/platform-smoke.yml). The sandbox is developed and verified on Fedora. **WSL2 is untested**; it would need systemd enabled (`systemd=true` in `/etc/wsl.conf`) and cgroup v2.
@@ -162,7 +162,15 @@ setup.bat
 .\faultline.cmd doctor
 ```
 
-Then check your app. The local demo stack does not run on native Windows, so start your own dev server first (for example `npm run dev`). These commands work the same in PowerShell and Command Prompt:
+Start the local demo stack in this terminal. It runs in the foreground and opens the **Inspector at <http://127.0.0.1:4000>**:
+
+```powershell
+.\faultline.cmd demo
+```
+
+The seeded storefront is at <http://127.0.0.1:3000>. Press Ctrl+C in the demo terminal to stop all four services. Windows supports exploring the demo and finding the seeded checkout failure; sandbox repair requires Linux. Windows refuses `--restart`; stop the original session before relaunching.
+
+Then check the store from a second terminal, or point these commands at your own dev server. These commands work the same in PowerShell and Command Prompt:
 
 ```powershell
 .\faultline.cmd test http://localhost:3000
@@ -222,15 +230,16 @@ FaultLine **fails closed**. If namespaces or enforced aggregate resource limits 
 ./faultline demo
 ```
 
-This opens the **Inspector at <http://127.0.0.1:4000>**. If the complete demo is
+This opens the **Inspector at <http://127.0.0.1:4000>**. On Linux, if the complete demo is
 already healthy, it prints `FaultLine demo stack is already active` and connects.
-Otherwise it runs the existing `scripts/start-demo.sh` launcher in the foreground;
+For a new session it runs `scripts/start-demo.sh` (Linux/macOS) or `scripts/start-demo.ps1` (Windows) in the foreground;
 Ctrl+C stops that session. Use `--no-open` to print the URL without opening a browser,
-or `--restart` to restart a demo owned by this installation's identifiable launcher.
+or, on Linux, `--restart` to restart a demo owned by this installation's identifiable launcher.
 Foreign services, partial stacks without `--restart`, and restarts of other worktrees
 are refused. Other-port stacks are preserved; use a separate worktree if one is
 already using this installation's build files. Concurrent `faultline demo` launches
-fail cleanly while another launch or restart is in progress.
+fail cleanly while another launch or restart is in progress. On macOS and Windows,
+stop the original foreground session before launching another demo.
 
 | Service | URL |
 | --- | --- |

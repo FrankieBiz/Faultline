@@ -1,11 +1,16 @@
 """Native setup smoke: real launchers, HTTP checks, and Chromium, without Linux repair."""
 
+import http.client
 import json
 import os
+import shutil
+import socket
 import subprocess
 import sys
 import threading
+import time
 from collections.abc import Iterator
+from contextlib import ExitStack
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -146,3 +151,67 @@ def test_native_scan_healthy_app(tmp_path: Path, local_app: str) -> None:
     report = json.loads(result.stdout)
     assert report["status"] == "clean"
     assert report["failure"] is None
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Real Windows demo and process-tree cleanup")
+@pytest.mark.parametrize("shell", ["pwsh", "powershell.exe"])
+def test_native_windows_demo_stack_and_cleanup(tmp_path: Path, shell: str) -> None:
+    executable = shutil.which(shell)
+    assert executable, f"Native smoke requires {shell}"
+    names = ("BUGGYSHOP_API_PORT", "FAULTLINE_PORT", "BUGGYSHOP_PORT", "INSPECTOR_PORT")
+    env = {**os.environ, "PYTHONUTF8": "1"}
+    env.pop("PSModulePath", None)
+    with ExitStack() as sockets:
+        for name in names:
+            probe = sockets.enter_context(socket.socket())
+            probe.bind(("127.0.0.1", 0))
+            env[name] = str(probe.getsockname()[1])
+    stop = tmp_path / "stop demo"
+    output = tmp_path / "demo.log"
+    with output.open("w") as log:
+        process = subprocess.Popen(
+            [
+                executable,
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(ROOT / "scripts/start-demo.ps1"),
+                "-StopFile",
+                str(stop),
+            ],
+            cwd=tmp_path,
+            env=env,
+            stdout=log,
+            stderr=log,
+        )
+        try:
+            deadline = time.monotonic() + 240
+            while "FaultLine Inspector:" not in output.read_text(errors="replace"):
+                assert process.poll() is None, output.read_text(errors="replace")
+                assert time.monotonic() < deadline, output.read_text(errors="replace")
+                time.sleep(0.25)
+            for index, name in enumerate(names):
+                connection = http.client.HTTPConnection("127.0.0.1", int(env[name]), timeout=5)
+                try:
+                    connection.request("GET", "/healthz" if index < 2 else "/")
+                    response = connection.getresponse()
+                    assert response.status == 200
+                    if index < 2:
+                        body = json.loads(response.read())
+                        assert body["app"] == ("buggyshop-api", "faultline-orchestrator")[index]
+                        assert body["status"] == "ok"
+                finally:
+                    connection.close()
+        finally:
+            stop.touch()
+            try:
+                process.wait(timeout=15)
+            except subprocess.TimeoutExpired:
+                subprocess.run(["taskkill.exe", "/PID", str(process.pid), "/T", "/F"], check=False)
+                process.wait(timeout=10)
+    assert process.returncode == 130, output.read_text(errors="replace")
+    for name in names:
+        with socket.socket() as probe:
+            probe.settimeout(1)
+            assert probe.connect_ex(("127.0.0.1", int(env[name]))) != 0
