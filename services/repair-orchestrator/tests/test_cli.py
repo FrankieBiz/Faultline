@@ -103,6 +103,189 @@ def test_cli_doctor_runs(capsys: pytest.CaptureFixture[str]) -> None:
     assert "cgroup v2" in captured
 
 
+@pytest.mark.parametrize("platform", ["darwin", "win32", "linux"])
+@pytest.mark.parametrize("optional_ready", [False, True])
+def test_doctor_platform_prerequisites(
+    platform: str,
+    optional_ready: bool,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(sys, "platform", platform)
+    monkeypatch.delenv("META_API_KEY", raising=False)
+    if optional_ready:
+        monkeypatch.setenv("META_API_KEY", "test-only")
+    with (
+        patch("app.cli.shutil.which", side_effect=lambda name: f"/tools/{name}"),
+        patch("app.cli.Path.is_file", return_value=True),
+        patch("app.cli.subprocess.check_output", return_value="v24.1.0\n"),
+        patch("app.cli.subprocess.run", return_value=subprocess.CompletedProcess([], 0)),
+        patch("app.cli._api_request", return_value={"status": "ok"} if optional_ready else {}),
+    ):
+        assert cmd_doctor(argparse.Namespace(plain=True)) == 0
+    output = capsys.readouterr().out
+    assert f"Platform: {platform}" in output
+    assert "Playwright Chromium" in output
+    assert "Node.js" in output
+    assert "check, test, scan, init, gate" in output
+    assert "WSL2" in output and "unverified" in output
+    assert "META_API_KEY" in output
+
+
+@pytest.mark.parametrize("platform", ["darwin", "win32", "linux"])
+@pytest.mark.parametrize("missing", ["uv", "node", "playwright", "old-node", "bad-node"])
+def test_doctor_missing_local_prerequisite(
+    platform: str,
+    missing: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(sys, "platform", platform)
+    version = {"old-node": "v18.0.0", "bad-node": "unrecognised"}.get(missing, "v24.1.0")
+    with (
+        patch(
+            "app.cli.shutil.which",
+            side_effect=lambda name: None if name == missing else f"/tools/{name}",
+        ),
+        patch("app.cli.Path.is_file", return_value=True),
+        patch("app.cli.subprocess.check_output", return_value=version),
+        patch(
+            "app.cli.subprocess.run",
+            return_value=subprocess.CompletedProcess([], int(missing == "playwright")),
+        ),
+        patch("app.cli._api_request", return_value={}),
+    ):
+        assert cmd_doctor(argparse.Namespace(plain=True)) == 1
+    assert "Result:" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("platform", ["darwin", "win32"])
+def test_sandbox_readiness_non_linux_never_probes(
+    platform: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.cli_check import sandbox_readiness
+
+    monkeypatch.setattr(sys, "platform", platform)
+    with (
+        patch("app.cli_check.shutil.which", side_effect=AssertionError("Linux tool probe")),
+        patch("app.cli_check.Path.is_file", side_effect=AssertionError("Linux filesystem probe")),
+    ):
+        readiness = sandbox_readiness()
+    assert readiness["prerequisites_available"] is False
+    assert readiness["runtime_ready"] is None
+    assert readiness["status"] == "unavailable"
+    assert "Linux" in readiness["note"]
+
+
+@pytest.mark.parametrize("missing", [None, "bwrap", "systemd-run"])
+def test_sandbox_readiness_linux_contract(
+    missing: str | None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.cli_check import sandbox_readiness
+
+    monkeypatch.setattr(sys, "platform", "linux")
+    with (
+        patch(
+            "app.cli_check.shutil.which",
+            side_effect=lambda name: None if name == missing else f"/tools/{name}",
+        ),
+        patch("app.cli_check.Path.is_file", return_value=True),
+    ):
+        readiness = sandbox_readiness()
+    assert set(readiness["prerequisites"]) == {
+        "bubblewrap",
+        "cgroup_v2",
+        "systemd_run",
+        "node",
+        "uv",
+    }
+    assert readiness["prerequisites_available"] is (missing is None)
+    assert readiness["status"] == ("unverified" if missing is None else "unavailable")
+    assert readiness["runtime_ready"] is None
+
+
+@pytest.mark.parametrize("platform", ["darwin", "win32"])
+@pytest.mark.parametrize("repair", [False, True])
+def test_native_config_checks_do_not_require_sandbox_unless_repair_requested(
+    platform: str,
+    repair: bool,
+    tmp_path: Path,
+    live_http: tuple[str, list[str]],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config = _config(tmp_path, live_http[0])
+    monkeypatch.setattr(sys, "platform", platform)
+    with patch("app.cli_check.run_project", new_callable=AsyncMock) as runner:
+        assert _check(config, "--json", *(["--repair"] if repair else [])) == int(repair)
+    runner.assert_not_called()
+    result = json.loads(capsys.readouterr().out)
+    assert result["checks"][0]["passed"] is True
+    assert result["sandbox"]["prerequisites_available"] is False
+
+
+@pytest.mark.parametrize("platform", ["darwin", "win32"])
+def test_standalone_preflight_imports_without_unix_modules(
+    platform: str, tmp_path: Path, live_http: tuple[str, list[str]]
+) -> None:
+    """A fresh interpreter catches import blockers hidden by pytest's module cache."""
+    from app.cli import REPOSITORY_ROOT
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "main.py").write_text("from fastapi import FastAPI\napp = FastAPI()\n")
+    config = _config(tmp_path, live_http[0])
+    script = """
+import builtins
+import os
+import subprocess
+import sys
+from unittest.mock import patch
+original_import = builtins.__import__
+def portable_import(name, *args, **kwargs):
+    if name in {"fcntl", "resource", "pwd"}:
+        raise ModuleNotFoundError(name)
+    return original_import(name, *args, **kwargs)
+builtins.__import__ = portable_import
+from app import cli, cli_check, cli_crawl, cli_demo
+assert "app.run" not in sys.modules
+assert "app.isolated_runtime" not in sys.modules
+assert "app.project_runtime" not in sys.modules
+sys.platform = sys.argv[2]
+os.chdir(sys.argv[1])
+def command(*argv):
+    args = cli.build_parser().parse_args(argv)
+    return args.func(args)
+assert command("init", "--plain") == 0
+assert command("test", sys.argv[3], "--json") == 0
+assert command("check", "--config", sys.argv[4], "--json") == 0
+with patch("app.crawler_service.run_crawl", return_value={
+    "status": "clean", "stop_reason": "exhausted", "target_url": sys.argv[3],
+    "breadcrumbs": [], "elements_explored": 0, "actions_taken": 0, "pages_visited": [],
+}):
+    assert command("scan", sys.argv[3], "--no-repair", "--json") == 0
+    assert command("gate", sys.argv[3], "--json") == 0
+with (
+    patch("app.cli.shutil.which", return_value="node"),
+    patch("app.cli.subprocess.check_output", return_value="v24.1.0"),
+    patch("app.cli.subprocess.run", return_value=subprocess.CompletedProcess([], 0)),
+    patch("app.cli._api_request", return_value={}),
+):
+    assert command("doctor", "--plain") == 0
+assert command("run") == 30
+assert "app.run" not in sys.modules
+assert "app.project_runtime" not in sys.modules
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script, str(project), platform, live_http[0], str(config)],
+        cwd=REPOSITORY_ROOT / "services/repair-orchestrator",
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_cli_status_command(capsys: pytest.CaptureFixture[str]) -> None:
     """Test faultline status queries readiness."""
     args = argparse.Namespace()
@@ -1887,6 +2070,73 @@ def demo_ports(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[int, ..
     for name in cli_demo.PORT_NAMES:
         monkeypatch.delenv(name, raising=False)
     return cli_demo.DEFAULT_PORTS
+
+
+def test_demo_windows_guidance_without_linux_discovery(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(sys, "platform", "win32")
+    with patch("app.cli_demo.processes", side_effect=AssertionError("Linux process discovery")):
+        assert _command("demo", "--no-open") == 1
+    error = capsys.readouterr().err
+    assert "WSL2" in error and "systemd" in error and "cgroup v2" in error
+    assert "unverified" in error
+
+
+@pytest.mark.parametrize("restart,occupied", [(False, False), (False, True), (True, False)])
+def test_demo_macos_foreground_without_linux_discovery(
+    restart: bool,
+    occupied: bool,
+    tmp_path: Path,
+    demo_ports: tuple[int, ...],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.delenv("DISPLAY", raising=False)
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+
+    def start(root: Path, ports: tuple[int, ...], ready: Any) -> int:
+        assert root == tmp_path and ports == demo_ports
+        ready()
+        return 0
+
+    with (
+        patch("app.cli_demo.processes", side_effect=AssertionError("Linux process discovery")),
+        patch("app.cli_demo._occupied", return_value=occupied),
+        patch("app.cli_demo.start_demo", side_effect=start) as launch,
+        patch("app.cli_demo.stop_stack") as stop,
+        patch("app.cli.webbrowser.open", return_value=True) as browser,
+    ):
+        assert _command("demo", *(["--restart"] if restart else [])) == int(restart or occupied)
+    stop.assert_not_called()
+    if restart or occupied:
+        launch.assert_not_called()
+        assert "original terminal" in capsys.readouterr().err
+    else:
+        launch.assert_called_once()
+        browser.assert_called_once_with("http://127.0.0.1:4000")
+
+
+def test_demo_macos_launcher_waits_for_health_without_proc(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app import cli_demo
+
+    monkeypatch.setattr(sys, "platform", "darwin")
+    process = MagicMock()
+    process.__enter__.return_value = process
+    process.poll.return_value = None
+    process.wait.return_value = 0
+    ready = MagicMock()
+    with (
+        patch("app.cli_demo.subprocess.Popen", return_value=process),
+        patch("app.cli_demo.processes", side_effect=AssertionError("Linux process discovery")),
+        patch("app.cli_demo._healthy", return_value=True) as health,
+    ):
+        assert cli_demo.start_demo(tmp_path, cli_demo.DEFAULT_PORTS, ready) == 0
+    assert health.call_count == 4
+    ready.assert_called_once()
 
 
 def _demo_snapshot(root: Path, ports: tuple[int, ...], *, count: int = 4) -> dict[int, Any]:

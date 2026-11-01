@@ -75,16 +75,16 @@ The [judge page](https://frankiebiz.github.io/Faultline/) is static and works wi
 
 | Requirement | Notes |
 | --- | --- |
-| Linux | Developed and verified on Fedora. **WSL2 is untested.** It would need systemd enabled (`systemd=true` in `/etc/wsl.conf`) and cgroup v2. |
-| Bubblewrap (`bwrap`) | Unprivileged user namespaces must work. Fedora: `sudo dnf install bubblewrap`. Debian/Ubuntu: `sudo apt install bubblewrap`. |
-| cgroup v2 + systemd user session | Run from a desktop terminal or a user service, not a bare SSH login, so `systemd-run --user` can create a delegated scope. |
-| [`uv`](https://docs.astral.sh/uv/) | Provides Python 3.13 and the locked environments. |
-| Node.js 24+ and npm | Used by the storefront, the Inspector, and the Playwright runner. |
-| Git, curl, `setsid` | Use a **full clone**, not `--depth 1` or a ZIP. The seeded fixture is pinned to a commit in this repository's history. |
+| macOS, Windows, or Linux | Pre-Flight Gate (`gate`, `check`, `test`, `scan --no-repair`, `init`) runs natively. Sandboxed repair execution requires Linux. **WSL2 is untested** and needs systemd enabled (`systemd=true` in `/etc/wsl.conf`) and cgroup v2. |
+| Node.js and npm | Install Node.js 24+ (recommended) before setup. The locked dependencies also support Node 20.19+ and 22.13+. Setup explains missing or unsupported versions. |
+| [`uv`](https://docs.astral.sh/uv/) and Python 3.13 | Setup discovers an existing uv or installs it using [Astral's official installer](https://docs.astral.sh/uv/getting-started/installation/), then downloads standalone Python 3.13. No system Python installation is needed. |
+| Git; curl on macOS/Linux; PowerShell on Windows | Use a **full clone**, not `--depth 1` or a ZIP. The seeded fixture is pinned to a commit in this repository's history. macOS does not need GNU `readlink` or `setsid`. |
+| Linux repair only: Bubblewrap (`bwrap`) | Unprivileged user namespaces must work. Fedora: `sudo dnf install bubblewrap`. |
+| Linux repair only: cgroup v2 + systemd user session | Run from a desktop terminal or a user service, so `systemd-run --user` can create a delegated scope. |
 
 FaultLine **fails closed**. If namespaces or enforced aggregate resource limits are unavailable, it refuses to run candidates instead of running them unconfined.
 
-### 1. Clone and set up
+### 1. Clone and set up (macOS / Linux)
 
 ```bash
 git clone https://github.com/FrankieBiz/Faultline.git
@@ -92,7 +92,51 @@ cd Faultline
 make setup
 ```
 
-`make setup` syncs both locked Python environments, runs `npm ci` for the storefront, runner, and Inspector, and installs Playwright Chromium. On Fedora, Playwright prints an "OS is not officially supported" warning and downloads its Ubuntu fallback Chromium. The warning is harmless.
+You can also run `bash scripts/setup.sh` if `make` is unavailable. Setup finds uv in PATH or standard local/Homebrew directories, installs it if missing, installs Python 3.13, syncs both locked Python environments, runs `npm ci` for the storefront, runner, and Inspector, builds the browser runner, and installs Playwright Chromium. On Fedora, Playwright prints an "OS is not officially supported" warning and downloads its Ubuntu fallback Chromium.
+
+On a Mac, start with native checks against your running application:
+
+```bash
+./faultline doctor
+./faultline test http://localhost:3000
+./faultline scan http://localhost:3000 --no-repair
+./faultline gate http://localhost:3000 --json
+```
+
+`./faultline demo` starts the local demo services on macOS/Linux. macOS can explore the seeded bug and use the Inspector; candidate repair remains unavailable without Linux isolation. The hosted [judge page](https://frankiebiz.github.io/Faultline/) also replays the retained repair without local setup.
+
+### Windows quickstart (PowerShell or Command Prompt)
+
+Install Git and Node.js 24+ with npm, then open PowerShell:
+
+```powershell
+git clone https://github.com/FrankieBiz/Faultline.git
+cd Faultline
+.\setup.bat
+.\faultline.cmd doctor
+# Start your application separately, then check it:
+.\faultline.cmd test http://localhost:3000
+.\faultline.cmd scan http://localhost:3000 --no-repair
+.\faultline.cmd gate http://localhost:3000 --json
+```
+
+The `.bat` / `.cmd` wrappers also work in Command Prompt and require no Make, Bash, or preinstalled Python. To invoke PowerShell scripts directly where script execution is restricted:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\faultline.ps1 doctor
+```
+
+Setup uses Astral's official PowerShell uv installer when needed and installs the same Python, locked dependencies, and Chromium as the Unix setup. The CLI launchers preserve your current directory, so you can initialize another project without copying FaultLine into it:
+
+```powershell
+$faultline = (Resolve-Path .\faultline.cmd).Path
+cd C:\code\my-app
+& $faultline init
+& $faultline check --config faultline.toml --port 3000
+```
+
+Native Windows supports pre-flight commands; the local demo launcher and sandboxed repairs require Linux/WSL2. Use the hosted judge page for the recorded repair, or run the Linux quickstart inside a suitably configured WSL2 distribution. WSL2 isolation has not been verified by this project.
 
 ### 2. Check system health
 
@@ -100,7 +144,7 @@ make setup
 ./faultline doctor
 ```
 
-`doctor` reports Bubblewrap, cgroup v2, uv, Node.js, `META_API_KEY`, and whether the controller and storefront API are reachable. Finding the tools only means the prerequisites exist. The isolation guarantee comes from the runner's own enforcement preflight, which runs before every candidate launch.
+`doctor` reports your platform, uv, Node.js, Playwright Chromium, optional `META_API_KEY`, and whether the controller and storefront API are reachable. On macOS/Windows, optional inference and offline demo services do not block a healthy pre-flight installation. Linux also checks Bubblewrap, cgroup v2, and systemd. Finding the tools only means the prerequisites exist. The isolation guarantee comes from the runner's own enforcement preflight, which runs before every candidate launch.
 
 ### 3. Launch the demo stack
 

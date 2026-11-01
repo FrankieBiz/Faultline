@@ -1,5 +1,13 @@
 # Agent handoff state
 
+## November 1: native macOS/Windows setup and pre-flight CLI (cross-platform-fix)
+
+- Setup discovers uv on PATH and standard local/Homebrew paths, installs it with Astral's official installer if missing, explicitly installs Python 3.13, syncs both locked environments, installs all three Node projects, builds the browser runner, and installs Chromium. Native Windows uses `setup.ps1` / `setup.bat` and `faultline.ps1` / `faultline.cmd`; Unix symlink resolution works with BSD readlink. The locked toolchain requires Node 20.19+, 22.13+, or 24+; recommend 24+.
+- Native `doctor` checks uv, Node, Chromium and optional inference/services. HTTP/browser pre-flight commands do not eagerly import the Linux repair stack. Non-Linux sandbox readiness stays unavailable; Linux retains its namespace/cgroup enforcement. Windows browser children retain necessary OS/cache variables while stripping credentials and Node injection settings.
+- macOS demo startup uses foreground supervision and a managed-Python session fallback when `setsid` is absent. It refuses `--restart` and occupied ports because Linux `/proc` cannot prove process ownership there. Stop the original terminal session before relaunching. Native Windows demo/repair gives Linux/WSL2 guidance; WSL2 remains unverified.
+- Verification and native CI results are recorded in the task completion report. Regression coverage includes fresh interpreters without Unix modules, isolated-PATH setup/launchers, PowerShell, owned session cleanup without system Python/setsid, and real Chromium pass/block smoke checks. `.github/workflows/platform-smoke.yml` exercises native macOS and Windows setup and launchers.
+- Local verification: `make setup` and `make check` passed (327 backend/script + 914 orchestrator/CLI + 123 runner = 1,364 tests), including lint/format, strict mypy, provenance, frontend and Python package builds. Final bootstrap/native smoke rerun: 37 passed with PowerShell enabled; lint passed. Native CI supplies separate operating-system evidence.
+
 ## November 1: viral social media cuts and LinkedIn carousel (claude-viral-media)
 
 - **Footage location.** `data/` is gitignored, and the recorded clips of `20261101-193931` were only in the `barnacle` worktree. They were copied into this worktree's `data/footage/20261101-193931/`. A fresh worktree must copy them in (or pass `FOOTAGE_DIR`) before running the cut scripts.

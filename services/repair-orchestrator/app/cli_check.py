@@ -22,9 +22,8 @@ from app.probes import (
     split_target,
     validate_target,
 )
-from app.project import ProjectSettings, RepairSettings, load_project
+from app.project import ProjectRun, ProjectSettings, RepairSettings, load_project
 from app.repro import AssertionCheck, ReproSpec, ServicePath
-from app.run import run_project
 from shared.contracts.models import ContractModel
 
 
@@ -187,6 +186,17 @@ def sandbox_readiness() -> dict[str, Any]:
     Checks require these prerequisites but do not execute project code. ProjectRuntime
     performs namespace/cgroup enforcement probes before a repair may launch code.
     """
+    if sys.platform != "linux":
+        return {
+            "prerequisites": dict.fromkeys(
+                ("bubblewrap", "cgroup_v2", "systemd_run", "node", "uv"), False
+            ),
+            "prerequisites_available": False,
+            "runtime_ready": None,
+            "status": "unavailable",
+            "note": "Sandbox repair requires Linux with systemd and cgroup v2. "
+            "WSL2 is unverified. Native HTTP checks and browser preflight remain available.",
+        }
     prerequisites = {
         "bubblewrap": shutil.which("bwrap") is not None,
         "cgroup_v2": Path("/sys/fs/cgroup/cgroup.controllers").is_file(),
@@ -202,6 +212,17 @@ def sandbox_readiness() -> dict[str, Any]:
         "note": "Sandbox prerequisites are required. Repair also requires namespace and "
         "cgroup preflight; installed tools alone do not establish readiness.",
     }
+
+
+async def run_project(
+    root: Path, run: ProjectRun, data_dir: Path, *, detect: bool = False
+) -> dict[str, Any]:
+    """Load the Linux-only execution stack only when a repair actually needs it."""
+    if sys.platform != "linux":
+        raise RuntimeError("Sandbox repair requires Linux with systemd and cgroup v2.")
+    from app.run import run_project as run_isolated_project
+
+    return await run_isolated_project(root, run, data_dir, detect=detect)
 
 
 def _safe_error(exc: Exception) -> str:
@@ -261,7 +282,7 @@ async def check_project(path: Path, *, port: int | None, repair: bool) -> dict[s
             validate_target(resolve_url(invariant.url, port))
         readiness = sandbox_readiness()
         report["sandbox"] = readiness
-        if not readiness["prerequisites_available"]:
+        if not readiness["prerequisites_available"] and (repair or sys.platform == "linux"):
             report["errors"].append("Sandbox prerequisites missing; run faultline doctor.")
         for invariant in config.live.invariants:
             record = await run_check(

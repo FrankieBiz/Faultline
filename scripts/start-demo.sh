@@ -13,11 +13,16 @@ BACKEND_PORT="${BUGGYSHOP_API_PORT:-8000}"
 CONTROL_PORT="${FAULTLINE_PORT:-9000}"
 STORE_PORT="${BUGGYSHOP_PORT:-3000}"
 UI_PORT="${INSPECTOR_PORT:-4000}"
-for program in uv node npm curl setsid; do
+if ! command -v uv >/dev/null 2>&1; then
+  for directory in "$HOME/.local/bin" "$HOME/.cargo/bin" /opt/homebrew/bin /usr/local/bin; do
+    if [ -x "$directory/uv" ]; then export PATH="$directory:$PATH"; break; fi
+  done
+fi
+for program in uv node npm curl; do
   command -v "$program" >/dev/null || { echo "Required command missing: $program" >&2; exit 1; }
 done
-node -e 'if (Number(process.versions.node.split(".")[0]) < 24) process.exit(1)' || {
-  echo "Node.js 24 or newer is required." >&2; exit 1;
+node -e 'const [major, minor] = process.versions.node.split(".").map(Number); if (!((major === 20 && minor >= 19) || (major === 22 && minor >= 13) || major >= 24)) process.exit(1)' || {
+  echo "Node.js 20.19+, 22.13+, or 24+ is required by the locked dependencies; Node.js 24+ is recommended." >&2; exit 1;
 }
 # Detect collisions without killing unrelated services or resetting data.
 uv run --project apps/buggyshop-backend --python 3.13 --locked python - "$BACKEND_PORT" "$CONTROL_PORT" "$STORE_PORT" "$UI_PORT" <<'PY'
@@ -54,11 +59,21 @@ npm --prefix web/inspector-ui run build
 # Generate one session credential if the owner did not supply one. Never print it.
 FAULTLINE_CONTROL_TOKEN="${FAULTLINE_CONTROL_TOKEN:-$(uv run --project apps/buggyshop-backend --python 3.13 --locked python -c 'import secrets; print(secrets.token_urlsafe(32))')}"
 export FAULTLINE_CONTROL_TOKEN
+# macOS has no setsid command. Resolve a managed Python once and let the
+# session leader exec the service, keeping its PID equal to the process-group ID.
+if command -v setsid >/dev/null 2>&1; then
+  session=(setsid)
+else
+  session_python="$(uv run --project apps/buggyshop-backend --python 3.13 --locked --no-env-file python -c 'import sys; print(sys.executable)')"
+  session=("$session_python" -c 'import os, sys; os.setsid(); os.execvp(sys.argv[1], sys.argv[1:])')
+fi
 children=()
 cleanup() {
   local code=$?
   trap - EXIT INT TERM
-  for pid in "${children[@]}"; do kill -TERM -- "-$pid" 2>/dev/null || true; done
+  for pid in "${children[@]}"; do
+    kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+  done
   for attempt in {1..30}; do
     local alive=0
     for pid in "${children[@]}"; do kill -0 -- "-$pid" 2>/dev/null && alive=1; done
@@ -75,7 +90,7 @@ trap 'exit 143' TERM
 start() {
   local directory=$1
   shift
-  (cd "$ROOT/$directory"; exec setsid "$@") &
+  (cd "$ROOT/$directory"; exec "${session[@]}" "$@") &
   children+=("$!")
 }
 start apps/buggyshop-backend env PYTHONPATH="$ROOT" uv run --python 3.13 --locked uvicorn app.main:app --host 127.0.0.1 --port "$BACKEND_PORT" --reload --reload-dir "$ROOT/apps/buggyshop-backend" --log-level warning
@@ -98,4 +113,14 @@ echo 'Readiness is shown in the Inspector. Ctrl+C stops this session; evidence i
 if [ "$UI_PORT" != 4000 ]; then
   printf 'Rehearse against this stack with: FAULTLINE_INSPECTOR_URL=http://127.0.0.1:%s ./scripts/rehearse-demo.sh\n' "$UI_PORT"
 fi
-wait -n "${children[@]}"
+# Bash 3.2 (the macOS system Bash) has no wait -n. Poll owned children,
+# then collect the first exit status and let the EXIT trap stop its siblings.
+while :; do
+  for pid in "${children[@]}"; do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      wait "$pid"
+      exit 0
+    fi
+  done
+  sleep 0.25
+done

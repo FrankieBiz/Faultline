@@ -1,14 +1,14 @@
-"""Linux demo discovery and launcher ownership, without credentials or process environments."""
+"""Linux demo ownership and a foreground macOS launcher, without process environments."""
 
 from __future__ import annotations
 
-import fcntl
 import http.client
 import json
 import os
 import signal
 import socket
 import subprocess
+import sys
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -31,6 +31,8 @@ STOP_TIMEOUT = 10.0
 @contextmanager
 def launch_lock(root: Path) -> Iterator[Callable[[], None]]:
     """Serialize this installation's startup; release at readiness or on any failure."""
+    import fcntl
+
     path = root / "data/demo.lock"
     path.parent.mkdir(parents=True, exist_ok=True)
     # Keep the inode after release: unlinking would let contenders lock different files.
@@ -294,8 +296,14 @@ def start_demo(root: Path, ports: tuple[int, ...], ready: Callable[[], None]) ->
                 code = process.poll()
                 if code is not None:
                     raise RuntimeError(f"Demo launcher exited during startup (code {code}).")
-                stack = inspect_stack(ports, processes())
-                if stack.active and stack.root == root:
+                if sys.platform == "darwin":
+                    # This foreground invocation owns the launcher, but cannot attest
+                    # service process ownership through Linux /proc on macOS.
+                    active = all(_healthy(index, port) for index, port in enumerate(ports))
+                else:
+                    stack = inspect_stack(ports, processes())
+                    active = stack.active and stack.root == root
+                if active:
                     ready()
                     return process.wait()
                 time.sleep(0.5)

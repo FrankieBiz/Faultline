@@ -9,6 +9,7 @@ import http.client
 import json
 import os
 import queue
+import re
 import shutil
 import signal
 import subprocess
@@ -212,37 +213,26 @@ def cmd_version(args: argparse.Namespace) -> int:
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
-    """Check system requirements: bubblewrap, cgroups v2, Node, uv, and models."""
+    """Check local preflight tools, Linux isolation prerequisites, and optional services."""
     from app.cli_check import sandbox_readiness
+    from app.crawler_service import RUNNER_ENVIRONMENT
 
     c = _palette(args)
     orchestrator_port, store_port = _orchestrator_port(args), _store_api_port(args)
     readiness = sandbox_readiness()
     print(f"\n{c.bold}FaultLine Doctor: System Diagnostic Report{c.reset}\n")
+    print(f"Platform: {sys.platform}\n")
 
     checks: list[tuple[str, bool, str]] = []
 
-    # 1. Bubblewrap
-    bwrap_path = shutil.which("bwrap")
-    checks.append(
-        (
-            "Linux Bubblewrap (bwrap) Sandbox",
-            bwrap_path is not None,
-            bwrap_path or "Missing! Install via: sudo dnf install bubblewrap",
-        )
-    )
-
-    # 2. cgroup v2
-    cgroup_v2 = Path("/sys/fs/cgroup/cgroup.controllers").exists()
-    checks.append(
-        (
-            "cgroup v2 Resource Enforcement",
-            cgroup_v2,
-            "Available (/sys/fs/cgroup)"
-            if cgroup_v2
-            else "cgroup v2 unified hierarchy not mounted",
-        )
-    )
+    if sys.platform == "linux":
+        for name, key, detail in (
+            ("Linux Bubblewrap (bwrap) Sandbox", "bubblewrap", "Install Bubblewrap (bwrap)"),
+            ("cgroup v2 Resource Enforcement", "cgroup_v2", "Requires /sys/fs/cgroup"),
+            ("systemd User Scope", "systemd_run", "Requires systemd-run and a user session"),
+        ):
+            passed = readiness["prerequisites"][key]
+            checks.append((name, passed, "Prerequisite found" if passed else detail))
 
     # 3. uv package manager
     uv_path = shutil.which("uv")
@@ -250,23 +240,64 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         (
             "Astral uv Package Manager",
             uv_path is not None,
-            uv_path or "Missing! Install via: curl -LsSf https://astral.sh/uv/install.sh | sh",
+            uv_path
+            or "Missing! Install uv: https://docs.astral.sh/uv/getting-started/installation/",
         )
     )
 
     # 4. Node.js
     node_path = shutil.which("node")
     node_ver = ""
+    node_ok = False
+    environment = {name: os.environ[name] for name in RUNNER_ENVIRONMENT if name in os.environ}
     if node_path:
         try:
-            node_ver = subprocess.check_output([node_path, "--version"], text=True).strip()
-        except Exception:
+            node_ver = subprocess.check_output(
+                [node_path, "--version"],
+                text=True,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+                env=environment,
+            ).strip()
+            version = re.fullmatch(r"v?(\d+)\.\d+\.\d+(?:-[\w.-]+)?", node_ver)
+            node_ok = version is not None and int(version[1]) >= 20
+        except (OSError, subprocess.SubprocessError):
             pass
     checks.append(
         (
             f"Node.js Runtime ({node_ver or 'not found'})",
-            bool(node_ver and int(node_ver.lstrip("v").split(".")[0]) >= 20),
-            node_path or "Requires Node.js >= 20",
+            node_ok,
+            node_path if node_ok and node_path else "Requires a working Node.js >= 20",
+        )
+    )
+
+    chromium_ok = False
+    if node_path and node_ok:
+        try:
+            probe = subprocess.run(
+                [
+                    node_path,
+                    "-e",
+                    "const fs = require('node:fs'); "
+                    "const {chromium} = require('playwright'); "
+                    "process.exit(fs.existsSync(chromium.executablePath()) ? 0 : 1)",
+                ],
+                cwd=REPOSITORY_ROOT / "tools/browser-runner",
+                env=environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=10,
+            )
+            chromium_ok = probe.returncode == 0
+        except (OSError, subprocess.SubprocessError):
+            pass
+    checks.append(
+        (
+            "Playwright Chromium",
+            chromium_ok,
+            "Installed (browser launch is checked by scan/gate)"
+            if chromium_ok
+            else "Run npm ci, then npx playwright install chromium in tools/browser-runner",
         )
     )
 
@@ -274,7 +305,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     meta_key = os.environ.get("META_API_KEY")
     checks.append(
         (
-            "Meta Model API Key (META_API_KEY)",
+            "Meta Model API Key (META_API_KEY) [optional]",
             bool(meta_key),
             "Configured (muse-spark-1.3)"
             if meta_key
@@ -286,7 +317,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     orch_health = _api_request("/healthz", port=orchestrator_port)
     checks.append(
         (
-            f"Repair Orchestrator Service (port {orchestrator_port})",
+            f"Repair Orchestrator Service (port {orchestrator_port}) [optional]",
             orch_health.get("status") == "ok",
             "Active & Healthy"
             if orch_health.get("status") == "ok"
@@ -297,28 +328,34 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     store_health = _api_request("/healthz", port=store_port)
     checks.append(
         (
-            f"Storefront Backend API (port {store_port})",
+            f"Storefront Backend API (port {store_port}) [optional]",
             store_health.get("status") == "ok",
             "Active & Healthy" if store_health.get("status") == "ok" else "Offline",
         )
     )
 
-    all_ok = readiness["prerequisites_available"]
+    all_ok = uv_path is not None and node_ok and chromium_ok
+    if sys.platform == "linux":
+        all_ok = all_ok and readiness["prerequisites_available"]
     for name, passed, detail in checks:
         icon = f"{c.green}✓{c.reset}" if passed else f"{c.red}✗{c.reset}"
         status_text = f"{c.green}PASS{c.reset}" if passed else f"{c.yellow}WARN{c.reset}"
         print(f" {icon} {c.bold}{name:<40}{c.reset} [{status_text}]")
         print(f"     {c.dim}{detail}{c.reset}")
-        if not passed and name.startswith("Linux"):
-            all_ok = False
+
+    print("\ncheck, test, scan, init, gate run cross-platform against your running app.")
+    print("Sandbox repair requires Linux with systemd and cgroup v2.")
+    print("WSL2 is unverified; it requires systemd enabled and cgroup v2.")
 
     print(f"\n{c.dim}{'─' * 60}{c.reset}")
     if all_ok:
-        msg = (
-            f"{c.green}{c.bold}Result: Sandbox prerequisites found; "
-            f"runner enforcement preflight is still required.{c.reset}\n"
+        result = (
+            "Local preflight and sandbox prerequisites found; runner enforcement "
+            "preflight is still required."
+            if sys.platform == "linux"
+            else "Local preflight prerequisites found; optional repair services may be offline."
         )
-        print(msg)
+        print(f"{c.green}{c.bold}Result: {result}{c.reset}\n")
         return 0
     else:
         print(f"{c.yellow}Result: Some components require attention. See details above.{c.reset}\n")
@@ -1637,6 +1674,14 @@ def cmd_gate(args: argparse.Namespace) -> int:
 
 def cmd_demo(args: argparse.Namespace) -> int:
     """Connect to the complete demo, or launch it with the existing session supervisor."""
+    if sys.platform == "win32":
+        print(
+            "faultline demo: Run the demo from WSL2 with systemd enabled and cgroup v2 "
+            "(WSL2 is unverified), or use Linux. Native Windows supports check, test, scan, "
+            "init, gate; sandbox repairs do not run natively.",
+            file=sys.stderr,
+        )
+        return 1
     from app import cli_demo
 
     c = _palette(args)
@@ -1653,7 +1698,9 @@ def cmd_demo(args: argparse.Namespace) -> int:
     def ready() -> None:
         print(f"{c.bold}FaultLine Inspector{c.reset}  {c.cyan}{url}{c.reset}")
         if not args.no_open:
-            if not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
+            if sys.platform != "darwin" and not (
+                os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")
+            ):
                 print("No graphical display detected; open the URL above in a browser.")
             else:
                 try:
@@ -1677,6 +1724,26 @@ def cmd_demo(args: argparse.Namespace) -> int:
         return False
 
     try:
+        if sys.platform == "darwin":
+            # /proc and pidfds cannot establish ownership on macOS. Keep the lock
+            # for the foreground launch's entire lifetime; never attach or kill by port.
+            if args.restart:
+                raise RuntimeError(
+                    "macOS cannot verify demo process ownership for --restart. "
+                    "Stop the demo in its original terminal, then run faultline demo."
+                )
+            with cli_demo.launch_lock(root):
+                if any(cli_demo._occupied(port) for port in ports):
+                    raise RuntimeError(
+                        "A demo port is occupied. Stop its owner from the original terminal "
+                        "or choose free demo ports; no process was stopped."
+                    )
+                print("Starting foreground demo; sandbox repair requires Linux.", flush=True)
+                previous_handler = signal.signal(signal.SIGTERM, _raise_interrupt)
+                try:
+                    return cli_demo.start_demo(root, ports, ready)
+                finally:
+                    signal.signal(signal.SIGTERM, previous_handler)
         # Read-only connections remain available even while another invocation holds the lock.
         if connected(cli_demo.inspect_stack(ports, cli_demo.processes())):
             return 0
@@ -1716,6 +1783,13 @@ def cmd_demo(args: argparse.Namespace) -> int:
 
 def cmd_run(args: argparse.Namespace) -> int:
     """Execute an operator-selected reproduction with durable sandbox evidence."""
+    if sys.platform != "linux":
+        print(
+            "faultline run: Sandbox repair requires Linux with systemd and cgroup v2. "
+            "WSL2 is unverified; check, test, scan, init, gate run natively.",
+            file=sys.stderr,
+        )
+        return 30
     from app.project import load_project
     from app.run import run_project
 

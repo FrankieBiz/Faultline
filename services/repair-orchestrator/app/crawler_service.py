@@ -44,6 +44,11 @@ RUNNER_ENVIRONMENT = (
     "LC_ALL",
     "TZ",
     "PLAYWRIGHT_BROWSERS_PATH",
+    # Windows process loading and Playwright's native browser cache discovery.
+    "SYSTEMROOT",
+    "WINDIR",
+    "USERPROFILE",
+    "LOCALAPPDATA",
 )
 
 Event = dict[str, Any]

@@ -4,7 +4,7 @@
   "private": true,
   "description": "BuggyShop fixture storefront for the FaultLine scripted checkout repair demo.",
   "engines": {
-    "node": ">=24"
+    "node": "^20.19.0 || ^22.13.0 || >=24.0.0"
   },
   "scripts": {
     "dev": "next dev --port 3000",

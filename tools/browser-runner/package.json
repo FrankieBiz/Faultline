@@ -5,7 +5,7 @@
   "description": "Trusted Playwright CLI and oracle for the FaultLine checkout-flow scenario.",
   "type": "module",
   "engines": {
-    "node": ">=24"
+    "node": "^20.19.0 || ^22.13.0 || >=24.0.0"
   },
   "bin": {
     "faultline-browser-runner": "dist/cli.js"

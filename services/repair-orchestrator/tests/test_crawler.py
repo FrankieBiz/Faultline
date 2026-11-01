@@ -205,16 +205,31 @@ def test_run_crawl_streams_events_and_returns_the_report(tmp_path: Path) -> None
 def test_runner_environment_excludes_credentials(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    for name in ("META_API_KEY", "FAULTLINE_CONTROL_TOKEN", "FAKE_SECRET_SENTINEL", "NODE_OPTIONS"):
+    for name in (
+        "META_API_KEY",
+        "FAULTLINE_CONTROL_TOKEN",
+        "FAKE_SECRET_SENTINEL",
+        "NODE_OPTIONS",
+        "NODE_PATH",
+    ):
         monkeypatch.setenv(name, "fake-secret-sentinel")
+    windows_environment = {
+        "SYSTEMROOT": "C:\\Windows",
+        "WINDIR": "C:\\Windows",
+        "USERPROFILE": "C:\\Users\\tester",
+        "LOCALAPPDATA": "C:\\Users\\tester\\AppData\\Local",
+    }
+    for name, value in windows_environment.items():
+        monkeypatch.setenv(name, value)
     runner = fake_runner(
         tmp_path,
         'console.log(JSON.stringify({type:"report",report:{'
         'secretPresent:Object.values(process.env).includes("fake-secret-sentinel"),'
-        "hasPath:!!process.env.PATH}}));",
+        "hasPath:!!process.env.PATH,windows:Object.fromEntries("
+        "['SYSTEMROOT','WINDIR','USERPROFILE','LOCALAPPDATA'].map(k=>[k,process.env[k]]))}}));",
     )
     report = run_crawl("http://127.0.0.1:3000", runner=runner)
-    assert report == {"secretPresent": False, "hasPath": True}
+    assert report == {"secretPresent": False, "hasPath": True, "windows": windows_environment}
 
 
 @needs_node
