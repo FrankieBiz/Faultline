@@ -43,6 +43,8 @@
       --cyan-wash: rgba(45, 212, 255, 0.08);
       --add: #a6f5cf;
       --del: #ffb3c0;
+      /* One light source from above: a hairline highlight on top and a soft shadow tinted to the page. */
+      --lift: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 28px 56px -32px rgba(0, 0, 0, 0.9);
       --sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
       --mono: "JetBrains Mono", "SF Mono", ui-monospace, Menlo, Consolas, monospace;
     }
@@ -51,6 +53,7 @@
     @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
     body {
       margin: 0;
+      overflow-x: clip;
       background: var(--bg);
       color: var(--ink);
       font: 15px/1.6 var(--sans);
@@ -86,19 +89,20 @@
     .hero { position: relative; padding: clamp(40px, 7vw, 76px) 0 48px; }
     /* Soft light behind the headline, as in the Inspector's hero; static, so it never repaints. */
     .hero::before {
-      content: ""; position: absolute; inset: -120px 0 auto; height: 640px; z-index: -1; pointer-events: none;
+      content: ""; position: absolute; inset: -120px calc(50% - 50vw) auto; height: 760px; z-index: -1; pointer-events: none;
       background:
-        radial-gradient(50% 45% at 22% 38%, rgba(236, 238, 241, 0.07), transparent 70%),
-        radial-gradient(40% 40% at 78% 30%, rgba(45, 212, 255, 0.05), transparent 70%);
+        radial-gradient(34% 44% at 30% 40%, rgba(236, 238, 241, 0.07), transparent 70%),
+        radial-gradient(28% 40% at 74% 30%, rgba(45, 212, 255, 0.05), transparent 70%);
     }
     .context { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 0 0 20px; color: var(--ink-3); font: 500 11.5px/1.5 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
     .context .glyph { flex: none; }
-    h1 { margin: 0; max-width: 24ch; font-size: clamp(32px, 4.6vw, 54px); line-height: 1.04; font-weight: 650; letter-spacing: -0.035em; text-wrap: balance; }
+    h1 { margin: 0; max-width: 28ch; font-size: clamp(36px, 5.2vw, 68px); line-height: 1.04; font-weight: 650; letter-spacing: -0.035em; text-wrap: balance; }
     h1 span { display: block; }
-    h1 span + span { margin-top: 0.12em; color: var(--ink-2); }
-    h2 { margin: 0 0 10px; font-size: clamp(22px, 2.6vw, 28px); line-height: 1.2; font-weight: 620; letter-spacing: -0.02em; text-wrap: balance; }
+    h1 span + span { margin-top: 0.18em; color: var(--ink-2); font-size: 0.58em; line-height: 1.12; letter-spacing: -0.028em; }
+    h2 { margin: 0 0 12px; font-size: clamp(24px, 3vw, 34px); line-height: 1.12; font-weight: 650; letter-spacing: -0.03em; text-wrap: balance; }
     h3 { margin: 0 0 8px; font-size: 15px; font-weight: 620; }
-    .lede { max-width: 68ch; margin: 22px 0 0; color: var(--ink-2); font-size: clamp(15px, 1.4vw, 17px); line-height: 1.6; text-wrap: pretty; }
+    .lede { max-width: 60ch; margin: 22px 0 0; color: var(--ink-2); font-size: clamp(16px, 1.5vw, 18.5px); line-height: 1.55; text-wrap: pretty; }
+    .lede strong, .intro strong, td p strong { color: var(--ink); font-weight: 600; }
     .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 30px; }
     .btn {
       position: relative; display: inline-flex; align-items: center; min-height: 42px; padding: 0 18px;
@@ -119,14 +123,66 @@
     .btn.primary:not(:disabled)::after { animation: breathe 2.4s ease-in-out infinite; }
     .hero .btn.primary { min-height: 48px; padding: 0 22px; border-radius: 10px; font-size: 15px; }
 
-    .path { margin: 40px 0 0; padding: 18px 22px; border: 1px solid var(--line); border-radius: 10px; background: var(--well); max-width: 760px; }
-    .path h2 { font-size: 15px; margin: 0 0 8px; letter-spacing: 0; }
-    .path ol { margin: 0; padding-left: 20px; color: var(--ink-2); }
-    .path li { padding: 3px 0; }
-    .path li::marker { color: var(--ink-3); font-family: var(--mono); font-size: 13px; }
+    .btn.ghost { border-color: transparent; color: var(--ink-2); }
+    .btn.ghost:hover:not(:disabled) { border-color: var(--line-strong); color: var(--ink); }
 
-    section.block { padding: 56px 0; border-top: 1px solid var(--line); }
-    .intro { max-width: 70ch; color: var(--ink-2); margin: 0 0 28px; }
+    /* Repair-core chip: green because it names a verified, recorded Meta repair. */
+    .core-chip { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 22px 0 0; padding: 7px 12px; border: 1px solid var(--line); border-radius: 999px; background: rgba(255, 255, 255, 0.02); font-size: 13px; color: var(--ink-2); }
+    .core-chip-k { color: var(--ink-3); font: 500 10.5px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+    .core-chip b { color: var(--ink); font: 600 13px var(--mono); }
+    .core-chip a { color: var(--green); text-decoration-color: rgba(61, 255, 162, 0.4); }
+    .core-dot { flex: none; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 10px var(--green); }
+
+    /* The 3-minute tour: the one path a judge should not miss. Ink only; color stays reserved for evidence. */
+    .tour { margin: 44px 0 0; border: 1px solid var(--line-strong); border-radius: 16px; background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 140px), var(--well); box-shadow: var(--lift); overflow: hidden; }
+    .tour-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 16px 22px 14px; border-bottom: 1px solid var(--line); }
+    .tour h2 { margin: 0; font-size: 15px; letter-spacing: -0.005em; }
+    .tour-clock { color: var(--ink-3); font-size: 13px; font-feature-settings: "tnum" 1; }
+    .tour ol { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0; padding: 0; list-style: none; counter-reset: tour; }
+    .tour li { counter-increment: tour; min-width: 0; }
+    .tour li + li { border-left: 1px solid var(--line); }
+    .tour li a { position: relative; display: grid; align-content: start; gap: 6px; height: 100%; padding: 18px 22px 20px 58px; color: var(--ink-2); font-size: 14px; line-height: 1.5; text-decoration: none; transition: background-color 160ms ease-out; }
+    .tour li a::before { content: counter(tour); position: absolute; left: 22px; top: 18px; width: 24px; height: 24px; border: 1px solid var(--line-strong); border-radius: 50%; color: var(--ink); font: 600 12px/22px var(--mono); text-align: center; transition: background-color 160ms, color 160ms, border-color 160ms; }
+    .tour li a:hover { background: rgba(255, 255, 255, 0.025); }
+    .tour li a:hover::before { border-color: var(--ink); background: var(--ink); color: var(--bg); }
+    .tour li a:focus-visible { outline-offset: -3px; border-radius: 0; }
+    .tour-t { color: var(--ink-3); font-size: 11.5px; letter-spacing: 0.04em; }
+    .tour strong { color: var(--ink); font-size: 16px; font-weight: 620; letter-spacing: -0.01em; }
+    .tour b { color: var(--ink); font-weight: 600; }
+    .tour-go { margin-top: 4px; color: var(--ink); font-weight: 550; font-size: 13.5px; }
+    .tour-go { transition: transform 160ms ease-out; }
+    .tour li a:hover .tour-go { transform: translateX(3px); }
+    .tour-more { margin: 0; padding: 11px 22px; border-top: 1px solid var(--line); color: var(--ink-3); font-size: 13px; }
+
+    /* The recorded run in four facts. Each top rule takes the color of what it observed. */
+    .proof { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; margin: 20px 0 0; padding: 0; list-style: none; background: var(--line); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+    .proof li { position: relative; display: grid; align-content: start; gap: 4px; padding: 16px 18px 18px; background: var(--bg); color: var(--ink-2); font-size: 13.5px; line-height: 1.5; }
+    .proof li::before { content: ""; position: absolute; inset: 0 0 auto; height: 2px; background: var(--tone); opacity: 0.85; box-shadow: 0 0 14px var(--tone); }
+    .proof [data-tone="bad"] { --tone: var(--red); }
+    .proof [data-tone="warn"] { --tone: var(--amber); }
+    .proof [data-tone="ok"] { --tone: var(--green); }
+    .proof [data-tone="active"] { --tone: var(--cyan); }
+    .proof-k { color: var(--tone); font: 500 10.5px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+    .proof b { color: var(--ink); font: 600 17px/1.3 var(--mono); font-feature-settings: "tnum" 1; }
+
+    section.block { padding: clamp(64px, 8vw, 96px) 0 clamp(72px, 9vw, 104px); border-top: 1px solid var(--line); }
+    .kicker { margin: 0 0 12px; color: var(--ink-3); font: 500 11px/1.5 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+    .intro { max-width: 66ch; color: var(--ink-2); margin: 0 0 32px; font-size: 15.5px; text-wrap: pretty; }
+
+    /* Repair core: which Meta models FaultLine calls, and what is on record for each. */
+    .core { margin: 0 0 32px; border: 1px solid var(--line); border-radius: 14px; background: var(--well); box-shadow: var(--lift); overflow: hidden; }
+    .core-head { display: grid; grid-template-columns: minmax(0, 280px) minmax(0, 1fr); gap: 8px 28px; padding: 18px 20px; border-bottom: 1px solid var(--line); }
+    .core-head h3 { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 15px; }
+    .core-head p { margin: 0; color: var(--ink-2); font-size: 14px; }
+    .core-head strong { color: var(--ink); font-weight: 600; }
+    .core-models { margin: 0; padding: 0; list-style: none; }
+    .core-models li { display: grid; grid-template-columns: minmax(0, 280px) 150px minmax(0, 1fr); gap: 4px 28px; align-items: baseline; padding: 12px 20px; font-size: 13.5px; }
+    .core-models li + li { border-top: 1px solid var(--line); }
+    .core-models li > code:first-child { color: var(--ink); font-size: 13.5px; font-weight: 600; }
+    .core-models li[data-tone="ok"] > code:first-child { color: var(--green); }
+    .core-role { color: var(--ink-2); font: 500 11px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; }
+    .core-models li[data-tone="warn"] .core-role { color: var(--amber); }
+    .core-proof { color: var(--ink-2); }
 
     /* The seam: baseline and candidate on either side of the fault line */
     .seam { display: grid; grid-template-columns: 1fr 2px 1fr; gap: 0 28px; align-items: start; }
@@ -140,7 +196,7 @@
     .shot img { display: block; width: 100%; height: auto; aspect-ratio: 1280 / 820; object-fit: cover; object-position: top; }
     .shot-caption { margin-top: 8px; font-size: 12.5px; color: var(--ink-3); }
 
-    .diff { margin: 36px 0 0; border: 1px solid var(--line); border-radius: 10px; background: var(--well); overflow: hidden; }
+    .diff { margin: 36px 0 0; border: 1px solid var(--line); border-radius: 12px; background: var(--well); box-shadow: var(--lift); overflow: hidden; }
     .diff-head { display: flex; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; padding: 10px 16px; border-bottom: 1px solid var(--line); font-size: 12.5px; color: var(--ink-3); }
     .diff-head code { color: var(--ink-2); }
     pre.code { margin: 0; padding: 12px 0; font: 13px/1.65 var(--mono); overflow-x: auto; }
@@ -185,7 +241,7 @@
     .option input { position: absolute; opacity: 0; pointer-events: none; }
     .option .name { font: 13px/1.4 var(--mono); overflow-wrap: anywhere; }
     .option .mini { font-size: 12px; white-space: nowrap; }
-    .detail { border: 1px solid var(--line); border-radius: 10px; background: var(--well); padding: 22px; min-width: 0; }
+    .detail { border: 1px solid var(--line); border-radius: 12px; background: var(--well); box-shadow: var(--lift); padding: 22px; min-width: 0; }
     .detail h3 { font-size: 17px; margin: 0 0 4px; }
     .detail .kind { margin: 0 0 12px; font-size: 13px; color: var(--ink-3); }
     .detail p.explain { margin: 0 0 18px; color: var(--ink-2); max-width: 70ch; }
@@ -224,7 +280,7 @@
     .limits li { padding: 4px 0; }
 
     /* Run timeline: shared by the recorded playback and live runs */
-    .player { position: relative; margin: 0 0 32px; padding: 18px 20px 8px; border: 1px solid var(--line); border-radius: 14px; background: var(--well); overflow: hidden; transition: border-color 300ms ease-out; }
+    .player { position: relative; margin: 0 0 32px; padding: 18px 20px 8px; border: 1px solid var(--line); border-radius: 14px; background: var(--well); box-shadow: var(--lift); overflow: hidden; transition: border-color 300ms ease-out; }
     .player[data-seismic="rupture"] { border-color: rgba(255, 77, 106, 0.4); }
     .player[data-seismic="resonance"] { border-color: rgba(61, 255, 162, 0.3); }
     .player-bar, .live-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-bottom: 12px; }
@@ -356,7 +412,7 @@
     .top nav a.nav-gate { display: inline-flex; align-items: center; gap: 7px; color: var(--cyan); }
     .preflight {
       position: relative; padding: 18px 20px 0; border: 1px solid var(--line); border-radius: 16px; overflow: hidden;
-      background: linear-gradient(180deg, rgba(45, 212, 255, 0.035), transparent 220px), var(--well); transition: border-color 300ms ease-out;
+      background: linear-gradient(180deg, rgba(45, 212, 255, 0.035), transparent 220px), var(--well); box-shadow: var(--lift); transition: border-color 300ms ease-out;
     }
     .preflight[data-verdict="running"] { border-color: rgba(45, 212, 255, 0.4); }
     .preflight[data-verdict="safe"] { border-color: rgba(61, 255, 162, 0.35); }
@@ -453,13 +509,39 @@
       .picker { display: grid; gap: 0; }
       .gate-grid { grid-template-columns: 1fr; }
       .gate-connect { border-left: 0; border-top: 1px solid var(--line); }
+      .tour ol { grid-template-columns: 1fr; }
+      .tour li + li { border-left: 0; border-top: 1px solid var(--line); }
+      .proof { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .core-head { grid-template-columns: 1fr; }
+      .core-models li { grid-template-columns: minmax(0, 1fr) auto; }
+      .core-proof { grid-column: 1 / -1; }
     }
     @media (max-width: 520px) {
       .shell { padding: 0 18px; }
       .hero { padding-top: 36px; }
       .verdicts { grid-template-columns: 1fr; }
       .failing li { grid-template-columns: 1fr; }
-      .top nav { gap: 2px 14px; font-size: 13px; }
+      /* One scrollable row of section links, so the sticky bar stays one line tall. */
+      .top-row { flex-wrap: nowrap; gap: 14px; }
+      .top nav { flex-wrap: nowrap; gap: 16px; min-width: 0; overflow-x: auto; scrollbar-width: none; font-size: 13px; mask-image: linear-gradient(90deg, #000 85%, transparent); }
+      .top nav::-webkit-scrollbar { display: none; }
+      .top nav a { flex: none; }
+      .proof { grid-template-columns: 1fr; }
+      .tour-head, .tour-more { padding-inline: 18px; }
+      .tour li a { padding: 16px 18px 18px 54px; }
+      .tour li a::before { left: 18px; top: 16px; }
+      .core-models li { grid-template-columns: 1fr; gap: 2px; }
+      .core-chip { border-radius: 12px; }
+      /* The criteria table reads as one block per criterion: name, explanation, then evidence links. */
+      table.stack thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+      table.stack tr { display: block; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+      table.stack tr:last-child { border-bottom: 0; }
+      table.stack td { display: block; padding: 0; border: 0; }
+      table.stack td:first-child { margin-bottom: 8px; font-weight: 600; }
+      table.stack td:first-child br { display: none; }
+      table.stack td:first-child .muted { margin-left: 8px; font-weight: 400; }
+      table.stack td:last-child { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13.5px; }
+      table.stack td:last-child br { display: none; }
       .preflight { padding-inline: 16px; }
       .preflight .seis { margin-inline: -16px; }
       .gate-grid { margin-inline: -16px; }
@@ -491,27 +573,59 @@
     <div class="hero">
       <p class="context"><span class="glyph" aria-hidden="true"></span><span>Meta Global AI Developer Hackathon</span><span aria-hidden="true">·</span><span>Indie Developer track</span><span aria-hidden="true">·</span><span>Built by Francis Bisignano</span></p>
       <h1>
-        <span>A browser finds the checkout failure.</span>
-        <span>A Meta model proposes a patch. Independent checks decide whether it works.</span>
+        <span>The autonomous immune system</span>
+        <span>for AI coding agents and web applications.</span>
       </h1>
       <p class="lede">
-        When an AI writes a hotfix, the error going away is not the same as the fix being right. FaultLine reproduces a real checkout crash in Chromium, asks Meta's <code>muse-spark-1.3</code> for a one-file patch, and accepts it only after it passes a browser journey and 27 business checks inside an isolated, resource-limited runtime. Every number below comes from a recorded run, linked to its raw evidence.
+        FaultLine catches <strong>silent regressions before code goes live</strong>. A real browser hunts the failure, <strong>Meta's <code>muse-spark-1.3</code> writes the fix</strong>, and nothing counts until <strong>independent checks in an isolated sandbox</strong> prove it works.
       </p>
+      <p class="core-chip"><span class="core-dot" aria-hidden="true"></span><span class="core-chip-k">Repair core</span><b>Meta Model API · muse-spark-1.3</b><a href="#core">Recorded fix: 44 / 44 checks</a></p>
       <div class="actions">
         <button class="btn primary" type="button" data-play-recorded>Play the recorded Meta repair</button>
-        <a class="btn" href="#gate">Try the pre-flight agent gate</a>
-        <a class="btn" href="#live">Break it yourself</a>
-        <a class="btn" href="https://github.com/FrankieBiz/Faultline">Source on GitHub</a>
+        <a class="btn" href="#gate">Try the agent gate</a>
+        <a class="btn ghost" href="https://github.com/FrankieBiz/Faultline">Source on GitHub</a>
       </div>
 
-      <div class="path">
-        <h2>Short on time? Three minutes, in this order</h2>
+      <nav class="tour" aria-labelledby="tour-title">
+        <div class="tour-head">
+          <h2 id="tour-title">The 3-minute judging tour</h2>
+          <span class="tour-clock num" aria-hidden="true">03:00</span>
+        </div>
         <ol>
-          <li><a href="#repair" data-play-recorded>Press play on the recorded Meta repair</a>: 13 seconds at its real timing, from the crashing checkout to 44 passing checks.</li>
-          <li><a href="#live">Break it yourself</a>: plant one of ten bugs and watch the model repair it live under the same gates.</li>
-          <li><a href="#gates">Pick a wrong patch</a> and see why a "did it return 201?" check lets it through while FaultLine does not.</li>
+          <li>
+            <a href="#repair" data-play-recorded>
+              <span class="tour-t num">0:00 – 0:45</span>
+              <strong>Watch Meta repair a crash</strong>
+              <span>The recorded run at real speed: HTTP 500, Meta's patch, <b>44 / 44 checks</b> green in 13 s.</span>
+              <span class="tour-go" aria-hidden="true">Play &rarr;</span>
+            </a>
+          </li>
+          <li>
+            <a href="#gate" data-run-gate="broken">
+              <span class="tour-t num">0:45 – 1:45</span>
+              <strong>Block a broken deploy</strong>
+              <span>Replay a real gate run: it crawled AuraScale, hit an HTTP 500, and returned <b>DEPLOYMENT_BLOCKED</b> with a fix prompt for the agent.</span>
+              <span class="tour-go" aria-hidden="true">Run the gate &rarr;</span>
+            </a>
+          </li>
+          <li>
+            <a href="#gates">
+              <span class="tour-t num">1:45 – 3:00</span>
+              <strong>Try to fool the gates</strong>
+              <span>A naive "did it return 201?" check ships <b>5 of 6 wrong patches</b>. FaultLine ships none.</span>
+              <span class="tour-go" aria-hidden="true">Pick a patch &rarr;</span>
+            </a>
+          </li>
         </ol>
-      </div>
+        <p class="tour-more">Extra time? <a href="#live">Break it yourself</a>: plant one of ten bugs and watch a live repair when the service is on.</p>
+      </nav>
+
+      <ol class="proof" aria-label="How FaultLine handles one regression, from the recorded run">
+        <li data-tone="bad"><span class="proof-k">01 · Detect</span><b>HTTP 500 caught</b><span>Chromium walks the checkout and ties the crash to the server's own log.</span></li>
+        <li data-tone="warn"><span class="proof-k">02 · Repair</span><b>Meta patch in 6.9 s</b><span>One-file diff written from the business rules. The model is never told the bug.</span></li>
+        <li data-tone="ok"><span class="proof-k">03 · Verify</span><b>44 / 44 checks</b><span>Browser journey plus 27 business checks, sandboxed and resource-limited.</span></li>
+        <li data-tone="active"><span class="proof-k">04 · Gate</span><b>Exit 1 blocks</b><span><code>faultline gate</code> stops agents and CI from shipping a broken preview.</span></li>
+      </ol>
     </div>
 
     <section id="gate" class="block" aria-labelledby="gate-title">
@@ -520,9 +634,9 @@
           <div class="seis-track"></div>
           <span class="seis-label"></span>
         </div>
-        <p class="gate-kicker"><span class="gate-lock" aria-hidden="true"></span>Pre-Flight Agent Gate · Claude Code · Codex · Cursor · Devin · CI</p>
+        <p class="gate-kicker"><span class="gate-lock" aria-hidden="true"></span>01 · Pre-Flight Agent Gate · Claude Code · Codex · Cursor · Devin · CI</p>
         <h2 id="gate-title">Nothing ships until the gate clears it.</h2>
-        <p class="intro">Before an AI coding agent or a pipeline deploys, FaultLine crawls the preview: every screen, button, and form. <code>faultline gate</code> exits 0 when the preview is safe to deploy. It exits 1 to block the release and hands the agent the exact reproduction to fix. Both runs below are real <code>faultline gate --json</code> verdicts from November 1, 2026, replayed in your browser. Each one links to its raw verdict.</p>
+        <p class="intro">Before an AI agent or CI pipeline deploys, FaultLine crawls the preview: every screen, button, and form. <strong>Exit 0: safe to deploy. Exit 1: blocked</strong>, and the agent gets the exact reproduction to fix. Both runs below are real <code>faultline gate --json</code> verdicts from November 1, 2026, replayed in your browser with links to the raw JSON.</p>
         <div class="gate-grid">
           <div class="gate-sim">
             <p class="gate-label" id="gate-target-label">Target preview URL</p>
@@ -549,10 +663,23 @@
     </section>
 
     <section id="repair" class="block" aria-labelledby="repair-title">
+      <p class="kicker">02 · Meta repair</p>
       <h2 id="repair-title">The recorded Meta repair</h2>
       <p class="intro">
-        A customer buys two Trail Mugs and leaves the coupon field empty. The store crashes. The model was given the checkout's business rules and the failure evidence, never the name of the bug or its fix.
+        A customer buys two Trail Mugs, leaves the coupon empty, and the store crashes. Meta's model got <strong>the business rules and the failure evidence, never the bug's name or its fix</strong>.
       </p>
+
+      <aside class="core" id="core" aria-labelledby="core-title">
+        <div class="core-head">
+          <h3 id="core-title"><span class="core-dot" aria-hidden="true"></span>Repair core: Meta Model API</h3>
+          <p>The model reads the contract and the evidence, returns a <strong>schema-checked one-file diff</strong>, and gets the gates' findings back for <strong>one retry</strong>. Provider labels come from the endpoint host and are recorded only when that provider answered.</p>
+        </div>
+        <ul class="core-models">
+          <li data-tone="ok"><code>muse-spark-1.3</code><span class="core-role">Default model</span><span class="core-proof">Recorded: verified on its first proposal, 44 / 44 checks</span></li>
+          <li><code>Llama-3.3-70B-Instruct</code><span class="core-role">Supported</span><span class="core-proof">Set <code>META_MODEL_NAME</code>; probed before use. No recorded run yet.</span></li>
+          <li data-tone="warn"><code>deterministic-checkout-v1</code><span class="core-role">Fallback, not Meta</span><span class="core-proof">Runs without a key. Always labeled; never counted as a Meta trial.</span></li>
+        </ul>
+      </aside>
 
       <div class="player" id="recorded-player">
         <div class="seis" id="recorded-seis" data-mode="resonance" aria-hidden="true">
@@ -615,9 +742,10 @@
     </section>
 
     <section id="live" class="block" aria-labelledby="live-title">
+      <p class="kicker">03 · Live</p>
       <h2 id="live-title">Break it yourself</h2>
       <p class="intro">
-        Pick one of ten bugs planted in the same checkout code. The live service starts a fresh isolated backend with your bug, runs the 27 business checks, sends the failures to the model, and re-runs every check on its patch. The model is never told which bug you picked. Every live run is added to a public tally.
+        Plant one of ten bugs in the same checkout. The live service boots <strong>a fresh isolated backend with your bug</strong>, sends the failing checks to the model, and <strong>re-runs all 27 on its patch</strong>. The model never learns which bug you picked, and every run joins a public tally.
       </p>
       <div class="live-status" id="live-status" role="status">Checking the live service&hellip;</div>
       <div class="explorer">
@@ -651,8 +779,9 @@
     </section>
 
     <section id="pipeline" class="block" aria-labelledby="pipeline-title">
+      <p class="kicker">04 · Pipeline</p>
       <h2 id="pipeline-title">What has to be true before a patch counts</h2>
-      <p class="intro">Each gate can stop the job. A rejected first attempt sends its findings back to the model once.</p>
+      <p class="intro"><strong>Any gate can stop the job.</strong> A rejected first attempt sends its findings back to the model once.</p>
       <ol class="steps">
         <li><strong>Reproduce</strong><span>A fresh Chromium session hits the failure, and the HTTP 500 is matched to the server's own error log.</span></li>
         <li><strong>Ask for a bounded patch</strong><span>The model returns a schema-checked, single-file unified diff. The prompt states the business contract, not the bug.</span></li>
@@ -665,9 +794,10 @@
     </section>
 
     <section id="gates" class="block" aria-labelledby="gates-title">
+      <p class="kicker">05 · Adversarial patches</p>
       <h2 id="gates-title">Try to fool the gates</h2>
       <p class="intro">
-        Eleven candidate patches for the same crash, from a hash-pinned corpus. Each was run through the same policy and isolated runtime. The naive check replays the customer's request and accepts any HTTP 201, which is what "the error went away" means. Pick one to see its recorded result.
+        Eleven candidate patches for the same crash, from a hash-pinned corpus, each run through the same policy and sandbox. The naive check accepts any HTTP 201: <strong>"the error went away."</strong> Pick a patch to see what each check decided.
       </p>
       <div class="scoreline" aria-label="Results over the six wrong patches">
         <div><b class="warn">5 of 6</b><span>wrong patches accepted by the naive check</span></div>
@@ -688,30 +818,31 @@
     </section>
 
     <section id="criteria" class="block" aria-labelledby="criteria-title">
+      <p class="kicker">06 · For judges</p>
       <h2 id="criteria-title">Where to look, by judging criterion</h2>
-      <p class="intro">No self-assigned scores. This maps each published criterion to the evidence that bears on it, including what is still missing.</p>
+      <p class="intro">No self-assigned scores: each published criterion, the evidence for it, and <strong>what is still missing</strong>.</p>
       <div class="table-wrap">
-        <table>
+        <table class="stack">
           <thead><tr><th scope="col">Criterion</th><th scope="col">What FaultLine shows</th><th scope="col">Evidence</th></tr></thead>
           <tbody>
             <tr>
               <td>Impact<br><span class="muted">30%</span></td>
-              <td><p>Teams shipping AI-written hotfixes need to know a patch is right, not just that the error stopped. On this corpus a naive check would have shipped five of six wrong fixes, including one that drops orders silently.</p><p class="muted">Not yet shown: user interviews or production use.</p></td>
+              <td><p>Teams shipping AI-written hotfixes need to know a patch is <strong>right, not just quiet</strong>. On this corpus a naive check would have shipped <strong>five of six wrong fixes</strong>, including one that silently drops orders.</p><p class="muted">Not yet shown: user interviews or production use.</p></td>
               <td><a href="#gates">Patch explorer</a><br><a href="https://github.com/FrankieBiz/Faultline/blob/main/docs/IMPACT_EVIDENCE.md">Impact notes</a></td>
             </tr>
             <tr>
               <td>Use of Meta AI tooling<br><span class="muted">25%</span></td>
-              <td><p><code>muse-spark-1.3</code> writes the repair from the business contract and failure evidence, under a strict proposal schema, and gets the gates' findings back for a second attempt. Provider labels come from the endpoint host and are recorded only when that provider answered.</p><p class="muted">Not yet shown: repeated Meta trials or a Meta run of the unfamiliar-defect corpus.</p></td>
-              <td><a href="replay/3573b32b-09bd-4f14-897d-cf6dccf9b118/index.html">One-attempt replay</a><br><a href="replay/82ac2dcc-e7f9-4ea7-9187-a0c0d79d8ba3/index.html">Two-attempt replay</a><br><a href="#live">Live tally</a></td>
+              <td><p><strong>Meta's <code>muse-spark-1.3</code> is the repair core</strong>: it writes the patch from the business contract and failure evidence under a strict proposal schema, and gets the gates' findings back for a second attempt. <code>Llama-3.3-70B-Instruct</code> is supported through the same Meta Model API. Provider labels come from the endpoint host.</p><p class="muted">Not yet shown: repeated Meta trials, a recorded Llama run, or a Meta run of the unfamiliar-defect corpus.</p></td>
+              <td><a href="#core">Repair core</a><br><a href="replay/3573b32b-09bd-4f14-897d-cf6dccf9b118/index.html">One-attempt replay</a><br><a href="replay/82ac2dcc-e7f9-4ea7-9187-a0c0d79d8ba3/index.html">Two-attempt replay</a><br><a href="#live">Live tally</a></td>
             </tr>
             <tr>
               <td>Technical depth<br><span class="muted">20%</span></td>
-              <td><p>Namespaced runtime with kernel-verified cgroup limits proven by an OOM and task-limit probe, AST and import policy, pinned fixture provenance, independent HTTP and browser oracles, checksummed evidence bundles, and cleanup that quarantines admission on failure.</p></td>
+              <td><p><strong>Namespaced runtime with kernel-verified cgroup limits</strong> (proven by an OOM and task-limit probe), AST and import policy, pinned fixture provenance, independent HTTP and browser oracles, checksummed evidence bundles, and cleanup that quarantines admission on failure.</p></td>
               <td><a href="https://github.com/FrankieBiz/Faultline/tree/main/services/repair-orchestrator">Orchestrator</a><br><a href="https://github.com/FrankieBiz/Faultline/blob/main/docs/QUALITY_REVIEW.md">Quality review</a></td>
             </tr>
             <tr>
               <td>Demo<br><span class="muted">25%</span></td>
-              <td><p>The recorded Meta repair plays back at its real timing; "Break it yourself" runs a live repair of a bug you pick when the service is on; static replays open in any browser; and a local Inspector runs the whole job: reproduce, propose, gate, verify, download evidence.</p></td>
+              <td><p>The <strong>recorded Meta repair plays at real timing</strong>, the agent gate replays two real verdicts, "Break it yourself" runs a live repair when the service is on, and the <strong>local Inspector runs the whole job</strong>: hunt, propose, gate, verify, download evidence.</p></td>
               <td><a href="#repair" data-play-recorded>Play the recording</a><br><a href="#live">Break it yourself</a><br><a href="#run">Run it locally</a></td>
             </tr>
           </tbody>
@@ -720,6 +851,7 @@
     </section>
 
     <section id="run" class="block" aria-labelledby="run-title">
+      <p class="kicker">07 · Run it</p>
       <h2 id="run-title">Run it yourself</h2>
       <div class="two">
         <div>
@@ -760,6 +892,7 @@ FAULTLINE_INSPECTOR_URL=http://127.0.0.1:4400 ./scripts/rehearse-demo.sh</code><
     </section>
 
     <section id="limits" class="block" aria-labelledby="limits-title">
+      <p class="kicker">08 · Limits</p>
       <h2 id="limits-title">What this does not claim</h2>
       <ul class="limits">
         <li>One registered live defect in one fixture store, plus an authored corpus of ten defects and eleven patches for the same route.</li>
@@ -1896,6 +2029,15 @@ jobs:
       gateTimer = setTimeout(tick, 200);
     }
     gatePills.forEach((pill) => pill.addEventListener("click", () => runGate(pill.dataset.gate)));
+    // The judging tour's gate step scrolls to the gate and replays that recorded run.
+    for (const trigger of document.querySelectorAll("[data-run-gate]")) {
+      trigger.addEventListener("click", (event) => {
+        event.preventDefault();
+        const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+        document.getElementById("gate").scrollIntoView({ behavior: reduce ? "auto" : "smooth" });
+        runGate(trigger.dataset.runGate);
+      });
+    }
     paintSeismic(gateSeis, preflight, "still", "Gate armed", false);
 
     // Integration tabs: arrow keys, Home, and End move between them, as in any tablist.

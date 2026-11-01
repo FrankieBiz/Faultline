@@ -1,5 +1,16 @@
 # Agent handoff state
 
+## November 1: design and copy polish (claude-design-polish)
+
+- **Judge page hero.** The h1 is now the hook, "The autonomous immune system / for AI coding agents and web applications." (the second line is 0.58em in ink-2, so it fits on two lines at 1440). The lede is one sentence with bold key phrases. A green **Repair core** chip names Meta Model API · muse-spark-1.3 and links to `#core`. Green is justified because it cites the recorded 44/44 verified fix, not a live state.
+- **3-minute tour.** `nav.tour` replaces `.path` and matches the README order: (1) the recorded Meta repair (`data-play-recorded`); (2) the gate, where a new `data-run-gate="broken"` hook scrolls to `#gate` and replays the blocked AuraScale verdict; (3) Try to fool the gates. "Break it yourself" is an extra-time footnote. The tour is ink only, since color stays reserved for evidence.
+- **Proof strip** `ol.proof`: Detect (rose), Repair (amber), Verify (green), Gate (cyan). Every figure comes from the recorded run.
+- **Repair core panel** `aside#core` at the top of `#repair`. muse-spark-1.3 is the default and on record. `Llama-3.3-70B-Instruct` is "Supported · set `META_MODEL_NAME`; probed before use. No recorded run yet." `deterministic-checkout-v1` is "Fallback, not Meta". **Honesty: no Llama run exists; do not claim one.** The criteria table's Meta row also lists "a recorded Llama run" as not yet shown.
+- **Rhythm.** Numbered mono section kickers (01 gate … 08 limits); h2 is clamp(24–34px); section padding is clamp(64–96px); one `--lift` shadow token is used on the player, preflight, diff, detail, core, and tour; `body { overflow-x: clip }` so the hero glow can span the viewport. Below 520px the nav is one scrollable row and the criteria table stacks one block per criterion (`table.stack`). Meta tag and CSP unchanged.
+- **Inspector.** Tokens now match the judge page (`--bg #07080a`, `--well #0e1014`, `--raised #14171d`). The hero kicker carries the hook; the subtitle mentions silent regressions. A new **`.hero-core`** line under it shows `providerName()` from readiness: `ok` only when the provider is meta and available, `warn` otherwise (meta but unavailable gets " · unavailable"), `bad` when readiness errored. The h1 "FaultLine Autonomous Bug Hunter" and "Unleash Autonomous Agent" are unchanged because tests pin them. The gate lede is synced with the judge page copy.
+- **Tests.** The rail test's page-wide `getByText(/Deterministic fallback/)` now matched the hero line too, so it is scoped to `#workspace`, and asserts the hero line (warn). The Meta readiness test asserts the hero line (ok). Counts are unchanged.
+- **Verified.** `pytest tests/test_agent_gate_snippets.py tests/test_configure_live_demo.py` 50 passed. `make check` exit 0 (289 + 799 + 123). `make browser` exit 0 (41 + 1). One storefront coupon `toBeDisabled` flake did not reproduce on rerun. Headless Chromium at 1440 and 390 px on both surfaces: no console errors, no horizontal overflow; the tour's gate and play hooks work. The worktree needed `npm ci` in all three Node packages.
+
 ## November 1: Pre-Flight Agent Gate UI (claude-gate-ui)
 
 Builds on claude-agent-gate's `faultline gate` (below). That CLI and its JSON contract are the source of truth; this work adds no CLI command of its own.

@@ -225,7 +225,10 @@ test("the rail lists sandbox repairs, faultline.toml rules, config errors, and a
   await expect(nav.getByText("POST /api/checkout").nth(1)).toBeVisible();
   await expect(nav.getByText(/rule\[3\] \(broken\) ignored: duplicate id/)).toBeVisible();
   await expect(nav.getByText("Test any URL from the bar at the top.")).toBeVisible();
-  await expect(page.getByText(/Deterministic fallback/)).toBeVisible();
+  await expect(page.locator("#workspace").getByText(/Deterministic fallback/)).toBeVisible();
+  // The hero names the repair engine exactly as readiness reports it, in amber because it is not Meta.
+  await expect(page.locator(".hero-core")).toHaveText("Repair coreDeterministic fallback · deterministic-checkout-v1 · no model call");
+  await expect(page.locator(".hero-core")).toHaveAttribute("data-tone", "warn");
   await expect(page.getByRole("heading", { name: "E-Commerce Checkout Defect", level: 1 })).toBeVisible();
   await expect(page.locator(".covering")).toContainText("Checkout without a coupon creates an order");
 
@@ -455,6 +458,8 @@ test("the repair step says Meta only for the Meta Model API and explains a block
   await page.goto("/");
   const flow = page.getByRole("list", { name: "Guided demo" });
   await expect(flow.getByRole("button", { name: "Repair with Meta" })).toHaveAccessibleDescription(/muse-spark-1\.3 in a Bubblewrap sandbox/);
+  await expect(page.locator(".hero-core")).toHaveText("Repair coreMeta Model API · muse-spark-1.3");
+  await expect(page.locator(".hero-core")).toHaveAttribute("data-tone", "ok");
   await page.unrouteAll({ behavior: "ignoreErrors" });
   await mock(page, { readiness: { ...ready, status: "blocked", runtime_ready: false, reason: "isolated_runtime_unavailable" } });
   await page.reload();

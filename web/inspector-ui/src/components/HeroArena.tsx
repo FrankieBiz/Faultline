@@ -24,6 +24,8 @@ export default function HeroArena(props: {
   busy: boolean; hunting: boolean; pinging: boolean;
   onHunt: (url: string) => Promise<void>;
   onPing: (url: string) => Promise<void>;
+  /** The engine that writes repairs, as readiness reports it. */
+  repairCore: { tone: "ok" | "warn" | "bad" | "idle"; text: string };
 }) {
   const { storefrontUrl, busy, hunting, pinging, onHunt, onPing } = props;
   const ids = useId();
@@ -88,10 +90,14 @@ export default function HeroArena(props: {
   return (
     <section className="hero" aria-labelledby={`${ids}-h`}>
       <div className="shell hero-inner">
-        <p className="hero-kicker"><span className="hero-live" aria-hidden="true" />Paste · Unleash · Verified fix</p>
+        <p className="hero-kicker"><span className="hero-live" aria-hidden="true" />The autonomous immune system for AI coding agents and web apps</p>
         <h1 id={`${ids}-h`}>FaultLine Autonomous Bug Hunter</h1>
         <p className="hero-sub">
-          Paste any local or web URL. Autonomous agents test every screen, click buttons, fill forms, and catch defects.
+          Paste any local or web URL. The agent clicks every button, fills every form, and <strong>catches silent regressions before code goes live</strong>.
+          Then a sandboxed repair has to pass independent checks before it counts.
+        </p>
+        <p className="hero-core" data-tone={props.repairCore.tone}>
+          <span className="hero-core-dot" aria-hidden="true" /><span className="hero-core-k">Repair core</span>{props.repairCore.text}
         </p>
         <form className="arena" onSubmit={submit} noValidate aria-label="Autonomous bug hunt" data-hunting={hunting || undefined}>
           <label className="sr-only" htmlFor={`${ids}-u`}>Target URL</label>

@@ -206,8 +206,8 @@ export default function AgentGatePanel(props: {
           <p className="gate-kicker"><span className="gate-lock" aria-hidden="true" />Pre-Flight Agent Gate · Claude Code · Codex · Cursor · Devin · CI</p>
           <h2 id={`${ids}-h`}>Nothing ships until the gate clears it.</h2>
           <p className="gate-lede">
-            Before an AI coding agent or a pipeline deploys, FaultLine crawls the preview: every screen, button, and form.{" "}
-            <code>faultline gate</code> exits 0 when the preview is safe to deploy. It exits 1 to block the release and hands the agent the exact reproduction to fix.
+            Before an AI agent or CI pipeline deploys, FaultLine crawls the preview: every screen, button, and form.{" "}
+            <strong>Exit 0: safe to deploy. Exit 1: blocked</strong>, and the agent gets the exact reproduction to fix.
           </p>
         </header>
 

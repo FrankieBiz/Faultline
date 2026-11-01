@@ -730,6 +730,10 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
       })() : null,
     } : null,
   };
+  const repairCore = model
+    ? { tone: metaReady ? "ok" as const : "warn" as const,
+      text: model.provider === "meta" && !model.available ? `${providerName(model.provider, model.model)} · unavailable` : providerName(model.provider, model.model) }
+    : { tone: readinessError ? "bad" as const : "idle" as const, text: readinessError ? "Engine unreachable" : "Checking the engine…" };
   const engineLabel = status === "ready" ? "Ready" : status === "detect_only" ? "Detection only"
     : status === "blocked" || readinessError ? "Needs attention" : "Checking…";
 
@@ -757,7 +761,7 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
       <HeroArena storefrontUrl={storefrontUrl} apiUrl={store?.url ?? null}
         busy={busy !== null || quickTesting || flowAction !== null || crawlRunning}
         hunting={crawlRunning && flowAction === null && crawlOrigin !== "gate"} pinging={quickTesting && !crawlRunning}
-        onHunt={autoBreak} onPing={async (url) => { await quickTest(url); }} />
+        onHunt={autoBreak} onPing={async (url) => { await quickTest(url); }} repairCore={repairCore} />
       {crawlState && crawlOrigin !== "gate" && <CrawlerHud state={crawlState} repairLabel={repairLabel} repairBlocked={crawlRepairBlocked}
         repair={missionRepair} onRepair={repairFromCrawl} onApply={() => void applyAndConfirm()} onDismiss={closeCrawl} />}
       <AgentGatePanel state={crawlOrigin !== "hud" ? crawlState : null} missionOpen={crawlOrigin === "both"} storefrontUrl={storefrontUrl} storeState={store?.state ?? null}
