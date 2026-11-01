@@ -6,7 +6,10 @@
  * with realistic sample values, and clicks through same-origin controls in a
  * shopping-funnel order (content links and product cards, add-to-cart,
  * checkout, commit buttons), skipping destructive controls such as Remove or
- * Log out. When a screen has nothing left to try, it moves on to the most
+ * Log out. Commit buttons (Place order, Pay, Submit) are clicked only on
+ * disposable origins (localhost, loopback, or a private network address)
+ * unless `allowCommitActions` is set, so a crawl of a real site cannot place
+ * an order or submit a payment. When a screen has nothing left to try, it moves on to the most
  * promising same-origin screen it has seen linked but not yet visited (cart
  * and checkout first). After every action it waits for the page to settle and
  * checks for:
@@ -176,6 +179,12 @@ export interface CrawlOptions {
   onEvent?: (event: CrawlEvent) => void;
   /** Browser to crawl in; a headless Chromium is launched and closed when omitted. */
   browser?: Browser;
+  /**
+   * Click commit buttons (Place order, Pay, Submit) even when the target is
+   * not a disposable origin (see {@link isLocalHost}). Off by default: on a
+   * real site those buttons can create orders, payments, or accounts.
+   */
+  allowCommitActions?: boolean;
 }
 
 /** Raised for invalid options before a browser starts. */
@@ -239,6 +248,31 @@ const CHECKOUT = /\b(check ?out|proceed|continue|next)\b/i;
 const ADD = /\b(add to (cart|bag|basket)|add)\b/i;
 const CART_PATH = /\/(checkout|cart|basket|bag)\b/i;
 
+/**
+ * True for hosts that cannot be a public production site: `localhost`,
+ * loopback, `0.0.0.0/8`, RFC 1918 private IPv4, and IPv6 loopback or unique
+ * local addresses (including IPv4-mapped forms). Hostnames are not resolved,
+ * so a public name that points at a private address still counts as external.
+ */
+export function isLocalHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[(.*)\]$/, "$1");
+  if (host === "localhost" || host.endsWith(".localhost")) return true;
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/.exec(host);
+  if (v4) {
+    const [a, b] = [Number(v4[1]), Number(v4[2])];
+    return a === 127 || a === 10 || a === 0 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+  }
+  if (!host.includes(":")) return false;
+  if (host === "::1") return true;
+  if (/^f[cd][0-9a-f]{2}:/.test(host)) return true;
+  const mapped = /^::ffff:(?:(\d{1,3}(?:\.\d{1,3}){3})|([0-9a-f]{1,4}):([0-9a-f]{1,4}))$/.exec(host);
+  if (!mapped) return false;
+  const [, dotted, highHex = "0", lowHex = "0"] = mapped;
+  if (dotted) return isLocalHost(dotted);
+  const [high, low] = [parseInt(highHex, 16), parseInt(lowHex, 16)];
+  return isLocalHost(`${high >> 8}.${high & 255}.${low >> 8}.${low & 255}`);
+}
+
 /** Strips the fragment so in-page anchors do not count as new pages; hash routes (`#/cart`, `#!/cart`) are kept. */
 export function normalizeUrl(raw: string): string {
   const url = new URL(raw);
@@ -272,8 +306,13 @@ export function labelOf(info: Pick<ClickableInfo, "text" | "ariaLabel" | "value"
  * checkout steps, which beat unexplored content links (a product page), which
  * beat add-to-cart, which beats other buttons. Header, nav, and footer
  * elements are demoted so page content is explored before global chrome.
+ * Commit buttons are never clicked unless `allowCommit` is true, which
+ * defaults to whether `origin` is disposable (see {@link isLocalHost}).
  */
-export function scoreClickable(info: ClickableInfo, context: { origin: string; visited: ReadonlySet<string> }): number | null {
+export function scoreClickable(
+  info: ClickableInfo,
+  context: { origin: string; visited: ReadonlySet<string>; allowCommit?: boolean },
+): number | null {
   if (info.disabled || !info.visible) return null;
   const name = `${info.text} ${info.ariaLabel} ${info.value}`.replace(/\s+/g, " ").trim();
   if (DESTRUCTIVE.test(name)) return null;
@@ -292,6 +331,7 @@ export function scoreClickable(info: ClickableInfo, context: { origin: string; v
     if (context.visited.has(normalizeUrl(target.toString()))) return null;
     score = CHECKOUT.test(name) || CART_PATH.test(target.pathname) ? 40 : 30;
   } else if (COMMIT.test(name)) {
+    if (!(context.allowCommit ?? isLocalHost(new URL(context.origin).hostname))) return null;
     score = 50;
   } else if (CHECKOUT.test(name)) {
     score = 40;
@@ -803,6 +843,7 @@ export async function runAutonomousCrawler(options: CrawlOptions): Promise<Crawl
     throw new CrawlOptionsError(`timeoutMs must be a whole number from 1000 to ${MAX_CRAWL_TIMEOUT_MS}.`);
   }
 
+  const allowCommit = options.allowCommitActions === true || isLocalHost(start.hostname);
   const emit = options.onEvent ?? (() => undefined);
   const startedAt = performance.now();
   const endsAt = startedAt + timeoutMs;
@@ -916,7 +957,7 @@ export async function runAutonomousCrawler(options: CrawlOptions): Promise<Crawl
         for (const field of fields) seenElements.add(`${pageUrl}|field|${field.tag}|${fieldLabel(field)}`);
         for (const info of clickables) {
           if (!info.href) continue;
-          const score = scoreClickable(info, { origin: start.origin, visited });
+          const score = scoreClickable(info, { origin: start.origin, visited, allowCommit });
           if (score === null) continue;
           const target = normalizeUrl(info.href);
           frontier.set(target, Math.max(score, frontier.get(target) ?? -Infinity));
@@ -973,7 +1014,7 @@ export async function runAutonomousCrawler(options: CrawlOptions): Promise<Crawl
         }
 
         const ranked = clickables
-          .map((info) => ({ info, key: identity(info), score: scoreClickable(info, { origin: start.origin, visited }) }))
+          .map((info) => ({ info, key: identity(info), score: scoreClickable(info, { origin: start.origin, visited, allowCommit }) }))
           .filter((entry): entry is { info: ClickableInfo; key: string; score: number } => entry.score !== null && !tried.has(entry.key))
           .sort((a, b) => b.score - a.score || a.info.index - b.info.index);
         const next = ranked[0];

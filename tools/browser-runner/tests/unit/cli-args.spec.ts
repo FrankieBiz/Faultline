@@ -64,13 +64,15 @@ test.describe("parseCliArgs", () => {
       maxActions: 15,
       timeoutMs: 60_000,
       ndjson: false,
+      allowCommitActions: false,
     });
-    expect(parseCliArgs(["--crawl", "http://x", "--max-actions", "40", "--timeout-ms", "120000", "--ndjson"])).toEqual({
+    expect(parseCliArgs(["--crawl", "http://x", "--max-actions", "40", "--timeout-ms", "120000", "--ndjson", "--allow-commit-actions"])).toEqual({
       kind: "crawl",
       url: "http://x",
       maxActions: 40,
       timeoutMs: 120_000,
       ndjson: true,
+      allowCommitActions: true,
     });
   });
 
@@ -80,5 +82,6 @@ test.describe("parseCliArgs", () => {
     expect(() => parseCliArgs(["--crawl", "http://x", "--timeout-ms", "999999"])).toThrow(CliUsageError);
     expect(() => parseCliArgs(["--crawl", "http://x", "--base-url", "http://x"])).toThrow(/cannot be combined/);
     expect(() => parseCliArgs(["--base-url", "http://x", "--ndjson"])).toThrow(/require --crawl/);
+    expect(() => parseCliArgs(["--base-url", "http://x", "--allow-commit-actions"])).toThrow(/require --crawl/);
   });
 });
