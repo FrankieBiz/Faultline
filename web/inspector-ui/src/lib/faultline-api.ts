@@ -292,6 +292,13 @@ export interface CrawlTelemetry {
   failure?: CrawlFailure | null;
   reproduction_trail?: string[];
   duration_ms?: number | null;
+  /**
+   * Why the crawler stopped a crawl that found nothing: "exhausted" (no untried control or
+   * unvisited screen left), "max_actions", or "timeout". Null for a failure, an error, or an
+   * engine that predates it. Only "exhausted" lets the gate pass.
+   */
+  stop_reason?: string | null;
+  error?: string | null;
 }
 
 export type CrawlEvent =

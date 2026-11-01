@@ -1,6 +1,6 @@
-# FaultLine: Autonomous SRE & Sandbox-Verified Repair Platform for Web Applications
+# FaultLine: Sandbox-Verified Repair and a Pre-Flight Gate for Web Applications
 
-**A real browser finds the failure. A Meta model proposes a patch. Independent, kernel-contained checks decide whether it works.**
+**A real browser finds the failure. A Meta model proposes a patch. Independently authored business checks decide whether it works, while a kernel sandbox confines the candidate.**
 
 **Judges: start at the [FaultLine judge page](https://frankiebiz.github.io/Faultline/).** It needs no install: play the recorded Meta repair, plant a bug yourself, and try to fool the gates.
 
@@ -10,21 +10,21 @@
 
 | Surface | URL | Audience & Setup | What It Does & How to Judge It |
 | :--- | :--- | :--- | :--- |
-| **Public Judge Page** *(Recommended First Stop)* | [frankiebiz.github.io/Faultline/](https://frankiebiz.github.io/Faultline/) | **Judges & Evaluators**<br>*(Zero install, works in any browser on desktop/mobile)* | **The Primary Hackathon Showcase:**<br>1. **Live Meta Model Replay**: Watch Meta's `muse-spark-1.3` autonomously diagnose and repair the 2 AM checkout crash in 13 seconds (44/44 passing assertions).<br>2. **Interactive Pre-Flight Agent Gate**: Test clean vs. broken web apps, watch the seismograph quake, and inspect the AI agent self-healing prompt.<br>3. **Corpus Gate Stress-Tester**: Compare 11 candidate patches to see why naive checks fail and FaultLine's kernel sandbox succeeds.<br>4. **Static Evidence Replays**: Cryptographically verified, script-free audit logs. |
-| **Local Inspector Studio** | `http://127.0.0.1:4000`<br>*(via `./faultline demo`)* | **Engineers & SREs**<br>*(Requires Linux with cgroup v2 & Bubblewrap)* | **The Real-Time Developer Execution Engine:**<br>1. Real headless Playwright crawler hunts for defects across live `localhost` ports (`:3000`, `:5050`).<br>2. Communicates with the live repair orchestrator (`:9000`) and Meta Model API.<br>3. Sandboxes code diffs inside Linux Bubblewrap user namespaces and enforces 512MB/1 CPU limits.<br>4. One-click applies verified code diffs to your actual repository. |
+| **Public Judge Page** *(Recommended First Stop)* | [frankiebiz.github.io/Faultline/](https://frankiebiz.github.io/Faultline/) | **Judges & Evaluators**<br>*(Zero install, works in any browser on desktop/mobile)* | **The Primary Hackathon Showcase:**<br>1. **Recorded Meta repair**: replay one retained `muse-spark-1.3` job that took the checkout crash to 44/44 passing assertions in 13.0 s. The [Oct 31 ledger](docs/evidence/2026-10-31-controller-ledger-meta.md) adds 3 of 3 live trials verified on the first attempt (median 10.5 s, one scenario).<br>2. **Pre-Flight Agent Gate replays**: two recorded `faultline gate --json` verdicts (a blocked run against AuraScale, a scratch app outside this repo, and a clean storefront run from the earlier contract) with the agent fix prompt.<br>3. **Patch explorer**: 11 candidate patches show a naive status check accepting 5 of 6 wrong fixes, while FaultLine's authored business assertions reject all six.<br>4. **Static evidence replays**: SHA-256 checksummed, script-free records. |
+| **Local Inspector Studio** | `http://127.0.0.1:4000`<br>*(via `./faultline demo`)* | **Engineers & SREs**<br>*(Requires Linux with cgroup v2 & Bubblewrap)* | **Local execution:**<br>1. A headless Playwright crawler with deterministic heuristics explores a `localhost` app (the bundled store on `:3000`, or any URL you paste).<br>2. Talks to the local repair orchestrator (`:9000`), which calls the Meta Model API when a key is set and otherwise uses the labeled deterministic fallback.<br>3. Runs candidate diffs inside Bubblewrap namespaces under 512 MiB / 64 task / 1 CPU cgroup limits.<br>4. Applies a verified fix only to the bundled demo store; project repairs stay in the sandbox and never touch your working source. |
 | **Demo Target Store** | `http://127.0.0.1:3000`<br>*(API: `:8000`)* | **Local Test Target**<br>*(Part of `./faultline demo`)* | **BuggyShop E-Commerce App:** A real Next.js + FastAPI shop with a seeded coupon discount exception on checkout that triggers HTTP 500. |
-| **Secret SaaS Target** | `http://127.0.0.1:5050` | **Local Standalone App**<br>*(Part of test suite)* | **AuraScale Cloud:** Standalone cloud platform app with an NVMe lease allocation crash used to test multi-page exploratory crawls. |
+| **AuraScale Cloud** *(historical, not in this repo)* | was `http://127.0.0.1:5050` | **External scratch app**<br>*(Not shipped or needed)* | Used once on November 1 for the recorded blocked-gate replay on the judge page. Nothing here starts it, and no filming or test depends on it. |
 
 ### ⏱️ The 3-Minute Judging Tour
 
 If you have 3 minutes to evaluate FaultLine, follow this sequence on the **[Public Judge Page](https://frankiebiz.github.io/Faultline/)**:
 
-1. **Watch the 13-Second Meta Autonomous Repair (Top Hero)**:
-   Click **Play Replay**. You will see the live Seismograph detect the checkout rupture, Meta's `muse-spark-1.3` synthesize a single-file AST-safe diff, Bubblewrap spin up an isolated sandbox, and 44 independent business checks turn green to verify the fix before any developer merges.
-2. **Test the Pre-Flight Agent Gate (Section #2)**:
-   Click **Test Broken Site (AuraScale :5050)**. Watch the seismograph flare in electric rose, see the gate issue a `DEPLOYMENT_BLOCKED` verdict, and review the exact click-by-click reproduction trail and self-healing prompt fed back to coding agents (Cursor, Claude, Devin). Then click **Test Clean Storefront** to see it clear with `SAFE_TO_DEPLOY`.
-3. **Try to Fool the Gates (Section #3)**:
-   Click through the 10-defect holdout corpus to observe how traditional CI (naive HTTP 201 checks) gets fooled by wrong AI patches, while FaultLine's kernel containment and invariant assertions catch every single regression.
+1. **Watch the recorded Meta repair (top of the page)**:
+   Click **Play the recorded Meta repair**. The retained job replays at its recorded timing (13.0 s): the checkout rupture, Meta's `muse-spark-1.3` single-file diff, the policy check, the sandboxed run, and 44 authored checks turning green. Nothing is merged or deployed.
+2. **Replay the Pre-Flight Agent Gate (section 01)**:
+   Click **Test Broken Site**. The recorded verdict is `DEPLOYMENT_BLOCKED` with the click-by-click reproduction trail and the fix prompt an agent would receive. **Test Clean Site** replays a pass recorded under the earlier contract, before the gate reported whether exploration finished; it is captioned as such.
+3. **Try to fool the gates (section 05)**:
+   Pick wrong patches from the authored corpus. A naive "returns HTTP 201" check accepts 5 of 6; FaultLine's business assertions reject all six. The sandbox confines each run; the assertions are what catch the regression.
 
 ---
 
@@ -58,7 +58,7 @@ The output is a **verified candidate with proof**, never a silent production cha
 
 The [judge page](https://frankiebiz.github.io/Faultline/) is static and works without cloning anything:
 
-- **Play the recorded Meta repair.** A retained `muse-spark-1.3` controller job replays at its real 13-second timing, from the crashing checkout to 44 of 44 passing checks.
+- **Play the recorded Meta repair.** A retained `muse-spark-1.3` controller job replays at its recorded timing (13.0 s for that job), from the crashing checkout to 44 of 44 passing checks. The Oct 31 ledger's three live trials took 10.4 to 12.6 s.
 - **Break it yourself.** Plant one of ten corpus bugs and watch the model repair it live in the isolated runtime, under the same gates. The model is never told which bug you picked. When the live service is offline, the page says so and offers the recording instead.
 - **Try to fool the gates.** Compare eleven recorded candidate patches under a naive "did it return 201?" check and under FaultLine.
 - **Read the raw record.** The [replays](https://frankiebiz.github.io/Faultline/replay/3573b32b-09bd-4f14-897d-cf6dccf9b118/) are static, script-free, and checksummed.
@@ -210,9 +210,12 @@ report. The orchestrator exposes the same crawl as an authenticated
 structured telemetry to the report: `elements_explored`, `screens_visited` (path,
 title, element and form counts, the step that reached it), `actions` (each
 interaction with `ok`), `failure` (null when clean), and `reproduction_trail`
-(numbered plain-language steps with selectors). The Inspector's **Unleash
-Autonomous Agent** button streams it live through `POST /api/faultline/crawl`,
-whose closing `done` event carries the same telemetry.
+(numbered plain-language steps with selectors), plus `stop_reason`
+(`exhausted`, `max_actions`, or `timeout`) for a crawl that found nothing. Only
+`exhausted` means exploration finished; the gate and the Inspector treat the
+others as inconclusive. The Inspector's **Unleash Autonomous Agent** button
+streams it live through `POST /api/faultline/crawl`, whose closing `done` event
+carries the same telemetry.
 
 Then, inside any Next.js, Vite, Express, or FastAPI repository:
 
@@ -273,9 +276,9 @@ Static AST inspection and Git worktrees are policy and source-management tools; 
 | --- | --- |
 | `faultline init` | Detects the stack and writes a reviewable `faultline.toml` |
 | `faultline check` | Gates a running service on declared HTTP invariants, each measured in two fresh sessions; `--repair` asks for a sandbox-verified candidate without touching source |
-| `faultline scan URL` | Paste a URL: explores every same-origin screen, fills forms, catches the first defect, prints its reproduction journey, and offers to propose and verify a patch in the sandbox; alias `faultline auto` |
+| `faultline scan URL` | Paste a URL: explores same-origin screens within an action and time budget, fills forms, catches the first defect, prints its reproduction journey, and offers to propose and verify a patch in the sandbox; alias `faultline auto` |
 | `faultline crawl URL` | Clicks through a site in headless Chromium until something breaks, then prints the failure and its reproduction breadcrumbs; alias `faultline break` |
-| `faultline gate URL` | Pre-deployment gate for coding agents and CI: the same crawl, one verdict (`SAFE_TO_DEPLOY` exit 0, `DEPLOYMENT_BLOCKED` exit 1, bad input exit 2) with `--json`, `--markdown`, or `--format agent\|ci`, plus a ready-to-paste agent fix prompt |
+| `faultline gate URL` | Pre-deployment smoke gate for coding agents and CI: the same crawl, one verdict (`SAFE_TO_DEPLOY` exit 0 only when exploration finished with no defect; `DEPLOYMENT_BLOCKED` exit 1 for a defect or an unfinished crawl; bad input exit 2) with `--json`, `--markdown`, or `--format agent\|ci`, plus a ready-to-paste agent fix prompt |
 | `faultline doctor` | Checks sandbox prerequisites, the Meta key, and service health |
 | `faultline run [scenario]` | Freezes tracked source, needs two matching isolated failures, requests a Meta patch, verifies it, and writes a checksummed proof to `.faultline/runs`; `--detect` stops before the model call |
 | `faultline listen [job]` | Streams a job's stages as a live HUD with a cyan spinner and progress bar for in-flight work; `--plain` gives one line per stage for CI logs |
@@ -286,7 +289,7 @@ Static AST inspection and Git worktrees are policy and source-management tools; 
 ### Web Inspector studio (`localhost:4000`)
 
 - **1-2-3 guided demo.** The Demo Playground (sample store) runs **Break it** (the Playwright chaos crawler clicks through the store until checkout returns HTTP 500), the sandbox repair (labeled **Repair with Meta** only when the engine reports the Meta Model API), and **Apply fix** (hot-patch, then a live check confirms HTTP 201). Each step advances on recorded evidence, not clicks.
-- **Paste and go.** The hero arena at the top takes any URL (or a Storefront / Backend API / Custom Localhost preset); nothing asks for an expected status or error. **Unleash Autonomous Agent** (or Enter) streams a chaos crawl (`POST /api/faultline/crawl`) into the Live Agent Mission HUD: agent status, screens explored, actions, and defects; a step ticker of the crawler's real actions; then the intercepted failing request with its click trail and a one-click sandbox repair that carries on to the verified assertion count and **Apply Verified Fix to Live Codebase** for the demo store. Until the engine serves a crawler endpoint, a real two-session HTTP check stands in and the HUD labels it as such. **Quick HTTP Ping** sends a GET from two fresh sessions. Bare `localhost:3000/path` means http.
+- **Paste and go.** The hero arena at the top takes any URL (or a Storefront / Backend API / Custom Localhost preset); nothing asks for an expected status or error. **Unleash Autonomous Agent** (or Enter) streams a chaos crawl (`POST /api/faultline/crawl`) into the Live Agent Mission HUD: agent status, screens explored, actions, and defects; a step ticker of the crawler's real actions; then the intercepted failing request with its click trail and a one-click sandbox repair that carries on to the verified assertion count and **Apply Verified Fix to Demo Store** (bundled store only). Until the engine serves a crawler endpoint, a real two-session HTTP check stands in and the HUD labels it as such. **Quick HTTP Ping** sends a GET from two fresh sessions. Bare `localhost:3000/path` means http.
 - **Scenario rail.** Repairable defects, project checks from `faultline.toml`, and your saved URLs, each with a status line: cyan while work is in flight, emerald only for evidence-verified repairs, red for failures.
 - **Live invariant tester.** Runs `[[invariants.rule]]` and `[scenarios.*]` from `faultline.toml` against the running store, in two sessions each.
 - **Custom URL check dialog.** Any method, JSON body, and expected status, validated in place.
@@ -300,7 +303,7 @@ Static AST inspection and Git worktrees are policy and source-management tools; 
 
 ### Pre-Flight Agent Gate
 
-`faultline gate http://127.0.0.1:3000 --json` turns the crawler into a deployment gate that coding agents (Claude, Codex, Cursor, Devin) and pipelines can obey: exit 0 is `SAFE_TO_DEPLOY`, exit 1 is `DEPLOYMENT_BLOCKED` with the reproduction trail and an `agent_remediation_prompt` the agent can act on. [`docs/PREFLIGHT_GATE.md`](docs/PREFLIGHT_GATE.md) covers the contract, the agent skill ([`.agents/skills/faultline-gate`](.agents/skills/faultline-gate/SKILL.md)), the drop-in [`.github/workflows/faultline-gate.yml`](.github/workflows/faultline-gate.yml) that writes the verdict to the job summary, and the optional [`.githooks/pre-push`](.githooks/pre-push) hook. The Inspector's Pre-Flight Gate panel runs the same check from the browser and shows the same verdict and fix prompt, with the agent rule, workflow, and skill ready to copy. The [judge page](https://frankiebiz.github.io/Faultline/#gate) replays two recorded verdicts.
+`faultline gate http://127.0.0.1:3000 --json` turns the crawler into a deployment gate that coding agents (Claude, Codex, Cursor, Devin) and pipelines can obey: exit 1 is `DEPLOYMENT_BLOCKED` with the reproduction trail and an `agent_remediation_prompt` the agent can act on, and also covers a crawl that ran out of actions or time before it finished (`error.code: "incomplete_crawl"`, `failure: null`). Exit 0 is `SAFE_TO_DEPLOY` only when the crawl finished exploring (`stop_reason: "exhausted"`) with no defect. That is a bounded smoke signal for the flows the crawler reached, not proof of business correctness; keep declared checks (`faultline check`) for prices, totals, and orders. [`docs/PREFLIGHT_GATE.md`](docs/PREFLIGHT_GATE.md) covers the contract, the agent skill ([`.agents/skills/faultline-gate`](.agents/skills/faultline-gate/SKILL.md)), the drop-in [`.github/workflows/faultline-gate.yml`](.github/workflows/faultline-gate.yml) that writes the verdict to the job summary, and the optional [`.githooks/pre-push`](.githooks/pre-push) hook. The Inspector's Pre-Flight Gate panel runs the same check from the browser and shows the same verdict and fix prompt, with the agent rule, workflow, and skill ready to copy. The [judge page](https://frankiebiz.github.io/Faultline/#gate) replays two verdicts recorded before `stop_reason` was reported; the clean one is captioned as historical.
 
 ---
 
@@ -318,7 +321,7 @@ Static AST inspection and Git worktrees are policy and source-management tools; 
 
 That is **3 of 3 verified on the first attempt**, with a median wall time of **10.5 s**, no policy rejections, and cleanup confirmed every time. The provider is `meta` and the model is `muse-spark-1.3`. Scope: one registered scenario (`scripted_checkout_repair`).
 
-The retained [Meta repair replay](https://frankiebiz.github.io/Faultline/replay/3573b32b-09bd-4f14-897d-cf6dccf9b118/) ([files](docs/replay/3573b32b-09bd-4f14-897d-cf6dccf9b118), [provenance review](docs/evidence/2026-10-28-meta-replay-review.md)) shows the failed baseline, 44 passing assertions, and cleanup. A [second Meta replay](https://frankiebiz.github.io/Faultline/replay/82ac2dcc-e7f9-4ea7-9187-a0c0d79d8ba3/) records a rejected first proposal and a verified second-round retry.
+The retained [Meta repair replay](https://frankiebiz.github.io/Faultline/replay/3573b32b-09bd-4f14-897d-cf6dccf9b118/) ([files](docs/replay/3573b32b-09bd-4f14-897d-cf6dccf9b118), [provenance review](docs/evidence/2026-10-28-meta-replay-review.md)) shows the failed baseline, 44 passing assertions, and cleanup. A [second Meta replay](https://frankiebiz.github.io/Faultline/replay/82ac2dcc-e7f9-4ea7-9187-a0c0d79d8ba3/) records a rejected first proposal and a verified second-round retry. That first proposal was rejected because its diff did not apply cleanly, not because the verifier caught wrong behavior; a behavioral rejection followed by a Meta retry has not been recorded.
 
 ### 10-defect evaluation corpus
 
@@ -333,14 +336,14 @@ These results describe an authored corpus for one checkout route, not arbitrary 
 
 | Suite | Tests |
 | --- | ---: |
-| Backend, scripts, and fixtures (pytest) | 289 |
-| Repair orchestrator and CLI (pytest) | 799 |
+| Backend, scripts, and fixtures (pytest) | 290 |
+| Repair orchestrator and CLI (pytest) | 877 |
 | Browser runner unit tests | 123 |
-| **Unit and integration total** (`make check`) | **1,211** |
-| Inspector browser tests (Playwright) | 41 |
-| Storefront browser test (Playwright) | 1 |
-| **Browser total** (`make browser`) | **42** |
-| **All automated tests** | **1,253** |
+| **Unit and integration total** (`make check`) | **1,290** |
+| Inspector browser tests (Playwright) | 43 |
+| Storefront browser tests (Playwright) | 2 |
+| **Browser total** (`make browser`) | **45** |
+| **All automated tests** | **1,335** |
 
 `make check` also runs Ruff lint and format checks, strict mypy, fixture and corpus provenance, the storefront, runner, and Inspector builds, and both Python distribution builds. `make integration` exercises real isolated Chromium and cgroup enforcement, and `make evaluate` runs the corpus.
 

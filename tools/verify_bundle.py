@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -57,7 +58,192 @@ def _artifact_file(directory: Path, artifact_id: str) -> Path | None:
     return matches[0] if len(matches) == 1 else None
 
 
+def verify_final_metadata(bundle: dict[str, Any]) -> tuple[list[str], list[str]]:
+    """Check schema 3 lifecycle/provenance consistency, never authenticate its author."""
+    errors: list[str] = []
+    lifecycle = bundle.get("lifecycle")
+    if (
+        not isinstance(lifecycle, dict)
+        or any(
+            lifecycle.get(key) != value
+            for key, value in {
+                "state": "succeeded",
+                "outcome": "verified",
+                "cleanup_status": "succeeded",
+            }.items()
+        )
+        or lifecycle.get("finalized") is not True
+    ):
+        errors.append(
+            "Invalid or missing final lifecycle: verified outcome requires cleanup succeeded"
+        )
+
+    def digest(value: Any) -> bool:
+        return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None
+
+    def text(value: Any) -> bool:
+        return isinstance(value, str) and bool(value.strip())
+
+    source = bundle.get("source")
+    generation = bundle.get("generation")
+    executions = bundle.get("executions")
+    if (
+        not isinstance(source, dict)
+        or not text(source.get("seed_commit"))
+        or not digest(source.get("seed_source_sha256"))
+    ):
+        errors.append("Invalid or missing source identity")
+    if (
+        not isinstance(generation, dict)
+        or not all(
+            text(generation.get(key))
+            for key in (
+                "attempt_id",
+                "baseline_execution_id",
+                "verification_execution_id",
+                "app_generation_id",
+            )
+        )
+        or not all(
+            digest(generation.get(key))
+            for key in ("base_sha256", "target_sha256", "candidate_sha256")
+        )
+        or any(
+            key not in generation or (generation[key] is not None and not text(generation[key]))
+            for key in ("provider", "model")
+        )
+    ):
+        errors.append("Invalid or missing generation/provider identity")
+    if errors:
+        return errors, []
+    if not isinstance(executions, list) or not executions:
+        return ["Missing execution provenance"], []
+    items = bundle["evidence_manifest"]
+    if not isinstance(items, list) or any(
+        not isinstance(item, dict)
+        or not text(item.get("id"))
+        or not text(item.get("role"))
+        or not digest(item.get("sha256"))
+        or type(item.get("size_bytes")) is not int
+        or item["size_bytes"] < 0
+        for item in items
+    ):
+        return ["Invalid final evidence manifest"], []
+    if len({item["id"] for item in items}) != len(items):
+        return ["Duplicate final evidence identity"], []
+    manifest = {item["id"]: item for item in bundle["evidence_manifest"]}
+    recorded: dict[str, dict[str, Any]] = {}
+    isolated = True
+    for execution in executions:
+        if not isinstance(execution, dict):
+            errors.append("Invalid execution provenance")
+            continue
+        identity = execution.get("execution_id")
+        if not text(identity) or identity in recorded:
+            errors.append("Missing or duplicate execution identity")
+        recorded[identity] = execution
+        if (
+            execution.get("phase") not in {"baseline", "verification"}
+            or not text(execution.get("app_generation_id"))
+            or not digest(execution.get("candidate_snapshot_sha256"))
+            or execution.get("runtime_kind") not in {"unverified", "isolated-browser"}
+            or execution.get("verdict") not in {"failed", "passed", "error", "timed_out"}
+            or type(execution.get("assertions_total")) is not int
+            or type(execution.get("regressions_count")) is not int
+            or not 0 <= execution["regressions_count"] <= execution["assertions_total"]
+        ):
+            errors.append("Invalid execution identity, runtime or verdict metadata")
+        artifact_ids = execution.get("artifact_ids")
+        if (
+            not isinstance(artifact_ids, list)
+            or not artifact_ids
+            or len(set(artifact_ids)) != len(artifact_ids)
+            or not set(artifact_ids) <= set(manifest)
+            or not any(manifest.get(key, {}).get("role") == "report" for key in artifact_ids)
+        ):
+            errors.append("Execution artifacts are not bound to the evidence manifest")
+        limits = execution.get("resource_limits")
+        if "resource_limits" not in execution:
+            errors.append("Missing per-execution resource_limits (use null for unknown)")
+        if limits is not None:
+            if (
+                not isinstance(limits, dict)
+                or type(limits.get("verified")) is not bool
+                or not {
+                    "mode",
+                    "verified",
+                    "memory_max_bytes",
+                    "memory_swap_max_bytes",
+                    "tasks_max",
+                    "cpu_quota_percent",
+                }
+                <= set(limits)
+            ):
+                errors.append("Invalid recorded resource limits")
+            else:
+                values = [
+                    limits.get(key)
+                    for key in (
+                        "memory_max_bytes",
+                        "memory_swap_max_bytes",
+                        "tasks_max",
+                        "cpu_quota_percent",
+                    )
+                ]
+                if limits.get("mode") == "disabled":
+                    if limits["verified"] or any(v is not None for v in values):
+                        errors.append("Disabled resource limits cannot claim enforcement")
+                elif limits.get("mode") == "cgroup-v2-scope":
+                    if any(type(v) is not int or v < 0 for v in values) or any(
+                        type(v) is int and v < 1 for v in values[2:]
+                    ):
+                        errors.append("Incomplete cgroup resource-limit observations")
+                else:
+                    errors.append("Unknown resource-limit mode")
+        isolated = isolated and (
+            execution.get("runtime_kind") == "isolated-browser"
+            and isinstance(limits, dict)
+            and limits.get("mode") == "cgroup-v2-scope"
+            and limits.get("verified") is True
+        )
+    baseline = recorded.get(generation["baseline_execution_id"], {})
+    verification = recorded.get(generation["verification_execution_id"], {})
+    if (
+        baseline.get("phase") != "baseline"
+        or baseline.get("verdict") != "failed"
+        or verification.get("phase") != "verification"
+        or verification.get("verdict") != "passed"
+        or verification.get("attempt_id") != generation["attempt_id"]
+        or verification.get("app_generation_id") != generation["app_generation_id"]
+        or verification.get("candidate_snapshot_sha256") != generation["candidate_sha256"]
+        or generation["base_sha256"] != source["seed_source_sha256"]
+        or verification.get("assertions_total") != bundle["assertions_total"]
+        or verification.get("regressions_count") != 0
+    ):
+        errors.append("Final source/generation/verdict identity is inconsistent with executions")
+    expected_containment = "recorded-isolated" if isolated else "not-established"
+    if bundle.get("containment") != expected_containment:
+        errors.append("Invalid containment claim for the recorded runtime and resource limits")
+    notes = ["[OK] Final lifecycle recorded: verified; cleanup succeeded"]
+    notes.append(
+        "[OK] Recorded isolated browser execution and verified cgroup limits (not authenticated)"
+        if isolated
+        else "[--] Containment not established: runtime or verified limits absent/disabled"
+    )
+    return errors, notes
+
+
 def verify_bundle(
+    bundle: dict[str, Any], artifacts_dir: Path | None = None
+) -> tuple[bool, list[str]]:
+    """Fail closed on malformed input as well as inconsistent recorded claims."""
+    try:
+        return _verify_bundle(bundle, artifacts_dir)
+    except (AttributeError, KeyError, TypeError, ValueError, OSError) as exc:
+        return False, [f"Invalid bundle metadata or unreadable artifacts: {type(exc).__name__}"]
+
+
+def _verify_bundle(
     bundle: dict[str, Any], artifacts_dir: Path | None = None
 ) -> tuple[bool, list[str]]:
     """Return (consistent, messages); messages list every failure when inconsistent."""
@@ -66,6 +252,17 @@ def verify_bundle(
         return False, [f"Missing required bundle fields: {sorted(missing)}"]
     errors: list[str] = []
     notes: list[str] = []
+    if bundle["schema_version"] == "2.0":
+        notes.append(
+            "[--] Legacy schema 2.0: consistency-only verification; "
+            "final lifecycle and containment are not established"
+        )
+    elif bundle["schema_version"] == "3.0":
+        failures, final_notes = verify_final_metadata(bundle)
+        errors.extend(failures)
+        notes.extend(final_notes)
+    else:
+        errors.append("Unsupported bundle schema_version")
     if bundle_digest(bundle) != bundle["bundle_digest"]:
         errors.append("Bundle digest does not match its recorded fields")
     else:
@@ -78,7 +275,9 @@ def verify_bundle(
         bundle["status"] == "verified"
         and bundle["baseline_verdict"] == "failed"
         and bundle["verification_verdict"] == "passed"
+        and type(bundle["regressions_count"]) is int
         and bundle["regressions_count"] == 0
+        and type(bundle["assertions_total"]) is int
         and bundle["assertions_total"] > 0
     )
     if not verified:

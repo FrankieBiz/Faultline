@@ -17,7 +17,14 @@ from fastapi.testclient import TestClient
 from app import crawler_service
 from app.api import InspectorTranslator
 from app.cli import COLOR, PLAIN, build_parser
-from app.cli_crawl import crawl_command, render_event, render_report, scan_command
+from app.cli_crawl import (
+    RepairUnavailable,
+    crawl_command,
+    plan_repair,
+    render_event,
+    render_report,
+    scan_command,
+)
 from app.crawler_service import CrawlError, run_crawl, validate_url
 from app.main import Settings, create_app
 
@@ -195,6 +202,22 @@ def test_run_crawl_streams_events_and_returns_the_report(tmp_path: Path) -> None
 
 
 @needs_node
+def test_runner_environment_excludes_credentials(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for name in ("META_API_KEY", "FAULTLINE_CONTROL_TOKEN", "FAKE_SECRET_SENTINEL", "NODE_OPTIONS"):
+        monkeypatch.setenv(name, "fake-secret-sentinel")
+    runner = fake_runner(
+        tmp_path,
+        'console.log(JSON.stringify({type:"report",report:{'
+        'secretPresent:Object.values(process.env).includes("fake-secret-sentinel"),'
+        "hasPath:!!process.env.PATH}}));",
+    )
+    report = run_crawl("http://127.0.0.1:3000", runner=runner)
+    assert report == {"secretPresent": False, "hasPath": True}
+
+
+@needs_node
 def test_run_crawl_raises_when_the_runner_exits_without_a_report(tmp_path: Path) -> None:
     runner = fake_runner(
         tmp_path, 'process.stderr.write("chromium exploded\\n"); process.exitCode = 2;'
@@ -238,6 +261,32 @@ class _BrokenShop(BaseHTTPRequestHandler):
 @pytest.fixture
 def broken_shop() -> Iterator[str]:
     server = ThreadingHTTPServer(("127.0.0.1", 0), _BrokenShop)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_address[1]}/"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+class _TwoActionShop(_BrokenShop):
+    """Filling one input consumes the first action; the submit exposes the 500."""
+
+    def do_GET(self) -> None:
+        self._send(
+            200,
+            "text/html",
+            '<main><form onsubmit="event.preventDefault();'
+            "fetch('/api/orders',{method:'POST'})\">"
+            '<label>Email<input id="email" type="email" required></label>'
+            '<button type="submit">Place order</button></form></main>',
+        )
+
+
+@pytest.fixture
+def two_action_shop() -> Iterator[str]:
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _TwoActionShop)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
@@ -907,6 +956,7 @@ class FakeEngine:
         self.requests: list[tuple[str, str, dict[str, Any] | None]] = []
         self.listened: list[Any] = []
         self.down = False
+        self.repair_origins: list[str | None] | None = ["http://127.0.0.1:3000"]
 
     def api(
         self,
@@ -927,6 +977,7 @@ class FakeEngine:
         if path == "/api/faultline/readiness":
             return {
                 "status": self.status,
+                "repair_origins": self.repair_origins,
                 "model": {
                     "provider": self.provider,
                     "model": "muse-spark",
@@ -1014,6 +1065,64 @@ def test_scan_yes_dispatches_the_sandboxed_repair_and_streams_it(
     assert data is not None and data["scenario_id"] == "scripted_checkout_repair"
     assert len(data["idempotency_key"]) == 32
     assert [(args.job_id, args.port) for args in engine.listened] == [("job-1", 9123)]
+
+
+def test_scan_foreign_origin_cannot_dispatch_the_seeded_repair(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], engine: FakeEngine
+) -> None:
+    report = {
+        **FAILURE_REPORT,
+        "failure": {**FAILURE_REPORT["failure"], "url": "https://foreign.example/api/checkout"},
+    }
+    _fake_crawl(monkeypatch, report)
+    assert scan_command(_scan_args("https://foreign.example", "--yes"), PLAIN, port=9000) == 1
+    assert "origin" in capsys.readouterr().out
+    assert all(method != "POST" for method, _, _ in engine.requests)
+    assert engine.listened == []
+
+
+@pytest.mark.parametrize(
+    "advertised",
+    [None, "", "not a URL", "http://127.0.0.1:8000", "https://127.0.0.1:3000"],
+)
+def test_repair_requires_the_advertised_live_store_origin(
+    engine: FakeEngine, advertised: str | None
+) -> None:
+    engine.repair_origins = [advertised]
+    with pytest.raises(RepairUnavailable, match="origin"):
+        plan_repair(FAILURE_REPORT["failure"], 9000)
+    assert engine.listened == []
+
+
+def test_repair_origin_normalizes_host_case_and_default_port(engine: FakeEngine) -> None:
+    engine.repair_origins = ["http://SHOP.example/"]
+    failure = {**FAILURE_REPORT["failure"], "url": "http://shop.EXAMPLE:80/api/checkout"}
+    assert plan_repair(failure, 9000).scenario_id == "scripted_checkout_repair"
+
+
+@pytest.mark.parametrize("advertised", [None, [], [None], "http://127.0.0.1:3000"])
+def test_missing_or_malformed_origin_advertisement_declines(
+    engine: FakeEngine, advertised: Any
+) -> None:
+    engine.repair_origins = advertised
+    with pytest.raises(RepairUnavailable, match="origin"):
+        plan_repair(FAILURE_REPORT["failure"], 9000)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://foreign.example/api/checkout",
+        "https://127.0.0.1:3000/api/checkout",
+        "http://127.0.0.1:3001/api/checkout",
+        "http://127.0.0.1:0/api/checkout",
+        "http://127.0.0.1:bad/api/checkout",
+        "/api/checkout",
+    ],
+)
+def test_repair_origin_includes_scheme_host_and_port(engine: FakeEngine, url: str) -> None:
+    with pytest.raises(RepairUnavailable, match="origin"):
+        plan_repair({**FAILURE_REPORT["failure"], "url": url}, 9000)
 
 
 @pytest.mark.parametrize("answer,dispatched", [("", True), ("Y", True), ("n", False)])

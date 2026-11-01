@@ -9,7 +9,9 @@ import pytest
 from conftest import Harness, submission
 
 from app.database import Database, DatabaseError
-from shared.contracts.models import JobMode, JobStage, JobState, TerminalOutcome
+from app.evidence import EvidenceStore
+from app.runtime import RuntimeArtifact
+from shared.contracts.models import CleanupStatus, JobMode, JobStage, JobState, TerminalOutcome
 
 
 def test_job_crud_idempotency_and_terminal_immutability(harness: Harness) -> None:
@@ -36,6 +38,35 @@ def test_job_crud_idempotency_and_terminal_immutability(harness: Harness) -> Non
         db.transition(job.id, JobStage.BASELINE)
     with pytest.raises(DatabaseError, match="not_found"):
         db.get_job(str(uuid4()))
+
+
+def test_final_proof_registration_and_job_are_visible_together(harness: Harness) -> None:
+    # A second :memory: connection is a different database. Use a real WAL file
+    # to observe what another API/export connection can see during publication.
+    db = Database(harness.root / "publication.db")
+    evidence = EvidenceStore(db, harness.root)
+    job = db.create_job(submission())
+    db.claim_job(job.id)
+    db.transition(job.id, JobStage.CLEANUP)
+    observer = Database(db.path)
+    try:
+        with pytest.raises(DatabaseError, match="proof_requires_confirmed_cleanup"):
+            db.finalize_verified(job.id, lambda _: pytest.fail("published before cleanup"))
+        db.update_job(job.id, cleanup_status=CleanupStatus.SUCCEEDED)
+
+        def publish(_: object) -> None:
+            evidence.save(job.id, RuntimeArtifact("proof_bundle", "application/json", b"{}"))
+            assert observer.list_artifacts(job.id) == []
+            assert observer.get_job(job.id).state == JobState.RUNNING
+
+        done = db.finalize_verified(job.id, publish)
+        assert done.outcome == TerminalOutcome.VERIFIED
+        assert observer.get_job(job.id) == done
+        assert len(observer.list_artifacts(job.id)) == 1
+        assert observer.get_lease().job_id is None
+    finally:
+        observer.close()
+        db.close()
 
 
 def test_idempotency_conflict_precedes_busy(harness: Harness) -> None:

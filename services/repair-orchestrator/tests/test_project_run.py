@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -15,6 +16,7 @@ import pytest
 from app.cli import build_parser, cmd_run
 from app.database import Database, DatabaseError
 from app.evidence import EvidenceStore
+from app.isolated_runtime import ManagedProcess
 from app.model_adapter import (
     MetaRepairAdapter,
     ModelError,
@@ -356,6 +358,8 @@ async def test_worker_requires_two_identical_failures_before_inference(
             assert len(proofs) == 1
             bundle = json.loads(worker.evidence.read(proofs[0]))
             assert bundle["scenario_id"] == "addition"
+            assert bundle["lifecycle"]["cleanup_status"] == "succeeded"
+            assert bundle["containment"] == "not-established"
             assert len([a for a in bundle["evidence_manifest"] if a["role"] == "report"]) == 3
         with pytest.raises(DatabaseError, match="unknown_scenario"):
             worker.database.create_job(
@@ -381,12 +385,157 @@ def test_cli_uses_selected_config_and_reports_exit_code(
     assert json.loads(capsys.readouterr().out)["proof_bundle"] == "/proof"
 
 
+@pytest.mark.parametrize("failure", ["exit", "timeout", "handshake", "spawn"])
+async def test_browser_profile_failure_withholds_readiness_before_candidate_or_model(
+    project: tuple[Path, ProjectRun], tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    """Explicit process doubles exercise readiness; they do not establish isolation."""
+    root, run = project
+    runtime = ProjectRuntime(root, run)
+    runtime.node = "/trusted/node"
+    runtime.playwright = tmp_path / "playwright.mjs"
+    runtime.playwright.touch()
+    runtime._preflight = True  # Reconciliation must revoke even previously healthy readiness.
+    monkeypatch.setattr(runtime, "_release_leftover_scopes", AsyncMock())
+    monkeypatch.setattr(runtime, "backend_preflight", AsyncMock())
+    launch_service = AsyncMock()
+    monkeypatch.setattr(runtime, "_launch_service", launch_service)
+    process = SimpleNamespace(
+        stdout=bytearray(b"invalid" if failure == "handshake" else b'{"ready":true}\n'),
+        wait=AsyncMock(
+            return_value=1 if failure == "exit" else 0,
+            side_effect=TimeoutError if failure == "timeout" else None,
+        ),
+    )
+    start = AsyncMock(return_value=process)
+    if failure == "spawn":
+        start.side_effect = OSError("untrusted exception detail must not escape")
+    monkeypatch.setattr(ManagedProcess, "start", start)
+    worker = worker_for(root, run, tmp_path / "data", runtime)
+    try:
+        with pytest.raises(RuntimeUnavailable, match="^sandboxed_browser_(unavailable|timeout)$"):
+            await worker.reconcile()
+        assert not runtime.ready
+        assert not runtime.sessions
+        launch_service.assert_not_awaited()
+        assert isinstance(worker.adapter.propose_patch, AsyncMock)
+        worker.adapter.propose_patch.assert_not_awaited()
+        assert start.call_args.args == (
+            runtime.node,
+            str(runtime.driver),
+            str(runtime.playwright),
+            "--preflight",
+        )
+        assert start.call_args.kwargs == {"env": runtime._trusted_environment()}
+        if failure != "spawn":
+            process.wait.assert_awaited_once_with(10)
+    finally:
+        await worker.adapter.close()
+        worker.database.close()
+
+
+@pytest.mark.parametrize("failure", ["spawn", "eof", "handshake", "timeout"])
+async def test_browser_startup_failure_after_readiness_is_infrastructure(
+    project: tuple[Path, ProjectRun], tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    """Simulated service/bridge and failed driver spawn; no candidate or browser runs."""
+    root, run = project
+    runtime = ProjectRuntime(root, run)
+    runtime._preflight = True
+    monkeypatch.setattr(runtime, "_launch_service", AsyncMock())
+    monkeypatch.setattr(runtime, "_start_bridge", AsyncMock(return_value="http://127.0.0.1:1"))
+    monkeypatch.setattr(runtime, "scope_unit", lambda session_id: None)
+    browser = SimpleNamespace(
+        process=SimpleNamespace(
+            stdout=SimpleNamespace(
+                readline=AsyncMock(
+                    return_value=b'{"ready":false}\n' if failure == "handshake" else b"",
+                    side_effect=TimeoutError if failure == "timeout" else None,
+                )
+            )
+        ),
+        stop=AsyncMock(),
+    )
+    start = AsyncMock(return_value=browser)
+    if failure == "spawn":
+        start.side_effect = OSError("untrusted launch detail")
+    monkeypatch.setattr(ManagedProcess, "start", start)
+    worker = worker_for(root, run, tmp_path / "data", runtime)
+    try:
+        runtime._installation = worker.database.get_lease().installation_id
+        job = worker.database.create_job(
+            JobRequest(scenario_id="addition", idempotency_key=str(uuid4()))
+        )
+        done = await worker.run_job(job.id)
+        assert done.outcome == TerminalOutcome.INFRASTRUCTURE_ERROR, done.error_details
+        assert done.error_details is not None
+        assert done.error_details["reason"] == "sandboxed_browser_launch_failed"
+        assert not runtime.ready
+        assert not runtime.sessions
+        assert isinstance(worker.adapter.propose_patch, AsyncMock)
+        worker.adapter.propose_patch.assert_not_awaited()
+        if failure != "spawn":
+            browser.stop.assert_awaited_once()
+    finally:
+        await worker.adapter.close()
+        worker.database.close()
+
+
 async def test_real_node_repository_baseline_repair_and_proof(
     project: tuple[Path, ProjectRun],
     tmp_path: Path,
 ) -> None:
     root, run = project
-    runtime = ProjectRuntime(root, run)
+    diagnostics: list[dict[str, Any]] = []
+
+    class DiagnosticRuntime(ProjectRuntime):
+        async def _close_session(self, key: str) -> None:
+            browser = self.sessions[key].browser
+            try:
+                await super()._close_session(key)
+            finally:
+                if browser is not None:
+                    # Only fixed tags and counts: browser stderr can contain
+                    # source paths, request bodies, and credentials.
+                    stderr = bytes(browser.stderr)
+                    diagnostics.append(
+                        {
+                            "browser_exit": browser.process.returncode,
+                            "stderr_bytes": len(stderr),
+                            "stderr_tags": [
+                                tag
+                                for tag, marker in (
+                                    ("sandbox_unavailable", b"No usable sandbox"),
+                                    ("namespace_denied", b"Operation not permitted"),
+                                    ("browser_missing", b"Executable doesn't exist"),
+                                    ("libraries_missing", b"error while loading shared libraries"),
+                                    ("screenshot_timeout", b"page.screenshot: Timeout"),
+                                )
+                                if marker in stderr
+                            ],
+                        }
+                    )
+
+        async def execute(
+            self, job_id: str, execution_id: str, phase: Phase, snapshot: Snapshot, timeout_ms: int
+        ) -> RuntimeExecution:
+            result = await super().execute(job_id, execution_id, phase, snapshot, timeout_ms)
+            directory = snapshot.path.parents[1] / "evidence" / execution_id
+            diagnostics.append(
+                {
+                    "phase": phase,
+                    "runner_error": json.loads(result.report.raw_logs)["error"],
+                    "artifact_bytes": {a.role: len(a.content) for a in result.artifacts},
+                    "capture_bytes": {
+                        name: (directory / name).stat().st_size
+                        for name in ("screenshot.png", "trace.zip", "requests.json")
+                        if (directory / name).is_file()
+                    },
+                }
+            )
+            return result
+
+    runtime = DiagnosticRuntime(root, run)
     worker = worker_for(root, run, tmp_path / "data", runtime)
     try:
         try:
@@ -399,11 +548,24 @@ async def test_real_node_repository_baseline_repair_and_proof(
             JobRequest(scenario_id="addition", idempotency_key=str(uuid4()))
         )
         done = await worker.run_job(job.id)
-        assert done.outcome == TerminalOutcome.VERIFIED, done.error_details
+        assert done.outcome == TerminalOutcome.VERIFIED, json.dumps(
+            {"error_details": done.error_details, "runtime_diagnostics": diagnostics}, indent=2
+        )
         executions = worker.database.list_executions(job.id)
         assert [e.report.verdict.value for e in executions] == ["failed", "failed", "passed"]
         assert all(e.resource_limits and e.resource_limits.verified for e in executions)
         assert not runtime.sessions
+        from tools.verify_bundle import verify_bundle
+
+        proof = next(a for a in worker.database.list_artifacts(job.id) if a.role == "proof_bundle")
+        bundle = json.loads(worker.evidence.read(proof))
+        consistent, messages = verify_bundle(bundle)
+        assert consistent, messages
+        assert bundle["containment"] == "recorded-isolated"
+        for recorded, execution in zip(bundle["executions"], executions, strict=True):
+            assert execution.resource_limits is not None
+            assert recorded["resource_limits"] == execution.resource_limits.model_dump()
+            assert recorded["runtime_kind"] == execution.runtime_kind
         assert (root / "server.js").read_text() == SERVICE
         worker.evidence.verify_job(job.id)
     finally:

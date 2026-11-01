@@ -2,7 +2,7 @@
 
 import asyncio
 from dataclasses import replace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from conftest import Harness, submission
@@ -251,6 +251,7 @@ async def test_cleanup_failure_blocks_green_and_reset_preserves_history(harness:
     assert job.error_details and job.error_details["last_work_outcome"] == "verified"
     assert harness.database.get_lease().quarantined
     artifacts = harness.database.list_artifacts(job.id)
+    assert not any(item.role.startswith("proof_bundle") for item in artifacts)
     with pytest.raises(DatabaseError, match="cleanup_required"):
         harness.database.create_job(submission())
     harness.runtime.cleanup_failed = False
@@ -487,10 +488,30 @@ async def test_verified_job_bundle_matches_its_stored_evidence(harness: Harness)
     consistent, messages = verify_bundle(bundle, directory)
     assert consistent, messages
     assert bundle["assertions_total"] == 36 and bundle["regressions_count"] == 0
+    assert bundle["schema_version"] == "3.0"
+    assert bundle["lifecycle"] == {
+        "finalized": True,
+        "state": "succeeded",
+        "outcome": "verified",
+        "cleanup_status": "succeeded",
+    }
+    records = harness.database.list_executions(job.id)
+    assert bundle["source"]["seed_source_sha256"] == job.seed_source_hash
+    for envelope, record in zip(bundle["executions"], records, strict=True):
+        assert envelope["app_generation_id"] == record.app_generation_id
+        assert envelope["candidate_snapshot_sha256"] == record.candidate_snapshot_sha256
+        assert envelope["runtime_kind"] == "unverified"
+        assert envelope["resource_limits"] is None
+    assert bundle["containment"] == "not-established"
+    attempt = harness.database.list_attempts(job.id)[-1]
+    assert attempt.validation_result is not None
+    assert bundle["generation"]["provider"] == attempt.validation_result["provider"]
+    assert bundle["generation"]["model"] == attempt.validation_result["model"]
+    assert any("Containment not established" in message for message in messages)
     harness.evidence.verify_job(job.id)
 
 
-async def test_bundle_compilation_fault_is_logged_not_silent(
+async def test_bundle_compilation_fault_fails_closed_after_cleanup(
     harness: Harness, caplog: pytest.LogCaptureFixture
 ) -> None:
     from app.proof_bundle import ProofBundleCompiler
@@ -504,6 +525,150 @@ async def test_bundle_compilation_fault_is_logged_not_silent(
         job = await harness.run()
     finally:
         ProofBundleCompiler.compile = original  # type: ignore[method-assign]
-    assert job.outcome == TerminalOutcome.VERIFIED
+    assert job.outcome == TerminalOutcome.ARTIFACT_ERROR
+    assert job.cleanup_status == CleanupStatus.SUCCEEDED
+    assert harness.database.get_lease().job_id is None
     assert "Evidence bundle compilation failed" in caplog.text
     assert "proof_bundle" not in {item.role for item in harness.database.list_artifacts(job.id)}
+
+
+@pytest.mark.parametrize("role", ["proof_bundle_md", "proof_bundle"])
+@pytest.mark.parametrize("after_write", [False, True])
+async def test_partial_proof_persistence_never_publishes_verified_bundle(
+    harness: Harness, monkeypatch: pytest.MonkeyPatch, role: str, after_write: bool
+) -> None:
+    original = harness.evidence.save
+
+    def save(job_id: str, evidence: RuntimeArtifact, **kwargs: object) -> Artifact:
+        if evidence.role == role:
+            assert harness.runtime.calls[-1] == "cleanup"
+            assert harness.database.get_job(job_id).cleanup_status == CleanupStatus.SUCCEEDED
+            if after_write:
+                original(job_id, evidence, **kwargs)  # type: ignore[arg-type]
+            raise ArtifactError("injected partial proof persistence failure")
+        return original(job_id, evidence, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(harness.evidence, "save", save)
+    job = await harness.run()
+    assert job.outcome == TerminalOutcome.ARTIFACT_ERROR
+    assert job.cleanup_status == CleanupStatus.SUCCEEDED
+    assert harness.database.get_lease().job_id is None
+    assert not harness.database.get_lease().quarantined
+    assert not any(
+        a.role.startswith("proof_bundle") for a in harness.database.list_artifacts(job.id)
+    )
+
+
+async def test_post_cleanup_evidence_recheck_failure_cannot_publish_proof(
+    harness: Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original = harness.evidence.verify_job
+
+    def verify(job_id: str) -> None:
+        if harness.database.get_job(job_id).cleanup_status == CleanupStatus.SUCCEEDED:
+            raise ArtifactError("post-cleanup artifact corruption")
+        original(job_id)
+
+    monkeypatch.setattr(harness.evidence, "verify_job", verify)
+    job = await harness.run()
+    assert job.outcome == TerminalOutcome.ARTIFACT_ERROR
+    assert harness.database.get_lease().job_id is None
+    assert not any(
+        a.role.startswith("proof_bundle") for a in harness.database.list_artifacts(job.id)
+    )
+
+
+async def test_persisted_final_proof_read_failure_rolls_back_publication(
+    harness: Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original = harness.evidence.read
+
+    def read(artifact: Artifact) -> bytes:
+        if artifact.role == "proof_bundle":
+            raise ArtifactError("injected final proof checksum failure")
+        return original(artifact)
+
+    monkeypatch.setattr(harness.evidence, "read", read)
+    job = await harness.run()
+    assert job.outcome == TerminalOutcome.ARTIFACT_ERROR
+    assert job.cleanup_status == CleanupStatus.SUCCEEDED
+    assert harness.database.get_lease().job_id is None
+    assert not any(
+        a.role.startswith("proof_bundle") for a in harness.database.list_artifacts(job.id)
+    )
+
+
+@pytest.mark.parametrize("remove_fails", [False, True])
+async def test_terminal_write_failure_rolls_back_proof_and_records_artifact_error(
+    harness: Harness, monkeypatch: pytest.MonkeyPatch, remove_fails: bool
+) -> None:
+    original = harness.database.finish_job
+    if remove_fails:
+        path = Mock()
+        path.unlink.side_effect = OSError("injected orphan removal failure")
+        monkeypatch.setattr("app.worker.contained_path", lambda *_: path)
+
+    def finish(job_id: str, outcome: TerminalOutcome, **kwargs: object) -> object:
+        result = original(job_id, outcome, **kwargs)  # type: ignore[arg-type]
+        if outcome == TerminalOutcome.VERIFIED:
+            assert any(a.role == "proof_bundle" for a in harness.database.list_artifacts(job_id))
+            raise OSError("injected terminal transaction failure")
+        return result
+
+    monkeypatch.setattr(harness.database, "finish_job", finish)
+    job = await harness.run()
+    assert job.outcome == TerminalOutcome.ARTIFACT_ERROR
+    assert job.cleanup_status == CleanupStatus.SUCCEEDED
+    assert harness.database.get_lease().job_id is None
+    assert not any(
+        a.role.startswith("proof_bundle") for a in harness.database.list_artifacts(job.id)
+    )
+    assert [e.message_code for e in harness.database.list_events(job.id)][-1] == "artifact_error"
+
+
+async def test_crash_before_final_commit_never_registers_proof_on_restart(
+    harness: Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class SimulatedCrash(BaseException):
+        pass
+
+    original = harness.database.finish_job
+
+    def crash(job_id: str, outcome: TerminalOutcome, **kwargs: object) -> object:
+        if outcome == TerminalOutcome.VERIFIED:
+            original(job_id, outcome, **kwargs)  # type: ignore[arg-type]
+            raise SimulatedCrash
+        return original(job_id, outcome, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(harness.database, "finish_job", crash)
+    with pytest.raises(SimulatedCrash):
+        await harness.run()
+    job = harness.database.unfinished_jobs()[0]
+    assert job.outcome is None
+    assert not any(
+        a.role.startswith("proof_bundle") for a in harness.database.list_artifacts(job.id)
+    )
+    await harness.worker.reconcile()
+    assert harness.database.get_job(job.id).outcome == TerminalOutcome.INTERRUPTED
+    assert not any(
+        a.role.startswith("proof_bundle") for a in harness.database.list_artifacts(job.id)
+    )
+
+
+async def test_cancellation_at_final_publication_boundary_wins_without_proof(
+    harness: Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original = harness.database.finalize_verified
+
+    def cancel(job_id: str, publish: object) -> object:
+        harness.database.request_cancel(job_id)
+        return original(job_id, publish)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(harness.database, "finalize_verified", cancel)
+    job = await harness.run()
+    assert job.outcome == TerminalOutcome.CANCELLED
+    assert job.cleanup_status == CleanupStatus.SUCCEEDED
+    assert harness.database.get_lease().job_id is None
+    assert not any(
+        a.role.startswith("proof_bundle") for a in harness.database.list_artifacts(job.id)
+    )

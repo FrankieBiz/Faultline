@@ -43,6 +43,10 @@ from app.snapshots import Snapshot
 from shared.contracts.models import ExecutionReport, ExecutionVerdict, Observation, ObservationKind
 
 
+class _BrowserStartupUnavailable(RuntimeUnavailable):
+    """Distinguish driver startup from missing capture files after reproduction."""
+
+
 class BrowserSession:
     def __init__(
         self,
@@ -168,6 +172,22 @@ class ProjectRuntime(IsolatedRuntime):
         await self.backend_preflight()
         if not self.node or not self.driver.is_file() or not self.playwright.is_file():
             raise RuntimeUnavailable("playwright_driver_unavailable_run_make_setup")
+        # Exercise the driver's actual Chromium sandbox profile. Backend-only
+        # readiness cannot establish host browser capabilities (e.g. userns).
+        try:
+            browser = await ManagedProcess.start(
+                self.node,
+                str(self.driver),
+                str(self.playwright),
+                "--preflight",
+                env=self._trusted_environment(),
+            )
+            if await browser.wait(10) != 0 or bytes(browser.stdout).strip() != b'{"ready":true}':
+                raise RuntimeUnavailable("sandboxed_browser_unavailable")
+        except TimeoutError:
+            raise RuntimeUnavailable("sandboxed_browser_timeout") from None
+        except OSError:
+            raise RuntimeUnavailable("sandboxed_browser_unavailable") from None
         self._preflight = True
 
     async def prepare(self, installation_id: str, job_id: str, snapshot: Snapshot) -> None:
@@ -332,19 +352,23 @@ class ProjectRuntime(IsolatedRuntime):
             await self._launch_service(owned, snapshot, session_id)
             url = await self._start_bridge(owned)
             assert self.node is not None
-            owned.browser = await ManagedProcess.start(
-                self.node,
-                str(self.driver),
-                str(self.playwright),
-                url,
-                str(directory),
-                env=self._trusted_environment(),
-                interactive=True,
-            )
-            assert owned.browser.process.stdout is not None
-            async with asyncio.timeout(10):
-                if json.loads(await owned.browser.process.stdout.readline()) != {"ready": True}:
-                    raise RuntimeUnavailable("browser_launch_failed")
+            try:
+                owned.browser = await ManagedProcess.start(
+                    self.node,
+                    str(self.driver),
+                    str(self.playwright),
+                    url,
+                    str(directory),
+                    env=self._trusted_environment(),
+                    interactive=True,
+                )
+                assert owned.browser.process.stdout is not None
+                async with asyncio.timeout(10):
+                    if json.loads(await owned.browser.process.stdout.readline()) != {"ready": True}:
+                        raise ValueError("invalid browser handshake")
+            except (OSError, ValueError, TimeoutError):
+                self._preflight = False
+                raise _BrowserStartupUnavailable("sandboxed_browser_launch_failed") from None
             session = BrowserSession(
                 owned.browser.process, owned.backend, session_id, self.run.repro.fingerprint
             )
@@ -373,6 +397,10 @@ class ProjectRuntime(IsolatedRuntime):
         started = time.monotonic()
         engine = ReproEngine(lambda: self._session(job_id, snapshot, directory, holder))
         result = await engine.run(self.run.repro)
+        if result.error == _BrowserStartupUnavailable.__name__:
+            # The session has already cleaned up. Do not turn a known launch
+            # failure into an artifact error or fabricate missing captures.
+            raise RuntimeUnavailable("sandboxed_browser_launch_failed")
         logs = holder[0].logs() if holder else ""
         observations = []
         if result.fingerprint:

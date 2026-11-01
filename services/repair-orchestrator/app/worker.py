@@ -39,9 +39,10 @@ from app.runtime import (
     RuntimeArtifact,
     RuntimeUnavailable,
 )
-from app.snapshots import Snapshot, SnapshotManager
+from app.snapshots import Snapshot, SnapshotManager, contained_path
 from shared.config import REGISTRY, Scenario
 from shared.contracts.models import (
+    Artifact,
     CleanupStatus,
     ExecutionRecord,
     ExecutionReport,
@@ -373,33 +374,56 @@ class RepairWorker:
         verification: ExecutionReport,
         diff: str,
         attempt_id: str,
-    ) -> None:
-        """Retain a checksummed summary of the recorded evidence for a verified candidate.
-
-        The bundle is derived from evidence the gates already accepted, so a
-        compilation fault is logged rather than changing the verified outcome.
-        Evidence write failures still propagate like any other artifact error.
-        """
+    ) -> list[Artifact]:
+        """Persist final proof only after cleanup; any proof failure fails the job closed."""
+        saved_proofs: list[Artifact] = []
         try:
+            attempt = next(a for a in self.database.list_attempts(job.id) if a.id == attempt_id)
             bundle, summary = ProofBundleCompiler().compile(
                 job=job,
                 baseline_report=baseline,
                 verification_report=verification,
                 diff=diff,
                 artifacts=self.database.list_artifacts(job.id),
+                executions=self.database.list_executions(job.id),
+                attempt=attempt,
             )
         except Exception:
             logger.exception("Evidence bundle compilation failed for job %s", job.id)
-            if self.project is not None:
-                raise ArtifactError("Project proof compilation failed") from None
-            return
-        for role, content_type, content in (
-            ("proof_bundle", "application/json", bundle.model_dump_json().encode()),
-            ("proof_bundle_md", "text/markdown", summary.encode()),
-        ):
-            self.evidence.save(
-                job.id, RuntimeArtifact(role, content_type, content), attempt_id=attempt_id
-            )
+            raise ArtifactError("Proof compilation failed") from None
+        try:
+            # Write the machine-readable final envelope last. A failed summary
+            # write must not leave an independently consumable verified bundle.
+            for role, content_type, content in (
+                ("proof_bundle_md", "text/markdown", summary.encode()),
+                ("proof_bundle", "application/json", bundle.model_dump_json().encode()),
+            ):
+                saved = self.evidence.save(
+                    job.id, RuntimeArtifact(role, content_type, content), attempt_id=attempt_id
+                )
+                saved_proofs.append(saved)
+                retained = self.evidence.read(saved)
+                if role == "proof_bundle" and json.loads(retained) != bundle.model_dump(
+                    mode="json"
+                ):
+                    raise ArtifactError("Proof changed during persistence")
+        except Exception as exc:
+            # Revoke partial proof bytes before the enclosing transaction rolls
+            # back their registrations; failed jobs cannot export final proof.
+            self._discard_proof_files(self.database.list_artifacts(job.id))
+            raise ArtifactError("Proof persistence failed") from exc
+        return saved_proofs
+
+    def _discard_proof_files(self, artifacts: list[Artifact]) -> None:
+        """Best-effort removal; registration rollback remains the publication guard."""
+        for item in artifacts:
+            if item.role.startswith("proof_bundle"):
+                try:
+                    contained_path(self.evidence.data_root, item.storage_key).unlink(
+                        missing_ok=True
+                    )
+                except (OSError, ValueError):
+                    logger.exception("Could not remove unregistered proof file %s", item.id)
 
     async def _workflow(self, job_id: str, started: float) -> TerminalOutcome:
         deadline = started + self.budgets.work
@@ -688,7 +712,6 @@ class RepairWorker:
                     raise JobAbort(TerminalOutcome.UNRESOLVED, "verification_failed")
                 attempt = attempt.model_copy(update={"outcome": "verified"})
                 self.database.save_attempt(attempt)
-                self._save_bundle(job, report, verification, proposal.unified_diff, attempt.id)
                 self.evidence.verify_job(job_id)
                 return TerminalOutcome.VERIFIED
             except ModelError as exc:
@@ -826,6 +849,40 @@ class RepairWorker:
             ):
                 outcome = TerminalOutcome.CANCELLED
             details = details or self.database.get_job(job_id).error_details
+            if clean and outcome == TerminalOutcome.VERIFIED:
+                saved_proofs: list[Artifact] = []
+                try:
+                    # Re-read durable provenance after disposal, never a stale
+                    # pre-cleanup job or a fabricated completed job object.
+                    self.database.update_job(job_id, cleanup_status=CleanupStatus.SUCCEEDED)
+
+                    def publish(job: OrchestratorJob) -> None:
+                        executions = self.database.list_executions(job_id)
+                        attempt = self.database.list_attempts(job_id)[-1]
+                        validation = attempt.validation_result or {}
+                        baseline = next(
+                            e.report
+                            for e in executions
+                            if e.report.execution_id == job.baseline_execution_id
+                        )
+                        verification = next(
+                            e.report
+                            for e in executions
+                            if e.report.execution_id == validation.get("verification_execution_id")
+                        )
+                        self.evidence.verify_job(job_id)
+                        saved_proofs.extend(
+                            self._save_bundle(
+                                job, baseline, verification, attempt.parsed_diff or "", attempt.id
+                            )
+                        )
+
+                    return self.database.finalize_verified(job_id, publish)
+                except Exception:
+                    logger.exception("Final proof for job %s failed", job_id)
+                    self._discard_proof_files(saved_proofs)
+                    outcome = TerminalOutcome.ARTIFACT_ERROR
+                    details = {"code": "artifact_error", "failed_stage": JobStage.CLEANUP.value}
             return self.database.finish_job(job_id, outcome, clean=clean, error_details=details)
 
     async def reconcile(self) -> None:

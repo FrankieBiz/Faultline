@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useLayoutEffect, useRef } from "react";
 import type { CheckoutResult } from "@/lib/api";
 
 type Failure = Exclude<CheckoutResult, { kind: "placed" }>;
@@ -9,11 +9,16 @@ type Failure = Exclude<CheckoutResult, { kind: "placed" }>;
  * Explains why "Place order" did not produce an order. Rendered as an
  * `alert` and focused on arrival, so the failure is announced, scrolled into
  * view, and captured in failure screenshots.
+ *
+ * Focus moves in a layout effect, inside the same commit that re-enables the
+ * form. A passive effect runs after paint, leaving a window where the form is
+ * already interactive and the shopper's next keystrokes (for example editing
+ * the coupon) land on the alert instead.
  */
 export function CheckoutFailure({ failure }: { failure: Failure }) {
   const ref = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     ref.current?.focus();
   }, [failure]);
 

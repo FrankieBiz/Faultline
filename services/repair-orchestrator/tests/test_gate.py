@@ -10,14 +10,17 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from test_crawler import CLEAN_REPORT, FAILURE_REPORT, broken_shop, needs_node
+from test_crawler import CLEAN_REPORT, FAILURE_REPORT, broken_shop, needs_node, two_action_shop
 
 from app import crawler_service
 from app.cli import COLOR, PLAIN, build_parser
 from app.cli_crawl import gate_command, gate_result, remediation_prompt, render_gate_markdown
 from app.crawler_service import CrawlError
 
-__all__ = ["broken_shop"]  # re-exported pytest fixture
+__all__ = ["broken_shop", "two_action_shop"]  # re-exported pytest fixtures
+
+# Ordinary crawl remains clean when its budget is reached; a gate needs completion.
+COMPLETED_REPORT = {**CLEAN_REPORT, "stop_reason": "exhausted"}
 
 SERVICE_ROOT = Path(__file__).resolve().parent.parent
 GATE_KEYS = {
@@ -27,6 +30,8 @@ GATE_KEYS = {
     "target_url",
     "summary",
     "elements_explored",
+    "stop_reason",
+    "actions_taken",
     "screens_visited",
     "failure",
     "reproduction_trail",
@@ -105,7 +110,7 @@ def test_clean_crawl_passes_with_exit_0(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     seen: dict[str, Any] = {}
-    _fake_crawl(monkeypatch, CLEAN_REPORT, seen)
+    _fake_crawl(monkeypatch, COMPLETED_REPORT, seen)
     assert gate_command(_args("127.0.0.1:3000", "--json"), PLAIN) == 0
     body = json.loads(capsys.readouterr().out)
     assert set(body) == GATE_KEYS
@@ -114,9 +119,12 @@ def test_clean_crawl_passes_with_exit_0(
     assert body["exit_code"] == 0
     assert body["target_url"] == "http://127.0.0.1:3000/"
     assert body["summary"] == (
-        "No defects found: explored 12 elements across 1 screen with 15 actions."
+        "No defects found in explored flows: explored 12 elements across 1 screen with 15 actions. "
+        "This does not establish business completeness."
     )
     assert body["elements_explored"] == 12
+    assert body["stop_reason"] == "exhausted"
+    assert body["actions_taken"] == 15
     assert body["screens_visited"] == [{"url": "http://127.0.0.1:3000/", "path": "/"}]
     assert body["failure"] is None
     assert body["agent_remediation_prompt"] is None
@@ -182,6 +190,8 @@ def test_crawl_errors_block_with_exit_2_for_input_and_1_otherwise(
     )
     assert body["error"] == {"code": code, "message": "it broke"}
     assert body["failure"] is None
+    assert body["stop_reason"] is None
+    assert body["actions_taken"] == 0
     assert body["summary"] == "Gate could not run: it broke"
     assert "it broke" in body["agent_remediation_prompt"]
 
@@ -191,6 +201,35 @@ def test_bad_url_exits_2_through_the_real_validator(capsys: pytest.CaptureFixtur
     body = json.loads(capsys.readouterr().out)
     assert body["error"]["code"] == "invalid_url"
     assert body["target_url"] == "ftp://example.com"
+
+
+@pytest.mark.parametrize("stop_reason", ["max_actions", "timeout", None, "unknown", 42])
+def test_incomplete_clean_crawl_blocks_without_claiming_a_defect(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    stop_reason: Any,
+) -> None:
+    report = {**CLEAN_REPORT, "stop_reason": stop_reason}
+    if stop_reason is None:
+        del report["stop_reason"]
+    _fake_crawl(monkeypatch, report)
+    assert gate_command(_args("http://127.0.0.1:3000", "--json"), PLAIN) == 1
+    body = json.loads(capsys.readouterr().out)
+    assert set(body) == GATE_KEYS
+    assert (body["gate_status"], body["verdict"]) == ("FAILED", "DEPLOYMENT_BLOCKED")
+    assert body["error"]["code"] == "incomplete_crawl"
+    assert body["failure"] is None
+    assert "inconclusive" in body["summary"].lower()
+    assert body["stop_reason"] == (stop_reason if isinstance(stop_reason, str) else None)
+    assert body["actions_taken"] == 15
+    assert "--max-actions" in body["agent_remediation_prompt"]
+    assert "--timeout" in body["agent_remediation_prompt"]
+
+
+def test_only_raw_clean_status_and_exhausted_can_pass() -> None:
+    result = gate_result({**COMPLETED_REPORT, "status": "unknown"}, "http://x")
+    assert result["exit_code"] == 1
+    assert result["verdict"] == "DEPLOYMENT_BLOCKED"
 
 
 def test_runner_error_report_blocks_with_exit_1(
@@ -320,7 +359,7 @@ def test_markdown_reports_a_blocked_deploy_for_github(
 def test_markdown_reports_a_safe_deploy(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    _fake_crawl(monkeypatch, CLEAN_REPORT)
+    _fake_crawl(monkeypatch, COMPLETED_REPORT)
     assert gate_command(_args("http://127.0.0.1:3000", "--markdown"), PLAIN) == 0
     out = capsys.readouterr().out
     assert out.startswith("## ✅ FaultLine Pre-Flight Gate: PASSED\n")
@@ -357,7 +396,7 @@ def test_agent_format_is_plain_labelled_text(
 def test_agent_format_says_proceed_when_clean(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    _fake_crawl(monkeypatch, CLEAN_REPORT)
+    _fake_crawl(monkeypatch, COMPLETED_REPORT)
     assert gate_command(_args("http://127.0.0.1:3000", "--format", "agent"), PLAIN) == 0
     out = capsys.readouterr().out
     assert out.startswith("FAULTLINE PRE-FLIGHT GATE: PASSED (SAFE_TO_DEPLOY, exit 0)\n")
@@ -383,7 +422,7 @@ def test_ci_format_annotates_github_actions(
     )
 
     monkeypatch.delenv("GITHUB_ACTIONS")
-    _fake_crawl(monkeypatch, CLEAN_REPORT)
+    _fake_crawl(monkeypatch, COMPLETED_REPORT)
     assert gate_command(_args("http://127.0.0.1:3000", "--format", "ci"), PLAIN) == 0
     out = capsys.readouterr().out
     assert "faultline gate: PASSED (SAFE_TO_DEPLOY)" in out
@@ -403,6 +442,38 @@ def test_human_output_streams_progress_then_the_verdict(
 
 
 # --- real Chromium ---------------------------------------------------------------
+
+
+@needs_node
+@pytest.mark.skipif(
+    not crawler_service.RUNNER_CLI.is_file(), reason="browser runner is not built (make runner)"
+)
+def test_real_gate_blocks_budget_before_the_failing_submit(
+    two_action_shop: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert (
+        gate_command(
+            _args(two_action_shop, "--json", "--max-actions", "1", "--timeout", "30"), PLAIN
+        )
+        == 1
+    )
+    incomplete = json.loads(capsys.readouterr().out)
+    assert incomplete["verdict"] == "DEPLOYMENT_BLOCKED"
+    assert incomplete["stop_reason"] == "max_actions"
+    assert incomplete["actions_taken"] == 1
+    assert incomplete["failure"] is None
+    assert incomplete["error"]["code"] == "incomplete_crawl"
+
+    assert (
+        gate_command(
+            _args(two_action_shop, "--json", "--max-actions", "5", "--timeout", "30"), PLAIN
+        )
+        == 1
+    )
+    failure = json.loads(capsys.readouterr().out)
+    assert failure["failure"]["status"] == 500
+    assert failure["failure"]["endpoint"] == "/api/orders"
+    assert failure["error"] is None
 
 
 @needs_node

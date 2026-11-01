@@ -25,7 +25,7 @@ const STEPS: { title: string; commands: string[]; terminal: string; dashboard: s
   {
     title: "Gate a deploy",
     commands: ["faultline gate http://localhost:3000", "faultline gate http://localhost:3000 --json"],
-    terminal: "Crawls the preview like scan but never repairs. Exit 0 is SAFE_TO_DEPLOY; exit 1 is DEPLOYMENT_BLOCKED, for a defect or a crawl that could not finish; exit 2 is bad input. --json prints one verdict with the reproduction trail and an agent fix prompt, --markdown a PR or job summary, and --format agent|ci prompt or log text.",
+    terminal: "Crawls the preview like scan but never repairs. Exit 0 is SAFE_TO_DEPLOY, only once exploration finished with no defect in the flows it reached; exit 1 is DEPLOYMENT_BLOCKED, for a defect or a crawl that ran out of budget or could not run; exit 2 is bad input. --json prints one verdict with the reproduction trail and an agent fix prompt, --markdown a PR or job summary, and --format agent|ci prompt or log text.",
     dashboard: "The Pre-Flight Gate panel runs the same crawl, shows the same verdict and fix prompt, and has the agent rule, CI workflow, and skill to copy.",
   },
   {

@@ -10,6 +10,7 @@ optional callback as they arrive, so a terminal HUD can render them live.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import threading
@@ -30,6 +31,20 @@ MAX_TIMEOUT_MS = 300_000
 # Time allowed beyond the crawl budget for Chromium launch and shutdown.
 KILL_GRACE_SECONDS = 30
 MAX_URL_LENGTH = 2048
+# Browser discovery and basic OS behavior only. Never inherit Node injection,
+# model/provider keys, controller tokens, or arbitrary caller configuration.
+RUNNER_ENVIRONMENT = (
+    "PATH",
+    "HOME",
+    "XDG_CACHE_HOME",
+    "TMPDIR",
+    "TMP",
+    "TEMP",
+    "LANG",
+    "LC_ALL",
+    "TZ",
+    "PLAYWRIGHT_BROWSERS_PATH",
+)
 
 Event = dict[str, Any]
 
@@ -91,14 +106,16 @@ def telemetry(report: dict[str, Any]) -> dict[str, Any]:
         "elements_explored": report.get("elements_explored", 0),
         "screens_visited": screens,
         "actions_taken": report.get("actions_taken", len(actions)),
+        "stop_reason": report.get("stop_reason")
+        if isinstance(report.get("stop_reason"), str)
+        else None,
         "actions": actions,
         "failure": failure,
         "reproduction_trail": report.get("reproduction_trail", []),
         "duration_ms": report.get("duration_ms"),
     }
-    for key in ("stop_reason", "error"):
-        if key in report:
-            summary[key] = report[key]
+    if "error" in report:
+        summary["error"] = report["error"]
     return summary
 
 
@@ -159,6 +176,7 @@ def run_crawl(
         text=True,
         encoding="utf-8",
         errors="replace",
+        env={name: os.environ[name] for name in RUNNER_ENVIRONMENT if name in os.environ},
     ) as process:
         assert process.stdout is not None and process.stderr is not None
         stderr = process.stderr

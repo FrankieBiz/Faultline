@@ -4,6 +4,7 @@ import asyncio
 import json
 import time
 from collections.abc import Iterator
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, cast
 
@@ -149,6 +150,56 @@ def test_readiness_explicitly_labels_deterministic_mode(client: TestClient) -> N
     assert response["model"]["provider"] == "deterministic"
     assert TOKEN not in json.dumps(response)
     assert client.get("/api/faultline/scenarios", headers=HEADERS).status_code == 200
+
+
+def test_readiness_advertises_only_configured_seeded_repair_origins(client: TestClient) -> None:
+    response = client.get("/api/faultline/readiness", headers=HEADERS).json()
+    assert response["repair_origins"] == ["http://127.0.0.1:3000", "http://127.0.0.1:8000"]
+
+
+@pytest.mark.parametrize(
+    "storefront,expected",
+    [
+        ("http://127.0.0.1:3400", ["http://127.0.0.1:3400", "http://127.0.0.1:8400"]),
+        ("https://Preview.example:443/path", ["http://127.0.0.1:8400", "https://preview.example"]),
+        ("http://user:fake-password@preview.example", ["http://127.0.0.1:8400"]),
+        ("http://127.0.0.1:0", ["http://127.0.0.1:8400"]),
+    ],
+)
+def test_readiness_binds_remapped_ports_and_omits_invalid_origins(
+    client: TestClient, storefront: str, expected: list[str]
+) -> None:
+    control = cast(FastAPI, client.app).state.controller
+    control.settings = replace(
+        control.settings, live_store_url="http://127.0.0.1:8400", storefront_url=storefront
+    )
+    response = client.get("/api/faultline/readiness", headers=HEADERS).json()
+    assert response["repair_origins"] == expected
+    assert "fake-password" not in json.dumps(response)
+
+
+def test_generic_project_does_not_advertise_seeded_origins(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(cast(FastAPI, client.app).state.controller.worker, "project", object())
+    response = client.get("/api/faultline/readiness", headers=HEADERS).json()
+    assert response["repair_origins"] == []
+
+
+@pytest.mark.parametrize("port", ["3400", "0", "65536", "nope"])
+def test_storefront_repair_origin_uses_a_validated_configured_port(
+    monkeypatch: pytest.MonkeyPatch, port: str
+) -> None:
+    monkeypatch.delenv("FAULTLINE_STOREFRONT_URL", raising=False)
+    monkeypatch.setenv("BUGGYSHOP_PORT", port)
+    settings = Settings.from_environment()
+    assert settings.storefront_url == ("http://127.0.0.1:3400" if port == "3400" else "")
+
+
+def test_explicit_storefront_origin_overrides_demo_port(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("FAULTLINE_STOREFRONT_URL", "https://preview.example")
+    monkeypatch.setenv("BUGGYSHOP_PORT", "3400")
+    assert Settings.from_environment().storefront_url == "https://preview.example"
 
 
 def test_unconfigured_runtime_blocks_jobs_without_host_fallback(
