@@ -481,6 +481,8 @@ test("the header tests any URL without asking for an expected status, reusing it
   await quick.getByRole("button", { name: "Backend API (port 8000)" }).click();
   await expect(field).toHaveValue("http://127.0.0.1:8000");
   await expect(quick.getByRole("button", { name: "Backend API (port 8000)" })).toHaveAttribute("aria-pressed", "true");
+  await quick.getByRole("button", { name: "AuraScale Cloud (port 5050)" }).click();
+  await expect(field).toHaveValue("http://127.0.0.1:5050");
   await quick.getByRole("button", { name: "Custom Localhost" }).click();
   await expect(field).toHaveValue("http://localhost:");
   await expect(field).toBeFocused();
@@ -578,6 +580,50 @@ test("the chaos crawler streams its scan and steps, intercepts the defect, and r
   await expect.poll(() => calls.jobBodies).toEqual([expect.objectContaining({ scenario_id: pack.id, mode: "repair" })]);
 });
 
+test("the mission HUD traces a seismograph, clocks the agent, and maps the journey to the defect", async ({ page }) => {
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  await mock(page, { crawl: () => ({ status: 200, ndjson: [
+    { type: "scan", url: "http://127.0.0.1:3000", buttons: 6, forms: 1, links: 3 },
+    { type: "step", n: 1, action: "click", target: "Trail Mug", page: "/", ok: true },
+    { type: "step", n: 2, action: "click", target: "Add to Cart", page: "/products/trail-mug", ok: true },
+    { type: "step", n: 3, action: "submit", target: "Place order", page: "/checkout", ok: false, note: "HTTP 500" },
+    { type: "defect", method: "POST", path: "/api/checkout", status: 500, trigger: { kind: "Button", label: "Place order", page: "/checkout" }, fingerprint },
+    { type: "done", steps: 3, defect: true },
+  ] }) });
+  // Hold the crawl open so the hunting state can be seen before the stream arrives.
+  await page.route("**/api/faultline/crawl", async (route) => { await held; await route.fallback(); });
+  await page.goto("/");
+  await page.getByRole("textbox", { name: "Target URL" }).fill("http://127.0.0.1:3000");
+  await page.getByRole("button", { name: "Unleash Autonomous Agent" }).click();
+  const hud = page.getByRole("region", { name: "Live Agent Mission · Playwright" });
+  const clock = hud.locator(".hud-telemetry .hud-clock dd");
+  await expect(hud).toHaveAttribute("data-seismic", "hunt");
+  await expect(clock).toHaveText(/^00:0\d\.\ds$/);
+  await expect.poll(() => clock.textContent()).not.toBe("00:00.0s");
+  release();
+
+  await expect(hud.getByRole("status")).toHaveText("Defect caught");
+  await expect(hud).toHaveAttribute("data-seismic", "rupture");
+  // The clock stops once the agent is waiting on a person.
+  const stopped = await clock.textContent();
+  await page.waitForTimeout(400);
+  await expect(clock).toHaveText(stopped!);
+
+  const ribbon = hud.getByRole("alert").getByRole("list", { name: "User journey" });
+  await expect(ribbon.getByRole("button")).toHaveText(["🌐/", "🖱️Trail Mug", "🛒Add to Cart", "📋Place order", "💥POST /api/checkout 500"]);
+  await expect(hud.getByRole("alert").getByRole("list", { name: "Click trail" }).getByRole("listitem")).toHaveText(["“Trail Mug”", "“Add to Cart”", "“Place order”"]);
+  const log = hud.getByRole("log", { name: "Agent steps" }).getByRole("listitem");
+  await ribbon.getByRole("button", { name: "Add to Cart" }).click();
+  await expect(ribbon.getByRole("button", { name: "Add to Cart" })).toHaveAttribute("aria-current", "step");
+  await expect(log.nth(2)).toHaveAttribute("data-focus", "true");
+  await expect(hud.locator(".hud-trail li[data-focus]")).toHaveText("“Add to Cart”");
+  await ribbon.getByRole("button", { name: "POST /api/checkout 500" }).click();
+  await expect(log.nth(3)).toHaveAttribute("data-focus", "true");
+  await expect(log.nth(3)).toBeInViewport();
+  await expect(hud.locator(".hud-ticker li[data-focus]")).toHaveCount(1);
+});
+
 test("a crawl defect no sandbox repair covers is detection only", async ({ page }) => {
   await mock(page, { crawl: () => ({ status: 200, json: { events: [
     { type: "scan", url: "http://localhost:5000/", buttons: 1, forms: 0, links: 0 },
@@ -640,6 +686,7 @@ test("the mission HUD repairs, verifies, and applies the fix it caught", async (
   await expect.poll(() => calls.jobBodies).toEqual([expect.objectContaining({ scenario_id: pack.id, mode: "repair" })]);
   await expect(hud).toContainText("Fix verified: 44/44 assertions passed in the Bubblewrap sandbox");
   await expect(hud.getByRole("status")).toHaveText("Fix verified");
+  await expect(hud).toHaveAttribute("data-seismic", "resonance");
   await hud.getByRole("button", { name: "Apply Verified Fix to Live Codebase" }).click();
   await expect(hud).toContainText(`Applied to ${target}.`);
   await expect(hud).toContainText("Live checkout re-checked: HTTP 201 · defect gone.");

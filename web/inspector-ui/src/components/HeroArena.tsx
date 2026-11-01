@@ -34,6 +34,8 @@ export default function HeroArena(props: {
   const presets = [
     { label: `Storefront (port ${parse(storefrontUrl)?.port || "3000"})`, value: storefrontUrl },
     { label: `Backend API (port ${parse(apiUrl)?.port || "8000"})`, value: apiUrl },
+    // A standalone app outside the demo stack, so a hunt can run against code FaultLine has never seen.
+    { label: "AuraScale Cloud (port 5050)", value: "http://127.0.0.1:5050" },
   ];
 
   /** Normalizes the typed URL, or shows why it cannot be used and returns null. */

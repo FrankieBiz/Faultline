@@ -167,15 +167,49 @@ a.btn { display: inline-flex; align-items: center; text-decoration: none; }
 
 /* Live agent mission HUD: telemetry, the crawler's real steps, then the defect, repair, and delivery. */
 .hud { padding-top: 24px; }
-.hud-frame { border: 1px solid var(--line); border-radius: 14px; background: var(--well); overflow: hidden; animation: rise 220ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.hud-frame { position: relative; border: 1px solid var(--line); border-radius: 14px; background: var(--well); overflow: hidden; animation: rise 220ms cubic-bezier(0.2, 0.8, 0.2, 1); }
 .hud[data-phase="caught"] .hud-frame { border-color: rgba(255, 77, 106, 0.4); }
 .hud[data-phase="clean"] .hud-frame { border-color: rgba(61, 255, 162, 0.3); }
 .hud-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 10px 10px 10px 16px; border-bottom: 1px solid var(--line); background: var(--raised); }
 .hud-key { margin: 0; color: var(--ink-2); font: 500 11px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; }
 .hud-target { flex: 1 1 180px; min-width: 0; color: var(--ink); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/*
+ * Seismograph: the trace scrolls by exactly one 200 px tile on the compositor, and redraws
+ * itself (stroke-dasharray) each time the mission changes state. Cyan while hunting, rose
+ * spikes on a rupture, a calm green resonance once verified, and a flat line otherwise.
+ */
+.seis {
+  position: relative; height: 40px; overflow: hidden; border-bottom: 1px solid var(--line); color: var(--ink-3);
+  background: repeating-linear-gradient(90deg, transparent 0 39px, rgba(255, 255, 255, 0.025) 39px 40px), linear-gradient(transparent 19.5px, rgba(255, 255, 255, 0.05) 19.5px 20.5px, transparent 20.5px);
+  mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
+}
+.seis[data-mode="hunt"] { color: var(--cyan); }
+.seis[data-mode="rupture"] { color: var(--red); background-color: rgba(255, 77, 106, 0.05); }
+.seis[data-mode="resonance"] { color: var(--green); }
+.seis-trace { display: block; will-change: transform; }
+.seis-trace path { fill: none; stroke: currentColor; stroke-linejoin: round; stroke-linecap: round; }
+.seis-glow { stroke-width: 6; opacity: 0.16; }
+.seis-line { stroke-width: 1.6; stroke-dasharray: 1 1; animation: seis-draw 1.4s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.seis[data-mode="still"] .seis-line { opacity: 0.6; }
+.seis[data-mode="hunt"] .seis-trace { animation: seis-scroll 2.2s linear infinite; }
+/* A frantic rupture that slows to an alarmed tremor after a second and a half. */
+.seis[data-mode="rupture"] .seis-trace { animation: seis-scroll 0.5s linear 3, seis-scroll 1.6s linear 1.5s infinite; }
+.seis[data-mode="rupture"] .seis-line { stroke-width: 1.8; }
+.seis[data-mode="resonance"] .seis-trace { animation: seis-scroll 5s linear infinite; }
+
+@media (prefers-reduced-motion: no-preference) {
+  /* The rupture: one short shake of the whole mission and a red pulse from the seismograph. */
+  .hud[data-seismic="rupture"] { animation: quake 250ms cubic-bezier(0.36, 0.07, 0.19, 0.97); }
+  .hud[data-seismic="rupture"] .hud-frame::after {
+    content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0;
+    background: radial-gradient(90% 70% at 50% 0%, rgba(255, 77, 106, 0.32), transparent 70%);
+    animation: flare 900ms ease-out;
+  }
+}
+
 .hud-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 
-.hud-telemetry { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0; border-bottom: 1px solid var(--line); }
+.hud-telemetry { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin: 0; border-bottom: 1px solid var(--line); }
 .hud-telemetry > div { display: grid; gap: 2px; min-width: 0; padding: 12px 16px; }
 .hud-telemetry > div + div { border-left: 1px solid var(--line); }
 .hud-telemetry dt { color: var(--ink-3); font: 500 10.5px var(--mono); letter-spacing: 0.07em; text-transform: uppercase; }
@@ -204,6 +238,10 @@ a.btn { display: inline-flex; align-items: center; text-decoration: none; }
 .hud-ticker[data-running] li:last-child .hud-pulse { background: var(--cyan); box-shadow: 0 0 10px var(--cyan); animation: pulse 1s ease-in-out infinite; }
 .hud-step { color: var(--ink-3); }
 .hud-ticker li[data-ok="false"] .hud-step { color: inherit; }
+.hud-ticker li { transition: background-color 200ms ease-out; }
+.hud-ticker li[data-focus] { margin-inline: -6px; padding-right: 6px; padding-left: 24px; border-radius: 4px; background: var(--cyan-wash); }
+.hud-ticker li[data-focus] .hud-pulse { left: 6px; }
+.hud-ticker li[data-focus]::before { left: 9px; }
 .hud-caught { font-weight: 700; }
 
 .hud-cursor { color: var(--cyan); }
@@ -212,7 +250,7 @@ a.btn { display: inline-flex; align-items: center; text-decoration: none; }
 
 .hud-shield { margin: 14px 0 0; padding: 16px; border-top: 1px solid rgba(61, 255, 162, 0.25); background: var(--green-wash); box-shadow: inset 3px 0 0 var(--green); color: var(--green); font: 600 14px/1.45 var(--mono); }
 
-.hud-defect { display: grid; gap: 6px; margin: 14px 0 0; padding: 18px 16px; border-top: 1px solid rgba(255, 77, 106, 0.35); background: linear-gradient(rgba(255, 77, 106, 0.12), var(--red-wash)); box-shadow: inset 3px 0 0 var(--red); animation: rise 220ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.hud-defect { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; margin: 14px 0 0; padding: 18px 16px; border-top: 1px solid rgba(255, 77, 106, 0.35); background: linear-gradient(rgba(255, 77, 106, 0.12), var(--red-wash)); box-shadow: inset 3px 0 0 var(--red); animation: rise 220ms cubic-bezier(0.2, 0.8, 0.2, 1); }
 .hud-defect p { margin: 0; }
 .hud-defect-kicker { color: var(--red); font: 600 11px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
 .hud-defect-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; color: var(--ink); font: 600 clamp(17px, 2vw, 22px)/1.3 var(--mono); letter-spacing: -0.01em; overflow-wrap: anywhere; }
@@ -223,6 +261,22 @@ a.btn { display: inline-flex; align-items: center; text-decoration: none; }
 .hud-trail li + li { margin-left: 24px; }
 .hud-trail li + li::before { content: "→"; position: absolute; left: -18px; color: var(--ink-3); }
 .hud-trail li[data-ok="false"] { border-color: rgba(255, 77, 106, 0.6); color: var(--red); }
+.hud-trail li[data-focus] { box-shadow: 0 0 0 1px var(--cyan); }
+/* The journey ribbon: one badge per step, ending on the request that broke. Scrolls sideways on narrow screens. */
+.hud-ribbon { display: flex; align-items: center; margin: 8px 0 0; padding: 2px 2px 6px; overflow-x: auto; list-style: none; scrollbar-width: thin; }
+.hud-ribbon li { display: flex; flex: none; align-items: center; }
+.hud-ribbon li + li::before { content: "➔"; margin: 0 8px; color: var(--ink-3); font-size: 12px; }
+.hud-node {
+  display: inline-flex; align-items: center; gap: 7px; max-width: 26ch; min-height: 32px; padding: 0 11px;
+  border: 1px solid var(--line-strong); border-radius: 8px; background: rgba(0, 0, 0, 0.3); color: var(--ink);
+  font: 500 12px var(--mono); cursor: pointer; transition: border-color 120ms, background-color 120ms, transform 120ms ease-out;
+}
+.hud-node > :last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hud-node:hover { border-color: var(--ink-2); }
+.hud-node:active { transform: scale(0.97); }
+.hud-node[aria-current="step"] { border-color: var(--cyan); background: var(--cyan-wash); }
+.hud-node[data-impact] { max-width: none; border-color: rgba(255, 77, 106, 0.7); background: rgba(255, 77, 106, 0.16); color: var(--red); font-weight: 650; box-shadow: 0 0 18px -6px var(--red); }
+.hud-node[data-impact][aria-current="step"] { box-shadow: 0 0 0 1px var(--cyan), 0 0 18px -6px var(--red); }
 .hud-defect-fp { color: var(--ink-3); font-size: 12px; }
 .hud-defect-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 10px; }
 .hud-repair, .hud-apply { min-height: 48px; padding: 12px 20px; border-radius: 10px; font-size: 15px; line-height: 1.4; font-weight: 650; text-align: center; }
@@ -539,6 +593,10 @@ details[open] > summary { margin-bottom: 16px; }
 @keyframes rise { from { opacity: 0; transform: translateY(6px) scale(0.99); } }
 @keyframes blink { 50% { opacity: 0; } }
 @keyframes breathe { 50% { opacity: 1; } }
+@keyframes seis-scroll { to { transform: translateX(-200px); } }
+@keyframes seis-draw { from { stroke-dashoffset: 1; } }
+@keyframes quake { 20% { transform: translateX(-5px); } 40% { transform: translateX(4px); } 60% { transform: translateX(-3px); } 80% { transform: translateX(2px); } }
+@keyframes flare { 25% { opacity: 1; } }
 @keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
 
 @media (max-width: 960px) {
@@ -556,8 +614,9 @@ details[open] > summary { margin-bottom: 16px; }
   .arena-go { flex: 1 1 100%; justify-content: center; }
   .hud-telemetry { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .hud-repair, .hud-apply { flex: 1 1 100%; }
-  .hud-telemetry > div:nth-child(3) { border-left: 0; }
+  .hud-telemetry > div:nth-child(odd) { border-left: 0; }
   .hud-telemetry > div:nth-child(n + 3) { border-top: 1px solid var(--line); }
+  .hud-telemetry > .hud-clock { grid-column: 1 / -1; }
   .actions .btn { flex: 1 1 100%; }
   .cols, .sessions { grid-template-columns: 1fr; }
   .session + .session { border-left: 0; border-top: 1px solid var(--line); }

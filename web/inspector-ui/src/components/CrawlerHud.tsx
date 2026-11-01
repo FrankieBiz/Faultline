@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CheckRecord, CrawlEvent, Tone } from "@/lib/faultline-api";
 import { checkVerdict } from "@/lib/faultline-api";
 
@@ -25,6 +25,8 @@ export interface CrawlLine {
  */
 export interface CrawlState {
   target: string;
+  /** When the agent was launched (ms since the epoch); the mission clock starts here. */
+  startedAt: number;
   phase: "connecting" | "retrying" | "running" | "fallback" | "caught" | "clean" | "incomplete" | "failed";
   source: "playwright" | "check";
   scan: { buttons: number; forms: number; links: number } | null;
@@ -61,7 +63,7 @@ export const crawlInFlight = (state: CrawlState | null) =>
   state !== null && ["connecting", "retrying", "running", "fallback"].includes(state.phase);
 
 export const startCrawl = (target: string): CrawlState =>
-  ({ target, phase: "connecting", source: "playwright", scan: null, lines: [], defect: null, fallbackReason: null, note: null });
+  ({ target, startedAt: Date.now(), phase: "connecting", source: "playwright", scan: null, lines: [], defect: null, fallbackReason: null, note: null });
 
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
 const pathOf = (url: string) => {
@@ -147,6 +149,76 @@ function missionStatus(state: CrawlState, repair: MissionRepair | null): { label
   return { label: PHASE_LABEL[state.phase], tone: PHASE_TONE[state.phase] };
 }
 
+type Seismic = "hunt" | "rupture" | "resonance" | "still";
+const SEISMIC: Record<Tone | "active", Seismic> = { active: "hunt", bad: "rupture", ok: "resonance", warn: "still", idle: "still" };
+
+/**
+ * The seismograph traces, drawn at pixel scale: one 200 px tile per trace, repeated wide enough
+ * for the widest frame, and scrolled left by exactly one tile so the loop is seamless. Offsets
+ * are rounded before they are differenced, so every tile returns exactly to the baseline.
+ */
+const TILE = 200;
+const bump = (x: number, at: number, width: number) => Math.exp(-(((x - at) / width) ** 2));
+const spikes = (() => {
+  let seed = 7;
+  const random = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  return Array.from({ length: TILE / 5 + 1 }, (_, i) => i === 0 || i === TILE / 5 ? 0 : (random() * 2 - 1) * (i % 6 === 3 ? 17 : 10));
+})();
+function trace(offset: (x: number) => number, step: number) {
+  const ys = Array.from({ length: TILE / step + 1 }, (_, i) => Math.round(offset(i * step) * 10) / 10);
+  const tile = ys.slice(1).map((y, i) => `l${step} ${+(y - ys[i]).toFixed(1)}`).join("");
+  return `M0 ${20 + ys[0]}${tile.repeat(14)}`;
+}
+const TRACES: Record<Seismic, string> = {
+  // A steady heartbeat while the agent hunts.
+  hunt: trace((x) => -2.5 * bump(x, 62, 7) - 13 * bump(x, 100, 2.2) + 8 * bump(x, 106, 2.4) - 3.5 * bump(x, 140, 9), 1),
+  // Jagged ruptures once a request fails.
+  rupture: trace((x) => spikes[x / 5], 5),
+  // A calm resonance once the fix is verified or nothing was broken.
+  resonance: trace((x) => 3.5 * Math.sin((2 * Math.PI * x) / 100), 2),
+  still: trace(() => 0, TILE),
+};
+
+/** A live waveform of the mission: decorative, since the status line says the same in words. */
+function Seismograph({ mode }: { mode: Seismic }) {
+  return (
+    <div className="seis" data-mode={mode} aria-hidden="true">
+      <svg key={mode} className="seis-trace" width={TILE * 14} height={40} viewBox={`0 0 ${TILE * 14} 40`}>
+        <path className="seis-glow" d={TRACES[mode]} />
+        <path className="seis-line" d={TRACES[mode]} pathLength={1} />
+      </svg>
+    </div>
+  );
+}
+
+const clockText = (ms: number) => {
+  const tenths = Math.floor(ms / 100);
+  return `${String(Math.floor(tenths / 600)).padStart(2, "0")}:${String(Math.floor((tenths % 600) / 10)).padStart(2, "0")}.${tenths % 10}s`;
+};
+
+/**
+ * The mission clock: time the agent spent working, from launch through the crawl and then the
+ * sandbox repair and apply. It pauses while the mission waits on a person, so it measures the agent.
+ */
+function MissionClock({ active, origin }: { active: boolean; origin: number }) {
+  const [clock, setClock] = useState({ spent: 0, since: origin as number | null, now: origin });
+  useEffect(() => {
+    if (!active) {
+      setClock((c) => c.since === null ? c : { spent: c.spent + Date.now() - c.since, since: null, now: Date.now() });
+      return;
+    }
+    setClock((c) => c.since !== null ? c : { ...c, since: Date.now(), now: Date.now() });
+    const timer = setInterval(() => setClock((c) => ({ ...c, now: Date.now() })), 100);
+    return () => clearInterval(timer);
+  }, [active]);
+  return <>{clockText(clock.spent + (clock.since === null ? 0 : clock.now - clock.since))}</>;
+}
+
+/** The icon a journey badge wears for the kind of step it was. */
+const stepIcon = (line: CrawlLine) =>
+  line.kind === "visit" ? "🌐" : line.kind === "fill" ? "⌨️" : /cart|basket|bag/i.test(line.label) ? "🛒"
+    : line.kind === "submit" || /checkout|order|pay/i.test(line.label) ? "📋" : "🖱️";
+
 /**
  * Live agent mission HUD: telemetry, a step ticker of the crawler's real actions, and, when a
  * request fails, the intercepted defect with its click trail and a one-click sandbox repair that
@@ -164,6 +236,8 @@ export default function CrawlerHud(props: {
 }) {
   const { state, repairLabel, repairBlocked, repair } = props;
   const tickerRef = useRef<HTMLOListElement>(null);
+  /** The journey badge last picked, for the mission it was picked in. */
+  const [picked, setPicked] = useState<{ mission: number; node: number } | null>(null);
   const running = crawlInFlight(state);
   const crawler = state.source === "playwright";
 
@@ -184,10 +258,32 @@ export default function CrawlerHud(props: {
     : [["Sessions", new Set(steps.map((line) => line.text.split(":")[0])).size], ["Requests", steps.length]] as const;
   // The click trail: every page visited and control touched, up to the failing step.
   const trail = steps.slice(0, (steps.findLastIndex((line) => !line.ok) + 1) || steps.length);
+  const seismic = SEISMIC[status.tone];
+  const working = running || Boolean(repair?.running || repair?.applying);
+  // The journey ribbon: where the agent started, each step of the trail, and the request that broke.
+  const at = (line: CrawlLine) => state.lines.indexOf(line);
+  const first = trail[0];
+  const journey = crawler && defect && first ? [
+    ...(first.kind !== "visit" && first.page ? [{ icon: "🌐", label: first.page, line: at(first), impact: false }] : []),
+    ...trail.map((line) => ({ icon: stepIcon(line), label: line.label, line: at(line), impact: false })),
+    { icon: "💥", label: `${defect.method} ${defect.path}${defect.status ? ` ${defect.status}` : ""}`, line: at(trail.at(-1)!), impact: true },
+  ] : [];
+  const node = picked?.mission === state.startedAt ? picked.node : null;
+  // The picked badge's step, as an index into `state.lines`.
+  const focus = node === null ? null : journey[node]?.line ?? null;
+
+  // Show a badge's step in the log, scrolling the log (and only as much of the page as needed).
+  const reveal = (index: number) => {
+    setPicked({ mission: state.startedAt, node: index });
+    const item = tickerRef.current?.children[journey[index].line];
+    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    item?.scrollIntoView({ block: "nearest", behavior: still ? "auto" : "smooth" });
+  };
 
   return (
-    <section className="hud shell" aria-labelledby="hud-h" data-phase={state.phase}>
+    <section className="hud shell" aria-labelledby="hud-h" data-phase={state.phase} data-seismic={seismic}>
       <div className="hud-frame">
+        <Seismograph mode={seismic} />
         <div className="hud-head">
           <p className="hud-key" id="hud-h">Live Agent Mission · {crawler ? "Playwright" : "Direct HTTP check"}</p>
           <code className="hud-target">{state.target}</code>
@@ -202,6 +298,10 @@ export default function CrawlerHud(props: {
           </div>
           {telemetry.map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{value}</dd></div>)}
           <div data-tone={defect ? "bad" : state.phase === "clean" ? "ok" : undefined}><dt>Defects</dt><dd>{defect ? 1 : 0}</dd></div>
+          <div className="hud-clock" data-tone={working ? "active" : undefined}
+            title="Agent time: the crawl, then the sandbox repair. Time spent waiting on you is not counted.">
+            <dt>Elapsed</dt><dd><MissionClock key={state.startedAt} active={working} origin={state.startedAt} /></dd>
+          </div>
         </dl>
 
         {state.fallbackReason && <p className="hud-note" data-phase="fallback">{state.fallbackReason}</p>}
@@ -213,7 +313,7 @@ export default function CrawlerHud(props: {
         {state.lines.length > 0 && (
           <ol ref={tickerRef} className="hud-ticker" role="log" aria-label="Agent steps" aria-live="polite" data-running={running || undefined}>
             {state.lines.map((line, i) => (
-              <li key={i} data-ok={line.ok} data-kind={line.kind}>
+              <li key={i} data-ok={line.ok} data-kind={line.kind} data-focus={focus === i || undefined}>
                 <span className="hud-pulse" aria-hidden="true" />
                 <span className="hud-step">{line.n === null ? "[Scan]" : `[Step ${line.n}${line.last ? `–${line.last}` : ""}]`}</span>{" "}
                 {line.text}
@@ -245,9 +345,22 @@ export default function CrawlerHud(props: {
             <p className="hud-defect-trigger">
               Triggered by: {defect.trigger.kind} &ldquo;{defect.trigger.label}&rdquo;{defect.trigger.page && <> on <code>{defect.trigger.page}</code></>}
             </p>
+            {journey.length > 0 && (
+              <ol className="hud-ribbon" aria-label="User journey">
+                {journey.map((badge, i) => (
+                  <li key={i}>
+                    <button type="button" className="hud-node" data-impact={badge.impact || undefined}
+                      aria-current={node === i ? "step" : undefined} onClick={() => reveal(i)}
+                      title={badge.impact ? "Show the step that broke in the agent log" : "Show this step in the agent log"}>
+                      <span aria-hidden="true">{badge.icon}</span><span>{badge.label}</span>
+                    </button>
+                  </li>
+                ))}
+              </ol>
+            )}
             {trail.length > 1 && (
               <ol className="hud-trail" aria-label="Click trail">
-                {trail.map((line, i) => <li key={i} data-ok={line.ok}>{line.kind === "visit" || line.kind === "session" ? line.label : `“${line.label}”`}</li>)}
+                {trail.map((line, i) => <li key={i} data-ok={line.ok} data-focus={focus === at(line) || undefined}>{line.kind === "visit" || line.kind === "session" ? line.label : `“${line.label}”`}</li>)}
               </ol>
             )}
             {defect.fingerprint && <p className="hud-defect-fp"><code>{defect.fingerprint}</code></p>}
