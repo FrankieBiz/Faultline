@@ -6,6 +6,28 @@
 
 ---
 
+## 🧭 Quick Guide for Hackathon Judges: Public vs. Local
+
+| Surface | URL | Audience & Setup | What It Does & How to Judge It |
+| :--- | :--- | :--- | :--- |
+| **Public Judge Page** *(Recommended First Stop)* | [frankiebiz.github.io/Faultline/](https://frankiebiz.github.io/Faultline/) | **Judges & Evaluators**<br>*(Zero install, works in any browser on desktop/mobile)* | **The Primary Hackathon Showcase:**<br>1. **Live Meta Model Replay**: Watch Meta's `muse-spark-1.3` autonomously diagnose and repair the 2 AM checkout crash in 13 seconds (44/44 passing assertions).<br>2. **Interactive Pre-Flight Agent Gate**: Test clean vs. broken web apps, watch the seismograph quake, and inspect the AI agent self-healing prompt.<br>3. **Corpus Gate Stress-Tester**: Compare 11 candidate patches to see why naive checks fail and FaultLine's kernel sandbox succeeds.<br>4. **Static Evidence Replays**: Cryptographically verified, script-free audit logs. |
+| **Local Inspector Studio** | `http://127.0.0.1:4000`<br>*(via `./faultline demo`)* | **Engineers & SREs**<br>*(Requires Linux with cgroup v2 & Bubblewrap)* | **The Real-Time Developer Execution Engine:**<br>1. Real headless Playwright crawler hunts for defects across live `localhost` ports (`:3000`, `:5050`).<br>2. Communicates with the live repair orchestrator (`:9000`) and Meta Model API.<br>3. Sandboxes code diffs inside Linux Bubblewrap user namespaces and enforces 512MB/1 CPU limits.<br>4. One-click applies verified code diffs to your actual repository. |
+| **Demo Target Store** | `http://127.0.0.1:3000`<br>*(API: `:8000`)* | **Local Test Target**<br>*(Part of `./faultline demo`)* | **BuggyShop E-Commerce App:** A real Next.js + FastAPI shop with a seeded coupon discount exception on checkout that triggers HTTP 500. |
+| **Secret SaaS Target** | `http://127.0.0.1:5050` | **Local Standalone App**<br>*(Part of test suite)* | **AuraScale Cloud:** Standalone cloud platform app with an NVMe lease allocation crash used to test multi-page exploratory crawls. |
+
+### ⏱️ The 3-Minute Judging Tour
+
+If you have 3 minutes to evaluate FaultLine, follow this sequence on the **[Public Judge Page](https://frankiebiz.github.io/Faultline/)**:
+
+1. **Watch the 13-Second Meta Autonomous Repair (Top Hero)**:
+   Click **Play Replay**. You will see the live Seismograph detect the checkout rupture, Meta's `muse-spark-1.3` synthesize a single-file AST-safe diff, Bubblewrap spin up an isolated sandbox, and 44 independent business checks turn green to verify the fix before any developer merges.
+2. **Test the Pre-Flight Agent Gate (Section #2)**:
+   Click **Test Broken Site (AuraScale :5050)**. Watch the seismograph flare in electric rose, see the gate issue a `DEPLOYMENT_BLOCKED` verdict, and review the exact click-by-click reproduction trail and self-healing prompt fed back to coding agents (Cursor, Claude, Devin). Then click **Test Clean Storefront** to see it clear with `SAFE_TO_DEPLOY`.
+3. **Try to Fool the Gates (Section #3)**:
+   Click through the 10-defect holdout corpus to observe how traditional CI (naive HTTP 201 checks) gets fooled by wrong AI patches, while FaultLine's kernel containment and invariant assertions catch every single regression.
+
+---
+
 ## The 2 AM checkout failure
 
 It's 2 AM. A shopper fills a cart, skips the coupon field, and clicks **Place order**. The API answers with **HTTP 500**. Nobody is paged, because the homepage is up and the error rate barely moves. Every customer who checks out without a coupon gets the same crash until someone notices in the morning, and each one is a lost order.
