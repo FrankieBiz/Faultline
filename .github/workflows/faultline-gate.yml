@@ -1,0 +1,108 @@
+name: FaultLine pre-flight gate
+# Drop-in deployment gate: explore a preview URL in headless Chromium and fail
+# the job (exit 1) when any click or form submission breaks the site.
+#
+# Point it at your preview: set the repository variable FAULTLINE_PREVIEW_URL
+# (Settings -> Secrets and variables -> Actions -> Variables), or replace the
+# "Start preview" step with your own server. Make deploy jobs `needs: gate`
+# and mark "FaultLine pre-flight gate / gate" as a required check so a
+# DEPLOYMENT_BLOCKED verdict stops the merge and the deploy.
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: faultline-gate-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PREVIEW_URL: ${{ vars.FAULTLINE_PREVIEW_URL }}
+      NO_COLOR: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: tools/browser-runner/package-lock.json
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          enable-cache: true
+      - run: uv python install 3.13
+      - name: Build the browser runner
+        working-directory: tools/browser-runner
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npm run build
+
+      # With no preview configured, the gate checks itself on two fixture
+      # stores: a healthy one it must pass and a broken one it must block.
+      - name: Start preview
+        if: env.PREVIEW_URL == ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture="$RUNNER_TEMP/faultline-preview"
+          mkdir -p "$fixture"
+          cat > "$fixture/store.mjs" <<'JS'
+          import http from 'node:http';
+          const [port, mode] = process.argv.slice(2);
+          const page = `<main><h1>Store</h1><label>Email <input id="email" type="email"></label>
+            <button id="submit-order" onclick="fetch('/api/checkout',{method:'POST'})
+              .then(r => { document.querySelector('#out').textContent = r.ok ? 'Ordered' : 'Failed'; })">Place order</button>
+            <p id="out"></p></main>`;
+          http.createServer((request, response) => {
+            if (request.method === 'POST' && request.url === '/api/checkout') {
+              const ok = mode === 'healthy';
+              response.writeHead(ok ? 200 : 500, {'Content-Type': 'application/json'});
+              response.end(JSON.stringify(ok ? {order: 1} : {detail: 'KeyError: cart_id'}));
+              return;
+            }
+            response.writeHead(200, {'Content-Type': 'text/html'});
+            response.end(page);
+          }).listen(Number(port), '127.0.0.1');
+          JS
+          node "$fixture/store.mjs" 5050 healthy > "$fixture/healthy.log" 2>&1 &
+          node "$fixture/store.mjs" 5051 broken > "$fixture/broken.log" 2>&1 &
+          echo "PREVIEW_URL=http://127.0.0.1:5050" >> "$GITHUB_ENV"
+          echo "SELF_TEST_BROKEN_URL=http://127.0.0.1:5051" >> "$GITHUB_ENV"
+
+      - name: Wait for the preview
+        shell: bash
+        run: |
+          for attempt in {1..60}; do
+            if curl --silent --output /dev/null --max-time 5 "$PREVIEW_URL"; then exit 0; fi
+            sleep 2
+          done
+          echo "::error title=FaultLine gate::Preview $PREVIEW_URL did not answer within 2 minutes"
+          exit 1
+
+      - name: FaultLine pre-flight gate
+        shell: bash
+        run: |
+          set -uo pipefail
+          ./faultline gate "$PREVIEW_URL" --markdown >> "$GITHUB_STEP_SUMMARY"
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            echo "::error title=FaultLine gate::DEPLOYMENT_BLOCKED (exit $status). See the job summary for the reproduction trail and agent fix prompt."
+          fi
+          exit "$status"
+
+      - name: Self-test, a broken store must be blocked
+        if: env.SELF_TEST_BROKEN_URL != ''
+        shell: bash
+        run: |
+          set -uo pipefail
+          ./faultline gate "$SELF_TEST_BROKEN_URL" --json > "$RUNNER_TEMP/broken-gate.json"
+          status=$?
+          cat "$RUNNER_TEMP/broken-gate.json"
+          test "$status" -eq 1
+          jq -e '.verdict == "DEPLOYMENT_BLOCKED" and .failure.status == 500
+            and (.agent_remediation_prompt | contains("POST /api/checkout"))' \
+            "$RUNNER_TEMP/broken-gate.json"

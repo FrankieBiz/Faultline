@@ -1628,6 +1628,13 @@ def cmd_scan(args: argparse.Namespace) -> int:
     return scan_command(args, _palette(args), port=_orchestrator_port(args))
 
 
+def cmd_gate(args: argparse.Namespace) -> int:
+    """Pre-deployment gate: crawl a preview URL and block the deploy on any defect."""
+    from app.cli_crawl import gate_command
+
+    return gate_command(args, _palette(args))
+
+
 def cmd_demo(args: argparse.Namespace) -> int:
     """Connect to the complete demo, or launch it with the existing session supervisor."""
     from app import cli_demo
@@ -1836,6 +1843,40 @@ def build_parser() -> argparse.ArgumentParser:
     orchestrator_port_flag(p_scan)
     output_flags(p_scan)
     p_scan.set_defaults(func=cmd_scan)
+
+    p_gate = subparsers.add_parser(
+        "gate",
+        help="Pre-deployment gate for agents and CI: exit 0 safe to deploy, 1 blocked, 2 bad input",
+    )
+    p_gate.add_argument(
+        "url", metavar="URL", help="Preview or staging URL, e.g. http://127.0.0.1:3000"
+    )
+    p_gate.add_argument(
+        "--max-actions",
+        type=_bounded_int(1, 100),
+        default=25,
+        help="Clicks and fills before passing clean (1-100, default 25)",
+    )
+    p_gate.add_argument(
+        "--timeout",
+        type=_bounded_int(1, 300),
+        default=90,
+        help="Crawl budget in seconds (1-300, default 90)",
+    )
+    gate_output = p_gate.add_mutually_exclusive_group()
+    gate_output.add_argument(
+        "--json", action="store_true", help="Emit exactly one JSON verdict on stdout"
+    )
+    gate_output.add_argument(
+        "--markdown", action="store_true", help="Emit a PR / $GITHUB_STEP_SUMMARY report"
+    )
+    gate_output.add_argument(
+        "--format",
+        choices=("agent", "ci"),
+        help="agent: plain text for an LLM prompt; ci: terse log lines and GitHub annotations",
+    )
+    output_flags(p_gate)
+    p_gate.set_defaults(func=cmd_gate)
 
     p_check = subparsers.add_parser("check", help="Gate on a running project's HTTP invariants")
     p_check.add_argument("--config", default="faultline.toml")

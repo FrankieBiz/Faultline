@@ -1,5 +1,14 @@
 # Agent handoff state
 
+## November 1: Pre-Flight Agent Gate (claude-agent-gate)
+
+- **`faultline gate URL`.** `cmd_gate` in `app/cli.py`; logic in `app/cli_crawl.py` (`gate_command`, `gate_result`, `gate_error_result`, `remediation_prompt`, and renderers `render_gate_markdown` / `render_gate_agent` / `render_gate_ci` / `render_gate_human`). It reuses `crawler_service.run_crawl` + `telemetry`. Exit 0 `SAFE_TO_DEPLOY`, 1 `DEPLOYMENT_BLOCKED` (defect, runner error, or report `status: error`), 2 invalid URL/args (`invalid_url`/`invalid_request`, or argparse). `--json`/`--markdown`/`--format agent|ci` are mutually exclusive. The JSON adds an `error` field ({code, message} or null) beyond the requested schema, to separate "app broken" from "gate could not look". Markdown sends crawl progress to stderr so `>> $GITHUB_STEP_SUMMARY` stays clean; `--format ci` emits `::error`/`::notice` only when `GITHUB_ACTIONS=true`.
+- **Skill** `.agents/skills/faultline-gate/SKILL.md`: when to gate, exit-code table, JSON schema, and a self-healing loop capped at 3 identical blocks.
+- **Workflow** `.github/workflows/faultline-gate.yml`: uses repo variable `FAULTLINE_PREVIEW_URL`; when unset it self-tests on two inline node stores (healthy on 5050 must pass; broken on 5051 must exit exactly 1). It does **not** gate the seeded BuggyShop, which has a deliberate 500 and would block every push.
+- **Hook** `.githooks/pre-push` (opt-in via `git config core.hooksPath .githooks`; not installed here). Down server → warn and allow, unless `FAULTLINE_GATE_REQUIRED=1`.
+- **Docs** `docs/PREFLIGHT_GATE.md`, README command row + section. **Tests** `tests/test_gate.py` (29, including real Chromium; imports fixtures from `test_crawler.py`).
+- Local port 5050 is often taken by another worktree's demo; use other ports for manual smoke tests.
+
 ## November 1: judge page matches the Inspector (claude-judge-pages)
 
 - **Design system.** `docs/index.html` now uses the Inspector's tokens: `--bg #07080a`, `--well #0e1014`, `--raised #14171d` (replaces `--well-2`), rose `#ff4d6a`, emerald `#3dffa2`, amber `#f59e0b`, and cyan `#2dd4ff` for work in flight. It also uses the fixed telemetry dot grid, a static radial glow behind the hero, a mono uppercase kicker, a larger two-tone h1, and primary buttons with the Inspector's breathing halo (opacity only). The favicon uses the new red and green.

@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# FaultLine pre-push gate: refuse the push when the local dev server fails
+# `faultline gate`. Optional; install it for this clone with
+#
+#   git config core.hooksPath .githooks
+#
+# Settings (environment variables):
+#   FAULTLINE_GATE_URL       dev server to gate (default http://127.0.0.1:3000)
+#   FAULTLINE_GATE_REQUIRED  1 = block the push when the server is not running
+#                            (default: warn and allow)
+#   FAULTLINE_GATE_SKIP      1 = skip the gate for this push
+#   FAULTLINE_BIN            faultline launcher (default: ./faultline, then PATH)
+#
+# Bypass once with `git push --no-verify`.
+set -uo pipefail
+
+if [ "${FAULTLINE_GATE_SKIP:-0}" = "1" ]; then
+  exit 0
+fi
+
+url="${FAULTLINE_GATE_URL:-http://127.0.0.1:3000}"
+root="$(git rev-parse --show-toplevel)"
+faultline="${FAULTLINE_BIN:-}"
+if [ -z "$faultline" ]; then
+  if [ -x "$root/faultline" ]; then
+    faultline="$root/faultline"
+  else
+    faultline="$(command -v faultline || true)"
+  fi
+fi
+if [ -z "$faultline" ]; then
+  echo "faultline pre-push: faultline launcher not found; set FAULTLINE_BIN. Skipping gate." >&2
+  exit 0
+fi
+
+# Any HTTP answer means the server is up; only a refused or timed-out connection is "down".
+if ! curl --silent --output /dev/null --max-time 5 "$url"; then
+  if [ "${FAULTLINE_GATE_REQUIRED:-0}" = "1" ]; then
+    echo "faultline pre-push: $url is not answering; start your dev server (FAULTLINE_GATE_REQUIRED=1)." >&2
+    exit 1
+  fi
+  echo "faultline pre-push: $url is not answering; skipping the gate. Set FAULTLINE_GATE_REQUIRED=1 to block instead." >&2
+  exit 0
+fi
+
+echo "faultline pre-push: gating $url ..." >&2
+"$faultline" gate "$url" --format ci --no-color </dev/null >&2
+status=$?
+if [ "$status" -eq 0 ]; then
+  exit 0
+fi
+echo "" >&2
+echo "faultline pre-push: push blocked (exit $status). Fix the defect above, or run" >&2
+echo "  $faultline gate $url --format agent" >&2
+echo "for a fix prompt to hand to your coding agent. Bypass once with git push --no-verify." >&2
+exit 1

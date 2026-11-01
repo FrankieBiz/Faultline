@@ -253,6 +253,7 @@ Static AST inspection and Git worktrees are policy and source-management tools; 
 | `faultline check` | Gates a running service on declared HTTP invariants, each measured in two fresh sessions; `--repair` asks for a sandbox-verified candidate without touching source |
 | `faultline scan URL` | Paste a URL: explores every same-origin screen, fills forms, catches the first defect, prints its reproduction journey, and offers to propose and verify a patch in the sandbox; alias `faultline auto` |
 | `faultline crawl URL` | Clicks through a site in headless Chromium until something breaks, then prints the failure and its reproduction breadcrumbs; alias `faultline break` |
+| `faultline gate URL` | Pre-deployment gate for coding agents and CI: the same crawl, one verdict (`SAFE_TO_DEPLOY` exit 0, `DEPLOYMENT_BLOCKED` exit 1, bad input exit 2) with `--json`, `--markdown`, or `--format agent\|ci`, plus a ready-to-paste agent fix prompt |
 | `faultline doctor` | Checks sandbox prerequisites, the Meta key, and service health |
 | `faultline run [scenario]` | Freezes tracked source, needs two matching isolated failures, requests a Meta patch, verifies it, and writes a checksummed proof to `.faultline/runs`; `--detect` stops before the model call |
 | `faultline listen [job]` | Streams a job's stages as a live HUD with a cyan spinner and progress bar for in-flight work; `--plain` gives one line per stage for CI logs |
@@ -274,6 +275,10 @@ Static AST inspection and Git worktrees are policy and source-management tools; 
 ### CI/CD pull request gate
 
 [`.github/workflows/faultline-ci.yml`](.github/workflows/faultline-ci.yml) starts a local service on a GitHub runner and runs `faultline check` against it. A passing invariant must exit 0, and a deliberately false one must exit 1. Copy the pattern into your own repository to block pull requests that break declared HTTP contracts. The hosted runner installs the sandbox prerequisites but makes no sandbox-execution claim and does not request repair.
+
+### Pre-Flight Agent Gate
+
+`faultline gate http://127.0.0.1:3000 --json` turns the crawler into a deployment gate that coding agents (Claude, Codex, Cursor, Devin) and pipelines can obey: exit 0 is `SAFE_TO_DEPLOY`, exit 1 is `DEPLOYMENT_BLOCKED` with the reproduction trail and an `agent_remediation_prompt` the agent can act on. [`docs/PREFLIGHT_GATE.md`](docs/PREFLIGHT_GATE.md) covers the contract, the agent skill ([`.agents/skills/faultline-gate`](.agents/skills/faultline-gate/SKILL.md)), the drop-in [`.github/workflows/faultline-gate.yml`](.github/workflows/faultline-gate.yml) that writes the verdict to the job summary, and the optional [`.githooks/pre-push`](.githooks/pre-push) hook.
 
 ---
 
