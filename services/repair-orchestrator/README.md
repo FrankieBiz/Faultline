@@ -71,12 +71,22 @@ The patch policy also rejects catch-all exception handlers (bare `except`,
 `except Exception`, `except BaseException`), which suppress failures instead of
 repairing them. Specific handlers remain allowed; the oracle judges their effect.
 
-After a candidate is verified, the worker stores a `proof_bundle` (JSON) and
-`proof_bundle_md` (review summary). The bundle restates the recorded verdicts,
-patch, and every artifact's id, role, size, and SHA-256 under one digest;
-`tools/verify_bundle.py` re-checks it offline against exported artifacts. The digest
-is a checksum, not a signature. A compilation fault is logged and leaves the
-verified outcome unchanged.
+After verification and confirmed cleanup, the worker stores a schema **3.0**
+`proof_bundle` (JSON) and `proof_bundle_md` (review summary). Proof registration,
+the final verified outcome, and resource-lease release commit in one database
+transaction; compilation or persistence failures instead produce `artifact_error`.
+Failed cleanup publishes no final proof and keeps the lease quarantined. A crash
+can leave unregistered files, but they cannot be served or exported as proof.
+
+The bundle binds cleanup, source and snapshot hashes, generation identity,
+runtime kind, each execution's actual recorded resource limits, provider/model
+when recorded, verdicts, patch, and the artifact manifest under one digest.
+Unknown limits remain null; simulations and disabled limits establish no
+containment claim. `tools/verify_bundle.py` checks this metadata and exported
+artifact checksums offline. Historical schema **2.0** replays remain readable
+with an explicit **legacy consistency-only** result; they do not establish a
+final lifecycle or containment. The digest is a checksum, not a signature, and
+cannot authenticate claims against someone who rewrites and rehashes everything.
 
 Models often miscount unified-diff hunk headers. Like `git apply --recount`, the
 adapter recomputes hunk line counts from the hunk body and relocates a hunk only to

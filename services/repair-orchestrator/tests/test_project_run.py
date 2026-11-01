@@ -356,6 +356,8 @@ async def test_worker_requires_two_identical_failures_before_inference(
             assert len(proofs) == 1
             bundle = json.loads(worker.evidence.read(proofs[0]))
             assert bundle["scenario_id"] == "addition"
+            assert bundle["lifecycle"]["cleanup_status"] == "succeeded"
+            assert bundle["containment"] == "not-established"
             assert len([a for a in bundle["evidence_manifest"] if a["role"] == "report"]) == 3
         with pytest.raises(DatabaseError, match="unknown_scenario"):
             worker.database.create_job(
@@ -404,6 +406,17 @@ async def test_real_node_repository_baseline_repair_and_proof(
         assert [e.report.verdict.value for e in executions] == ["failed", "failed", "passed"]
         assert all(e.resource_limits and e.resource_limits.verified for e in executions)
         assert not runtime.sessions
+        from tools.verify_bundle import verify_bundle
+
+        proof = next(a for a in worker.database.list_artifacts(job.id) if a.role == "proof_bundle")
+        bundle = json.loads(worker.evidence.read(proof))
+        consistent, messages = verify_bundle(bundle)
+        assert consistent, messages
+        assert bundle["containment"] == "recorded-isolated"
+        for recorded, execution in zip(bundle["executions"], executions, strict=True):
+            assert execution.resource_limits is not None
+            assert recorded["resource_limits"] == execution.resource_limits.model_dump()
+            assert recorded["runtime_kind"] == execution.runtime_kind
         assert (root / "server.js").read_text() == SERVICE
         worker.evidence.verify_job(job.id)
     finally:

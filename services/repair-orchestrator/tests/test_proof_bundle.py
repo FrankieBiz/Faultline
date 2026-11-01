@@ -3,11 +3,14 @@
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from app.proof_bundle import ProofBundleCompiler, bundle_digest
+import pytest
+
+from app.proof_bundle import ProofBundle, ProofBundleCompiler, bundle_digest
 from shared.contracts.models import (
     ArtifactSummary,
     AssertionResult,
     CleanupStatus,
+    ExecutionRecord,
     ExecutionReport,
     ExecutionVerdict,
     JobMode,
@@ -16,6 +19,7 @@ from shared.contracts.models import (
     Observation,
     ObservationKind,
     OrchestratorJob,
+    RepairAttempt,
 )
 
 
@@ -24,8 +28,8 @@ def _make_sample_job() -> OrchestratorJob:
     return OrchestratorJob(
         id=str(uuid4()),
         scenario_id="scripted_checkout_repair",
-        state=JobState.SUCCEEDED,
-        stage=JobStage.COMPLETED,
+        state=JobState.RUNNING,
+        stage=JobStage.CLEANUP,
         cleanup_status=CleanupStatus.SUCCEEDED,
         created_at=now,
         updated_at=now,
@@ -33,6 +37,8 @@ def _make_sample_job() -> OrchestratorJob:
         request_fingerprint="fp-123",
         requested_mode=JobMode.REPAIR,
         effective_mode=JobMode.REPAIR,
+        seed_commit="a" * 40,
+        seed_source_hash="b" * 64,
     )
 
 
@@ -99,15 +105,62 @@ def artifact(job_id: str, role: str, content: bytes) -> ArtifactSummary:
     )
 
 
+def compile_sample(
+    job: OrchestratorJob,
+    baseline: ExecutionReport,
+    verification: ExecutionReport,
+    items: list[ArtifactSummary] | None = None,
+) -> tuple[ProofBundle, str]:
+    """Compile explicit simulation provenance, never claiming isolated execution."""
+    attempt_id, generation = str(uuid4()), str(uuid4())
+    items = items or []
+    records = [
+        ExecutionRecord(
+            job_id=job.id,
+            phase=phase,  # type: ignore[arg-type]
+            attempt_id=attempt_id if phase == "verification" else None,
+            app_generation_id=generation if phase == "verification" else "baseline-generation",
+            candidate_snapshot_sha256=("c" if phase == "verification" else "d") * 64,
+            artifact_ids=[item.id for item in items],
+            started_at=job.created_at,
+            finished_at=job.updated_at,
+            report=report,
+        )
+        for phase, report in (("baseline", baseline), ("verification", verification))
+    ]
+    return ProofBundleCompiler().compile(
+        job=job.model_copy(update={"baseline_execution_id": baseline.execution_id}),
+        baseline_report=baseline,
+        verification_report=verification,
+        diff=DIFF,
+        artifacts=items,
+        executions=records,
+        attempt=RepairAttempt(
+            id=attempt_id,
+            job_id=job.id,
+            attempt_number=1,
+            parsed_diff=DIFF,
+            validation_result={
+                "verification_execution_id": verification.execution_id,
+                "base_sha256": job.seed_source_hash,
+                "candidate_sha256": "c" * 64,
+                "target_sha256": "e" * 64,
+                "app_generation_id": generation,
+                "provider": "test-double",
+                "model": "test-double",
+            },
+        ),
+    )
+
+
 def test_bundle_restates_recorded_values_under_one_digest() -> None:
     job = _make_sample_job()
     items = [artifact(job.id, "screenshot", b"png"), artifact(job.id, "trace", b"zip")]
-    bundle, summary = ProofBundleCompiler().compile(
-        job=job,
-        baseline_report=_make_report(ExecutionVerdict.FAILED, 1200.0),
-        verification_report=_make_report(ExecutionVerdict.PASSED, 1500.0),
-        diff=DIFF,
-        artifacts=items,
+    bundle, summary = compile_sample(
+        job,
+        _make_report(ExecutionVerdict.FAILED, 1200.0),
+        _make_report(ExecutionVerdict.PASSED, 1500.0),
+        items,
     )
     assert bundle.status == "verified" and bundle.baseline_verdict == "failed"
     assert (bundle.assertions_total, bundle.regressions_count) == (2, 0)
@@ -128,11 +181,18 @@ def test_bundle_restates_recorded_values_under_one_digest() -> None:
 
 def test_failed_verification_is_never_summarized_as_verified() -> None:
     job = _make_sample_job()
-    bundle, summary = ProofBundleCompiler().compile(
-        job=job,
-        baseline_report=_make_report(ExecutionVerdict.FAILED, 1200.0),
-        verification_report=_make_report(ExecutionVerdict.FAILED, 1500.0),
-        diff=DIFF,
-    )
-    assert bundle.status == "not_verified" and bundle.regressions_count == 2
-    assert "## Failed assertions" in summary and "0 of 2" in summary
+    with pytest.raises(ValueError, match="verified reports"):
+        compile_sample(
+            job,
+            _make_report(ExecutionVerdict.FAILED, 1200.0),
+            _make_report(ExecutionVerdict.FAILED, 1500.0),
+        )
+
+
+@pytest.mark.parametrize("cleanup", [CleanupStatus.IN_PROGRESS, CleanupStatus.FAILED])
+def test_compiler_refuses_unconfirmed_cleanup(cleanup: CleanupStatus) -> None:
+    job = _make_sample_job().model_copy(update={"cleanup_status": cleanup})
+    with pytest.raises(ValueError, match="confirmed cleanup"):
+        compile_sample(
+            job, _make_report(ExecutionVerdict.FAILED, 1), _make_report(ExecutionVerdict.PASSED, 1)
+        )
