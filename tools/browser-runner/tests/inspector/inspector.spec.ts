@@ -652,7 +652,7 @@ test("a hunt that finds nothing ends on the clean shield", async ({ page }) => {
     { type: "step", n: 2, action: "fill", target: "Name", page: "/", ok: true },
     { type: "step", n: 3, action: "fill", target: "Email", page: "/", ok: true },
     { type: "step", n: 4, action: "submit", target: "Subscribe", page: "/", ok: true },
-    { type: "done", steps: 4, defect: false },
+    { type: "done", steps: 4, defect: false, telemetry: { status: "clean", actions_taken: 3, stop_reason: "exhausted" } },
   ] }) });
   await page.goto("/");
   await page.getByRole("textbox", { name: "Target URL" }).fill("localhost:5000/");
@@ -665,14 +665,50 @@ test("a hunt that finds nothing ends on the clean shield", async ({ page }) => {
     '[Step 4] Clicked "Subscribe" (OK) on /',
   ]);
   await expect(hud.getByRole("status")).toHaveText("Clean");
-  await expect(hud).toContainText("✅ All screens and actions clean. 0 defects found across 1 screen and 3 actions.");
+  await expect(hud).toContainText("✅ Exploration finished clean. 0 defects found across 1 screen and 3 actions. A smoke signal for the flows explored, not a business-logic check.");
   await expect(hud.getByRole("alert")).toHaveCount(0);
+});
+
+test("a hunt stopped by its budget, or that never says how it ended, is inconclusive and never green", async ({ page }) => {
+  const steps = [
+    { type: "step", n: 1, action: "visit", target: "http://localhost:5000/", page: "/", ok: true },
+    { type: "step", n: 2, action: "fill", target: "Email", page: "/", ok: true },
+  ];
+  let done: object = { type: "done", steps: 2, defect: false, telemetry: { status: "clean", actions_taken: 1, stop_reason: "max_actions" } };
+  await mock(page, { crawl: () => ({ status: 200, ndjson: [...steps, done] }) });
+  await page.goto("/");
+  const hunt = async () => {
+    await page.getByRole("textbox", { name: "Target URL" }).fill("localhost:5000/");
+    await page.getByRole("textbox", { name: "Target URL" }).press("Enter");
+  };
+  await hunt();
+  const hud = page.getByRole("region", { name: "Live Agent Mission · Playwright" });
+  await expect(hud.getByRole("status")).toHaveText("Inconclusive");
+  await expect(hud).toHaveAttribute("data-phase", "incomplete");
+  await expect(hud).toContainText("No defect in the flows it explored, but this is inconclusive, not clean. The crawl stopped at its action budget after 1 action, so unexplored flows remain. faultline gate blocks a run like this (incomplete_crawl).");
+  await expect(hud.locator(".hud-shield")).toHaveCount(0);
+  await expect(hud.locator(".seis")).not.toHaveAttribute("data-mode", "resonance");
+  await expect(hud.locator(".hud-telemetry [data-tone=ok]")).toHaveCount(0);
+
+  // An engine that predates stop reasons sends no telemetry: still not clean.
+  done = { type: "done", steps: 2, defect: false };
+  await hunt();
+  await expect(hud.getByRole("status")).toHaveText("Inconclusive");
+  await expect(hud).toContainText("The engine did not report how the crawl ended, so unexplored flows remain.");
+  await expect(hud.locator(".hud-shield")).toHaveCount(0);
 });
 
 // The crawler telemetry of a recorded AuraScale gate run, and the prompt Python's gate_result
 // (services/repair-orchestrator/app/cli_crawl.py) returns for it: the Inspector must match it exactly.
 const AURASCALE_TELEMETRY = {"status": "failure", "target_url": "http://127.0.0.1:5050/", "elements_explored": 25, "actions_taken": 7, "reproduction_trail": ["1. Open http://127.0.0.1:5050/", "2. Click link \"Explore Pricing\" on / [a:has-text(\"Explore Pricing\")]", "3. Click link \"Start Free\" on /pricing [a:has-text(\"Start Free\")]", "4. Fill \"Full Name\" with \"Alex Tester\" on /signup [#name]", "5. Fill \"Work Email\" with \"test@example.com\" on /signup [#email]", "6. Fill \"Organization Identifier\" with \"FaultLine QA\" on /signup [#org]", "7. Fill \"Cluster Name\" with \"Alex Tester\" on /signup [#cluster_name]", "8. Click button \"🚀 Provision Dedicated Cluster\" on /signup [#btn-activate] -> HTTP 500 on POST /api/provision-cluster"], "screens_visited": [{"url": "http://127.0.0.1:5050/", "path": "/"}, {"url": "http://127.0.0.1:5050/pricing", "path": "/pricing"}, {"url": "http://127.0.0.1:5050/signup", "path": "/signup"}], "actions": [{"step": 2, "action": "click", "label": "Explore Pricing", "selector": "a:has-text(\"Explore Pricing\")", "page": "/", "ok": true}, {"step": 3, "action": "click", "label": "Start Free", "selector": "a:has-text(\"Start Free\")", "page": "/pricing", "ok": true}, {"step": 4, "action": "fill", "label": "Full Name", "selector": "#name", "page": "/signup", "ok": true}, {"step": 5, "action": "fill", "label": "Work Email", "selector": "#email", "page": "/signup", "ok": true}, {"step": 6, "action": "fill", "label": "Organization Identifier", "selector": "#org", "page": "/signup", "ok": true}, {"step": 7, "action": "fill", "label": "Cluster Name", "selector": "#cluster_name", "page": "/signup", "ok": true}, {"step": 8, "action": "click", "label": "🚀 Provision Dedicated Cluster", "selector": "#btn-activate", "page": "/signup", "ok": false}], "failure": {"kind": "http_error", "method": "POST", "url": "http://127.0.0.1:5050/api/provision-cluster", "endpoint": "/api/provision-cluster", "status": 500, "response_body": "{\"status\": 500, \"error\": \"NVMeLeaseAllocationException\", \"message\": \"ResourceExhausted: unable to acquire read/write lock on isolated cgroup enclave #109\", \"code\": \"AURA_RESOURCE_LOCKED\", \"received_payload\": 94}", "step": 8}};
 const AURASCALE_PROMPT = "FaultLine caught an unhandled HTTP 500 error on POST /api/provision-cluster. Triggered by clicking \"🚀 Provision Dedicated Cluster\" (#btn-activate) on /signup.\nServer response: {\"status\": 500, \"error\": \"NVMeLeaseAllocationException\", \"message\": \"ResourceExhausted: unable to acquire read/write lock on isolated cgroup enclave #109\", \"code\": \"AURA_RESOURCE_LOCKED\", \"received_payload\": 94}\nReproduce:\n  1. Open http://127.0.0.1:5050/\n  2. Click link \"Explore Pricing\" on / [a:has-text(\"Explore Pricing\")]\n  3. Click link \"Start Free\" on /pricing [a:has-text(\"Start Free\")]\n  4. Fill \"Full Name\" with \"Alex Tester\" on /signup [#name]\n  5. Fill \"Work Email\" with \"test@example.com\" on /signup [#email]\n  6. Fill \"Organization Identifier\" with \"FaultLine QA\" on /signup [#org]\n  7. Fill \"Cluster Name\" with \"Alex Tester\" on /signup [#cluster_name]\n  8. Click button \"🚀 Provision Dedicated Cluster\" on /signup [#btn-activate] -> HTTP 500 on POST /api/provision-cluster\nFix the server-side exception handling for POST /api/provision-cluster so it no longer returns HTTP 500 before deploying, then re-run `faultline gate http://127.0.0.1:5050/ --json` and continue only when it exits 0.";
+
+// `faultline gate --json` key order, and verdicts Python's gate_result returned for the same
+// crawler reports (generated from cli_crawl.py with the stop_reason contract, November 1, 2026).
+const GATE_KEYS = ["gate_status", "verdict", "exit_code", "target_url", "summary", "elements_explored", "actions_taken", "stop_reason", "screens_visited", "failure", "reproduction_trail", "agent_remediation_prompt", "error"];
+const GATE_EXHAUSTED = {"gate_status": "PASSED", "verdict": "SAFE_TO_DEPLOY", "exit_code": 0, "target_url": "http://localhost:4321/", "summary": "No defects found in explored flows: explored 7 elements across 1 screen with 1 action. This does not establish business completeness.", "elements_explored": 7, "actions_taken": 1, "stop_reason": "exhausted", "screens_visited": [{"url": "http://localhost:4321/", "path": "/"}], "failure": null, "reproduction_trail": [], "agent_remediation_prompt": null, "error": null};
+const GATE_MAX_ACTIONS = {"gate_status": "FAILED", "verdict": "DEPLOYMENT_BLOCKED", "exit_code": 1, "target_url": "http://localhost:4321/", "summary": "Gate inconclusive: Exploration stopped with max_actions after 1 action; completion was not established.", "elements_explored": 2, "actions_taken": 1, "stop_reason": "max_actions", "screens_visited": [{"url": "http://localhost:4321/", "path": "/"}], "failure": null, "reproduction_trail": [], "agent_remediation_prompt": "The FaultLine gate is inconclusive for http://localhost:4321/: Exploration stopped with max_actions after 1 action; completion was not established. Increase --max-actions and --timeout within their supported limits, then re-run `faultline gate http://localhost:4321/ --json`. If exploration still cannot finish, investigate the unfinished flows and retain independent business checks. Do not deploy until the gate exits 0.", "error": {"code": "incomplete_crawl", "message": "Exploration stopped with max_actions after 1 action; completion was not established."}};
+const GATE_NO_REASON = {"gate_status": "FAILED", "verdict": "DEPLOYMENT_BLOCKED", "exit_code": 1, "target_url": "http://localhost:4321/", "summary": "Gate inconclusive: Exploration stopped with no completion reason after 1 action; completion was not established.", "elements_explored": 2, "actions_taken": 1, "stop_reason": null, "screens_visited": [{"url": "http://localhost:4321/", "path": "/"}], "failure": null, "reproduction_trail": [], "agent_remediation_prompt": "The FaultLine gate is inconclusive for http://localhost:4321/: Exploration stopped with no completion reason after 1 action; completion was not established. Increase --max-actions and --timeout within their supported limits, then re-run `faultline gate http://localhost:4321/ --json`. If exploration still cannot finish, investigate the unfinished flows and retain independent business checks. Do not deploy until the gate exits 0.", "error": {"code": "incomplete_crawl", "message": "Exploration stopped with no completion reason after 1 action; completion was not established."}};
 
 test("the pre-flight gate blocks with the CLI's exact fix prompt, clears a clean site, and copies agent snippets", async ({ page, context }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
@@ -692,7 +728,7 @@ test("the pre-flight gate blocks with the CLI's exact fix prompt, clears a clean
     { type: "step", n: 1, action: "visit", target: "http://localhost:4321/", page: "/", ok: true },
     { type: "step", n: 2, action: "click", target: "Docs", page: "/", ok: true },
     { type: "done", steps: 2, defect: false, telemetry: { status: "clean", target_url: "http://localhost:4321/", elements_explored: 7,
-      screens_visited: [{ url: "http://localhost:4321/", path: "/" }], actions_taken: 1, failure: null, reproduction_trail: [] } },
+      screens_visited: [{ url: "http://localhost:4321/", path: "/" }], actions_taken: 1, stop_reason: "exhausted", failure: null, reproduction_trail: [] } },
   ] } });
   await page.goto("/");
   await page.getByRole("link", { name: "Pre-Flight Gate" }).click();
@@ -725,8 +761,9 @@ test("the pre-flight gate blocks with the CLI's exact fix prompt, clears a clean
   expect(verdict).toMatchObject({
     gate_status: "FAILED", verdict: "DEPLOYMENT_BLOCKED", exit_code: 1, target_url: "http://127.0.0.1:5050/",
     summary: "Defect intercepted: HTTP 500 on POST /api/provision-cluster after 7 actions across 3 screens.",
-    elements_explored: 25, agent_remediation_prompt: AURASCALE_PROMPT, error: null,
+    elements_explored: 25, actions_taken: 7, stop_reason: null, agent_remediation_prompt: AURASCALE_PROMPT, error: null,
   });
+  expect(Object.keys(verdict)).toEqual(GATE_KEYS);
   expect(verdict.reproduction_trail).toEqual(AURASCALE_TELEMETRY.reproduction_trail);
 
   // Handing over opens the Mission HUD with its repair offer and keeps the gate's verdict.
@@ -742,7 +779,8 @@ test("the pre-flight gate blocks with the CLI's exact fix prompt, clears a clean
   await expect(gate.locator(".gate-badge")).toHaveText("✅ Verdict: Safe to deploy");
   await expect(gate.locator(".gate-stats")).toContainText("Elements7");
   await expect(gate.locator(".gate-stats")).toContainText("Defects0");
-  await expect(gate).toContainText("No defects found: explored 7 elements across 1 screen with 1 action. faultline gate exits 0");
+  await expect(gate).toContainText(`${GATE_EXHAUSTED.summary} faultline gate exits 0: a smoke signal for the flows it explored, not proof the business logic is right.`);
+  await expect(gate.getByRole("figure")).toHaveCount(0);
 
   // The snippets follow the gated URL; arrow keys move between the tabs.
   const tabs = gate.getByRole("tab");
@@ -754,6 +792,63 @@ test("the pre-flight gate blocks with the CLI's exact fix prompt, clears a clean
   await page.keyboard.press("Home");
   await gate.getByRole("button", { name: "Copy Cursor / Claude Code" }).click();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toContain("2. Run: faultline gate http://localhost:4321/ --json");
+});
+
+test("the gate never clears an unfinished crawl or a direct check, and says so in the CLI's words", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  const visit = { type: "step", n: 1, action: "visit", target: "http://localhost:4321/", page: "/", ok: true };
+  const fill = { type: "step", n: 2, action: "fill", target: "Email", page: "/", ok: true };
+  const report = { status: "clean", target_url: "http://localhost:4321/", elements_explored: 2,
+    screens_visited: [{ url: "http://localhost:4321/", path: "/" }], actions_taken: 1, failure: null, reproduction_trail: [] };
+  let telemetry: object | null = { ...report, stop_reason: "max_actions" };
+  await mock(page, {
+    crawl: () => telemetry ? { status: 200, ndjson: [visit, fill, { type: "done", steps: 2, defect: false, telemetry }] }
+      : { status: 404, json: { error: { code: "not_found" } } },
+    onCheck: (invariantId) => check(invariantId, "no_failure"),
+  });
+  await page.goto("/");
+  const gate = page.getByRole("region", { name: "Nothing ships until the gate clears it." });
+  const run = async () => {
+    await gate.getByRole("textbox", { name: "Target preview URL" }).fill("localhost:4321/");
+    await gate.getByRole("button", { name: "Run Pre-Flight Gate" }).click();
+  };
+  const copiedJson = async () => {
+    await gate.getByRole("figure").getByRole("button", { name: "JSON" }).click();
+    await gate.getByRole("figure").getByRole("button", { name: "Copy the JSON verdict" }).click();
+    return JSON.parse(await page.evaluate(() => navigator.clipboard.readText()));
+  };
+
+  // The action budget ran out before exploration finished: blocked, inconclusive, no defect.
+  await run();
+  await expect(gate).toHaveAttribute("data-verdict", "inconclusive");
+  await expect(gate.locator(".gate-badge")).toHaveText("🛡️ Verdict: Inconclusive · deployment blocked");
+  await expect(gate.locator(".seis")).toHaveAttribute("data-mode", "still");
+  await expect(gate.locator(".gate-stats")).toContainText("Stopped bymax_actions");
+  await expect(gate.locator(".gate-stats")).not.toContainText("Defects");
+  await expect(gate).toContainText(`No defect in the flows it explored, but exploration did not finish, so this is not a pass. ${GATE_MAX_ACTIONS.summary} faultline gate exits 1 here too.`);
+  await expect(gate.getByRole("figure").locator("pre")).toHaveText(GATE_MAX_ACTIONS.agent_remediation_prompt);
+  await expect(gate.getByRole("figure")).toContainText("The same agent_remediation_prompt and verdict that faultline gate --json returns for this run.");
+  let verdict = await copiedJson();
+  expect(verdict).toEqual(GATE_MAX_ACTIONS);
+  expect(Object.keys(verdict)).toEqual(GATE_KEYS);
+
+  // A report that does not say why the crawl stopped is not a pass either.
+  telemetry = report;
+  await run();
+  await expect(gate).toHaveAttribute("data-verdict", "inconclusive");
+  await expect(gate.getByRole("figure").locator("pre")).toHaveText(GATE_NO_REASON.agent_remediation_prompt);
+  verdict = await copiedJson();
+  expect(verdict).toEqual(GATE_NO_REASON);
+
+  // Without the crawler, a passing direct HTTP check stands in on the HUD but cannot clear the gate.
+  telemetry = null;
+  await run();
+  await expect(gate).toHaveAttribute("data-verdict", "inconclusive");
+  await expect(gate.locator(".gate-badge")).toHaveText("🛡️ Verdict: Inconclusive · deployment blocked");
+  await expect(gate).toContainText("The gate could not finish, so it fails closed. The Playwright crawler did not run. A direct HTTP check passed, but one request is not a crawl of the preview. faultline gate exits 1 here too.");
+  verdict = await copiedJson();
+  expect(verdict).toMatchObject({ verdict: "DEPLOYMENT_BLOCKED", exit_code: 1, failure: null, actions_taken: 0, stop_reason: null, error: { code: "crawl_error" } });
+  await expect(gate.getByRole("figure")).toContainText("Built from this run in the faultline gate --json format.");
 });
 
 test("the mission HUD repairs, verifies, and applies the fix it caught", async ({ page }) => {
