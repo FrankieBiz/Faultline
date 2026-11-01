@@ -396,7 +396,9 @@ class ProjectRuntime(IsolatedRuntime):
         holder: list[BackendResources] = []
         started = time.monotonic()
         engine = ReproEngine(lambda: self._session(job_id, snapshot, directory, holder))
-        result = await engine.run(self.run.repro)
+        # Bound startup as well as reproduction; session cancellation still awaits owned cleanup.
+        async with asyncio.timeout(timeout_ms / 1000):
+            result = await engine.run(self.run.repro)
         if result.error == _BrowserStartupUnavailable.__name__:
             # The session has already cleaned up. Do not turn a known launch
             # failure into an artifact error or fabricate missing captures.

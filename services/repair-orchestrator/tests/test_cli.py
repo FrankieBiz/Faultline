@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import difflib
 import http.client
 import json
 import os
@@ -411,6 +412,51 @@ def test_apply_and_revert_helpers() -> None:
     # Revert to seeded
     revert_res = revert_to_seeded()
     assert revert_res["success"]
+
+
+@pytest.mark.parametrize("via_database", [True, False])
+@pytest.mark.parametrize("unsafe", [True, False])
+def test_apply_patch_rechecks_policy_before_writing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, via_database: bool, unsafe: bool
+) -> None:
+    from app import cli
+
+    source = cli.SEEDED_FILE.read_text()
+    candidate = cli.HEALTHY_FILE.read_text()
+    if unsafe:
+        candidate += '\nopen("/tmp/should-never-be-written", "w")\n'
+    target = tmp_path / "checkout.py"
+    target.write_text(source)
+    monkeypatch.setattr(cli, "TARGET_FILE", target)
+    monkeypatch.setattr(cli, "DATA_DIR", tmp_path / "data")
+    path = "apps/buggyshop-backend/app/routes/checkout.py"
+    diff = "".join(
+        difflib.unified_diff(
+            source.splitlines(keepends=True),
+            candidate.splitlines(keepends=True),
+            fromfile=f"a/{path}",
+            tofile=f"b/{path}",
+        )
+    )
+    database = None
+    if via_database:
+        database = MagicMock()
+        database.get_job.return_value = MagicMock(state="succeeded", outcome="verified")
+        database.list_attempts.return_value = [MagicMock(outcome="verified", parsed_diff=diff)]
+    else:
+        monkeypatch.setattr(
+            cli,
+            "_api_request",
+            lambda *args, **kwargs: {
+                "job": {"state": "succeeded", "outcome": "verified"},
+                "attempts": [{"outcome": "verified", "parsed_diff": diff}],
+            },
+        )
+    result = apply_patch_for_job("verified-job", database=database)
+    assert result["success"] is not unsafe
+    assert target.read_text() == (source if unsafe else candidate)
+    if unsafe:
+        assert result["error_code"] == "patch_policy_rejected"
 
 
 JOB_ID = "7f3c2a1e-0000-4000-8000-000000000000"

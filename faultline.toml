@@ -1,4 +1,3 @@
-#:schema ./.faultline/schema-v1.json
 # FaultLine Configuration Schema v1
 schema = 1
 

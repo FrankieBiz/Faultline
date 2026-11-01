@@ -1,5 +1,6 @@
 """Project selection, immutable inputs, F1 admission, and real namespace execution."""
 
+import asyncio
 import difflib
 import hashlib
 import json
@@ -186,6 +187,61 @@ async def test_snapshot_freezes_dirty_tracked_bytes_and_rejects_mutated_identity
     (candidate.path / "server.js").write_text("tampered")
     with pytest.raises(RuntimeUnavailable, match="identity"):
         runtime._verify_project_snapshot(candidate)
+
+
+@pytest.mark.parametrize("stage", ["startup", "reproduction"])
+async def test_project_execution_timeout_cleans_up_session(
+    project: tuple[Path, ProjectRun], tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stage: str
+) -> None:
+    root, run = project
+    runtime = ProjectRuntime(root, run)
+    snapshots = ProjectSnapshots(tmp_path / "data", root, run)
+    job_id = str(uuid4())
+    snapshot = await snapshots.create(job_id, await snapshots.manifest())
+    started = asyncio.Event()
+    cancelled = asyncio.Event()
+
+    async def hang(*args: Any) -> None:
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
+
+    release = AsyncMock()
+    if stage == "startup":
+        monkeypatch.setattr(runtime, "_launch_service", hang)
+    else:
+        runtime.node = "/trusted/node"
+        runtime.playwright = tmp_path / "playwright.mjs"
+        browser = SimpleNamespace(
+            process=SimpleNamespace(
+                stdout=SimpleNamespace(readline=AsyncMock(return_value=b'{"ready":true}\n'))
+            ),
+            stop=AsyncMock(),
+        )
+        monkeypatch.setattr(runtime, "_launch_service", AsyncMock())
+        monkeypatch.setattr(runtime, "_start_bridge", AsyncMock(return_value="http://127.0.0.1:1"))
+        monkeypatch.setattr(ManagedProcess, "start", AsyncMock(return_value=browser))
+        monkeypatch.setattr("app.project_runtime.BrowserSession.perform", hang)
+    monkeypatch.setattr(runtime, "_release_session", release)
+    monkeypatch.setattr(runtime, "scope_unit", lambda _: None)
+    # The outer watchdog keeps this regression fast even before the fix.
+    execution = asyncio.create_task(runtime.execute(job_id, str(uuid4()), "baseline", snapshot, 20))
+    try:
+        await asyncio.wait_for(started.wait(), timeout=1)
+        done, _ = await asyncio.wait({execution}, timeout=0.5)
+        assert execution in done, "execute ignored its 20 ms timeout budget"
+        with pytest.raises(TimeoutError):
+            await execution
+        assert cancelled.is_set()
+        release.assert_awaited_once()
+        assert not runtime.sessions
+        if stage == "reproduction":
+            browser.stop.assert_awaited_once()
+    finally:
+        execution.cancel()
+        await asyncio.gather(execution, return_exceptions=True)
 
 
 def test_policy_and_prompt_follow_selected_target(project: tuple[Path, ProjectRun]) -> None:

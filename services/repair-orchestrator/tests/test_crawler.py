@@ -345,19 +345,21 @@ def client(harness: Harness) -> Iterator[TestClient]:
         yield value
 
 
+@pytest.mark.parametrize("path", ["/api/faultline/crawl", "/api/crawl"])
 def test_crawl_endpoint_requires_the_control_token(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, path: str
 ) -> None:
     called: list[str] = []
     monkeypatch.setattr(crawler_service, "run_crawl", lambda url, **_: called.append(url))
-    response = client.post("/api/crawl", json={"url": "http://127.0.0.1:3000"})
+    response = client.post(path, json={"url": "http://127.0.0.1:3000"})
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "unauthorized"
     assert called == []
 
 
+@pytest.mark.parametrize("path", ["/api/faultline/crawl", "/api/crawl"])
 def test_crawl_endpoint_returns_the_report(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, path: str
 ) -> None:
     calls: list[tuple[str, dict[str, Any]]] = []
 
@@ -366,7 +368,7 @@ def test_crawl_endpoint_returns_the_report(
         return FAILURE_REPORT
 
     monkeypatch.setattr(crawler_service, "run_crawl", fake)
-    response = client.post("/api/crawl", json={"url": "http://127.0.0.1:3000"}, headers=HEADERS)
+    response = client.post(path, json={"url": "http://127.0.0.1:3000"}, headers=HEADERS)
     assert response.status_code == 200
     body = response.json()
     assert body == {**FAILURE_REPORT, **crawler_service.telemetry(FAILURE_REPORT)}
@@ -382,12 +384,13 @@ def test_crawl_endpoint_returns_the_report(
     assert calls == [("http://127.0.0.1:3000", {"max_actions": 15})]
 
     response = client.post(
-        "/api/crawl", json={"url": "http://127.0.0.1:3000", "max_actions": 40}, headers=HEADERS
+        path, json={"url": "http://127.0.0.1:3000", "max_actions": 40}, headers=HEADERS
     )
     assert response.status_code == 200
     assert calls[-1] == ("http://127.0.0.1:3000", {"max_actions": 40})
 
 
+@pytest.mark.parametrize("path", ["/api/faultline/crawl", "/api/crawl"])
 @pytest.mark.parametrize(
     "body",
     [
@@ -398,25 +401,26 @@ def test_crawl_endpoint_returns_the_report(
     ],
 )
 def test_crawl_endpoint_validates_the_body(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch, body: dict[str, Any]
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, body: dict[str, Any], path: str
 ) -> None:
     monkeypatch.setattr(crawler_service, "run_crawl", lambda url, **_: pytest.fail("ran"))
-    response = client.post("/api/crawl", json=body, headers=HEADERS)
+    response = client.post(path, json=body, headers=HEADERS)
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "invalid_request"
 
 
+@pytest.mark.parametrize("path", ["/api/faultline/crawl", "/api/crawl"])
 @pytest.mark.parametrize(
     "code,status", [("invalid_url", 422), ("runner_unavailable", 503), ("runner_failed", 502)]
 )
 def test_crawl_endpoint_maps_crawl_errors(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch, code: str, status: int
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, code: str, status: int, path: str
 ) -> None:
     def fail(url: str, **_: Any) -> dict[str, Any]:
         raise CrawlError(code, "detail that stays server-side")
 
     monkeypatch.setattr(crawler_service, "run_crawl", fail)
-    response = client.post("/api/crawl", json={"url": "ftp://x"}, headers=HEADERS)
+    response = client.post(path, json={"url": "ftp://x"}, headers=HEADERS)
     assert response.status_code == status
     assert response.json()["error"]["code"] == code
 
@@ -614,6 +618,8 @@ def test_crawl_command_reports_crawl_errors(
 
 # --- POST /api/faultline/crawl (Inspector HUD stream) --------------------------
 
+HUD_HEADERS = {**HEADERS, "Accept": "application/x-ndjson"}
+
 RUNNER_EVENTS: list[dict[str, Any]] = [
     {"type": "launch"},
     {"type": "navigate", "step": 1, "url": "http://127.0.0.1:3000/"},
@@ -760,8 +766,9 @@ def _ndjson(response: Any) -> list[dict[str, Any]]:
     return [json.loads(line) for line in response.text.splitlines() if line.strip()]
 
 
+@pytest.mark.parametrize("explicit_accept", [True, False])
 def test_inspector_crawl_streams_hud_events(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, explicit_accept: bool
 ) -> None:
     seen: dict[str, Any] = {}
 
@@ -776,7 +783,7 @@ def test_inspector_crawl_streams_hud_events(
     response = client.post(
         "/api/faultline/crawl",
         json={"url": "http://127.0.0.1:3000/", "max_steps": 25},
-        headers=HEADERS,
+        headers=HUD_HEADERS if explicit_accept else HEADERS,
     )
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/x-ndjson")
@@ -784,7 +791,14 @@ def test_inspector_crawl_streams_hud_events(
     assert seen == {"url": "http://127.0.0.1:3000/", "max_actions": 25}
     # The lock is free again once the stream ends.
     monkeypatch.setattr(crawler_service, "run_crawl", lambda url, **_: CLEAN_REPORT)
-    assert client.post("/api/crawl", json={"url": "http://x"}, headers=HEADERS).status_code == 200
+    assert (
+        client.post(
+            "/api/crawl",
+            json={"url": "http://x"},
+            headers=HEADERS,
+        ).status_code
+        == 200
+    )
 
 
 def test_inspector_crawl_streams_runner_failures_as_error_events(
@@ -795,7 +809,11 @@ def test_inspector_crawl_streams_runner_failures_as_error_events(
 
     monkeypatch.setattr(crawler_service, "ensure_runner", lambda: "node")
     monkeypatch.setattr(crawler_service, "run_crawl", fail)
-    response = client.post("/api/faultline/crawl", json={"url": "http://x/"}, headers=HEADERS)
+    response = client.post(
+        "/api/faultline/crawl",
+        json={"url": "http://x/"},
+        headers=HUD_HEADERS,
+    )
     assert response.status_code == 200
     assert _ndjson(response) == [
         {"type": "error", "message": "The browser runner exited with code 2"}
@@ -807,10 +825,16 @@ def test_inspector_crawl_rejects_before_streaming(
 ) -> None:
     monkeypatch.setattr(crawler_service, "run_crawl", lambda url, **_: pytest.fail("ran"))
     assert client.post("/api/faultline/crawl", json={"url": "http://x"}).status_code == 401
-    bad_url = client.post("/api/faultline/crawl", json={"url": "ftp://x"}, headers=HEADERS)
+    bad_url = client.post(
+        "/api/faultline/crawl",
+        json={"url": "ftp://x"},
+        headers=HUD_HEADERS,
+    )
     assert (bad_url.status_code, bad_url.json()["error"]["code"]) == (422, "invalid_url")
     bad_steps = client.post(
-        "/api/faultline/crawl", json={"url": "http://x", "max_steps": 0}, headers=HEADERS
+        "/api/faultline/crawl",
+        json={"url": "http://x", "max_steps": 0},
+        headers=HUD_HEADERS,
     )
     assert bad_steps.status_code == 422
 
@@ -818,7 +842,11 @@ def test_inspector_crawl_rejects_before_streaming(
         raise CrawlError("runner_unavailable", "not built")
 
     monkeypatch.setattr(crawler_service, "ensure_runner", missing)
-    unavailable = client.post("/api/faultline/crawl", json={"url": "http://x"}, headers=HEADERS)
+    unavailable = client.post(
+        "/api/faultline/crawl",
+        json={"url": "http://x"},
+        headers=HUD_HEADERS,
+    )
     # 503 tells the Inspector to retry, then stand in a direct HTTP check.
     assert (unavailable.status_code, unavailable.json()["error"]["code"]) == (
         503,
@@ -841,13 +869,21 @@ def test_inspector_crawl_shares_the_single_crawl_lock(
     first: dict[str, Any] = {}
     thread = threading.Thread(
         target=lambda: first.update(
-            response=client.post("/api/crawl", json={"url": "http://x"}, headers=HEADERS)
+            response=client.post(
+                "/api/crawl",
+                json={"url": "http://x"},
+                headers=HEADERS,
+            )
         )
     )
     thread.start()
     try:
         assert started.wait(10)
-        busy = client.post("/api/faultline/crawl", json={"url": "http://x"}, headers=HEADERS)
+        busy = client.post(
+            "/api/faultline/crawl",
+            json={"url": "http://x"},
+            headers=HUD_HEADERS,
+        )
         assert (busy.status_code, busy.json()["error"]["code"]) == (409, "crawl_in_progress")
     finally:
         release.set()
@@ -863,7 +899,9 @@ def test_inspector_crawl_streams_a_real_chromium_defect(
     client: TestClient, broken_shop: str
 ) -> None:
     response = client.post(
-        "/api/faultline/crawl", json={"url": broken_shop, "max_steps": 5}, headers=HEADERS
+        "/api/faultline/crawl",
+        json={"url": broken_shop, "max_steps": 5},
+        headers=HUD_HEADERS,
     )
     events = _ndjson(response)
     assert response.status_code == 200

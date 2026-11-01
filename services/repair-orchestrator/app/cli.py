@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import ast
 import asyncio
 import http.client
 import json
@@ -575,10 +574,17 @@ def apply_patch_for_job(
 
     try:
         from app.policy import parse_unified_diff
+        from app.policy import validate_patch as validate_patch_policy
 
+        validation = validate_patch_policy(diff, original_source)
+        if not validation.is_valid:
+            return {
+                "success": False,
+                "error_code": "patch_policy_rejected",
+                "message": validation.error_message or "Patch policy rejected the candidate",
+            }
         parsed = parse_unified_diff(diff, original_source)
         candidate_source = parsed.patched_source
-        ast.parse(candidate_source)
         TARGET_FILE.write_text(candidate_source)
         return {
             "success": True,

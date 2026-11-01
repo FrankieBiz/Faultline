@@ -1,10 +1,12 @@
 """Controller routes for the autonomous crawler.
 
-``POST /api/crawl`` runs a crawl and returns the runner's CrawlReport merged
-with its structured telemetry (``crawler_service.telemetry``).
-``POST /api/faultline/crawl`` streams the same crawl to the Inspector HUD as
+``POST /api/faultline/crawl`` runs a crawl and returns the runner's CrawlReport
+merged with its structured telemetry (``crawler_service.telemetry``).
+``POST /api/crawl`` is the compatibility alias for the JSON report.
+The primary route also streams the same crawl to the Inspector HUD as
 NDJSON in its event vocabulary (``scan``, ``step``, ``defect``, ``done``,
 ``error``; see ``CrawlEvent`` in ``web/inspector-ui/src/lib/faultline-api.ts``).
+Clients request streaming with ``Accept: application/x-ndjson`` or ``max_steps``.
 The closing ``done`` event carries the telemetry as ``telemetry``.
 """
 
@@ -18,7 +20,7 @@ import urllib.parse
 from collections.abc import Iterator, Sequence
 from typing import Any
 
-from fastapi import APIRouter, params
+from fastapi import APIRouter, Request, params
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -35,7 +37,7 @@ MAX_FINGERPRINT_CHARS = 300
 
 
 class CrawlRequest(BaseModel):
-    """Body of ``POST /api/crawl``."""
+    """JSON report request for the primary crawl route and its alias."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -188,7 +190,7 @@ def build_crawl_router(dependencies: Sequence[params.Depends]) -> APIRouter:
     # One Chromium crawl at a time per controller, across both routes.
     busy = threading.Lock()
 
-    @router.post("/api/crawl")
+    @router.post("/api/crawl", include_in_schema=False)
     def crawl(body: CrawlRequest) -> dict[str, Any]:
         """Crawl a URL in headless Chromium until something breaks; return report and telemetry."""
         if not busy.acquire(blocking=False):
@@ -201,7 +203,6 @@ def build_crawl_router(dependencies: Sequence[params.Depends]) -> APIRouter:
         finally:
             busy.release()
 
-    @router.post("/api/faultline/crawl")
     def inspector_crawl(body: InspectorCrawlRequest) -> StreamingResponse:
         """Stream a crawl to the Inspector HUD as NDJSON events."""
         try:
@@ -248,5 +249,16 @@ def build_crawl_router(dependencies: Sequence[params.Depends]) -> APIRouter:
             media_type="application/x-ndjson",
             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
         )
+
+    @router.post("/api/faultline/crawl", response_model=None)
+    def primary_crawl(
+        body: CrawlRequest | InspectorCrawlRequest, request: Request
+    ) -> dict[str, Any] | StreamingResponse:
+        """Return the crawl report, or stream HUD events when requested by the Inspector."""
+        if isinstance(body, InspectorCrawlRequest):
+            return inspector_crawl(body)
+        if "application/x-ndjson" in request.headers.get("accept", ""):
+            return inspector_crawl(InspectorCrawlRequest(url=body.url, max_steps=body.max_actions))
+        return crawl(body)
 
     return router

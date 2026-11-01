@@ -14,7 +14,7 @@
  */
 
 /** Canonical execution verdict: assertion failures are separate from errors. */
-export type ExecutionVerdict = "passed" | "failed" | "error";
+export type ExecutionVerdict = "passed" | "failed" | "error" | "timed_out";
 
 /** Category of a failure observation. Several may be reported per execution. */
 export type ObservationKind =
@@ -65,8 +65,8 @@ export interface ExecutionReport {
 
 /**
  * Finer-grained run outcome used for the CLI exit code (SpecV1 §4). The
- * canonical verdict has no timeout value, so a timed-out run reports
- * `error` and keeps the distinction in its exit code and observations.
+ * runner reports a timed-out run as `error` and keeps the distinction in its
+ * exit code and observations; the controller normalizes it to `timed_out`.
  */
 export type RunOutcome = "passed" | "assertion_failed" | "infrastructure_error" | "timed_out";
 

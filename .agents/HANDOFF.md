@@ -1,5 +1,13 @@
 # Agent handoff state
 
+## November 1: backend audit fixes (codex-backend-audit-fixes)
+
+- `ProjectRuntime.execute` enforces its caller's millisecond budget across service/browser startup and reproduction with `asyncio.timeout`. Owned session cleanup remains shielded and awaited before timeout propagation. Regression tests cover cancellation during startup and active reproduction.
+- `/api/faultline/crawl` is the primary JSON-report route; `/api/crawl` remains its compatibility alias. The existing Inspector stream is preserved when clients send `Accept: application/x-ndjson` or the `max_steps` body. Both routes retain authorization, request validation, error mapping, and the shared crawl lock.
+- `apply_patch_for_job` re-runs the existing `app.policy.validate_patch` entry point (locally named `validate_patch_policy`) against the current target source before writing. Tests cover safe and policy-forbidden candidates through both database and HTTP job retrieval.
+- Added `timed_out` to the TypeScript execution verdict union and removed the nonexistent root TOML schema directive. Runner timeout wire encoding remains compatible with the existing controller normalization.
+- Verification: `make check` exited 0: 324 backend/script + 942 orchestrator + 123 runner tests passed; 23 optional PowerShell/native-Windows tests skipped on that initial run. Lint/format, strict mypy across 94 source files, provenance, all frontend/runner/Inspector builds, and both Python distribution builds passed. The required finish command repeats the checks with the available local PowerShell binary enabled. A fresh controller's `/healthz` passed `faultline gate` with exploration exhausted (one screen, zero interactive elements); the temporary server was stopped. This gate is an HTTP smoke check; crawl behavior is covered by the controller and real-Chromium tests.
+
 ## November 1: Windows controller import and demo builds (codex-windows-fcntl-fix)
 
 - Guarded the `app.run` import of `fcntl`, which `app.main` reaches through `project_budgets`. `run_project` falls back to a nonblocking `msvcrt` byte lock and releases it on success or worker failure; Unix retains `flock`.
