@@ -1,0 +1,62 @@
+{
+  "gate_status": "PASSED",
+  "verdict": "SAFE_TO_DEPLOY",
+  "exit_code": 0,
+  "target_url": "http://127.0.0.1:3400/",
+  "summary": "No defects found: explored 45 elements across 4 screens with 12 actions.",
+  "elements_explored": 45,
+  "screens_visited": [
+    {
+      "url": "http://127.0.0.1:3400/",
+      "path": "/",
+      "title": "BuggyShop",
+      "elements": 9,
+      "forms": 0,
+      "first_step": 1
+    },
+    {
+      "url": "http://127.0.0.1:3400/product/trail-mug",
+      "path": "/product/trail-mug",
+      "title": "Product details | BuggyShop",
+      "elements": 8,
+      "forms": 1,
+      "first_step": 2
+    },
+    {
+      "url": "http://127.0.0.1:3400/checkout",
+      "path": "/checkout",
+      "title": "Checkout | BuggyShop",
+      "elements": 11,
+      "forms": 1,
+      "first_step": 4
+    },
+    {
+      "url": "http://127.0.0.1:3400/product/field-notebook",
+      "path": "/product/field-notebook",
+      "title": "Product details | BuggyShop",
+      "elements": 8,
+      "forms": 1,
+      "first_step": 9
+    }
+  ],
+  "failure": null,
+  "reproduction_trail": [
+    "1. Open http://127.0.0.1:3400/",
+    "2. Click link \"Trail Mug\" on / [a:has-text(\"Trail Mug\") >> nth=0]",
+    "3. Click button \"Add to cart\" on /product/trail-mug [button:has-text(\"Add to cart\")]",
+    "4. Click link \"Go to checkout\" on /product/trail-mug [a:has-text(\"Go to checkout\")]",
+    "5. Fill \"Name\" with \"Alex Tester\" on /checkout [#name]",
+    "6. Fill \"Email\" with \"test@example.com\" on /checkout [#email]",
+    "7. Fill \"Address\" with \"123 Main St\" on /checkout [#address]",
+    "8. Click button \"Place order\" on /checkout [button:has-text(\"Place order\")]",
+    "9. Open http://127.0.0.1:3400/product/field-notebook",
+    "10. Click button \"Add to cart\" on /product/field-notebook [button:has-text(\"Add to cart\")]",
+    "11. Click button \"Increase quantity\" on /product/field-notebook [button:has-text(\"+\")]",
+    "12. Click button \"Decrease quantity\" on /product/field-notebook [button:has-text(\"−\")]",
+    "13. Open http://127.0.0.1:3400/",
+    "14. Click button \"Add to cart\" on / [button:has-text(\"Add to cart\") >> nth=0]",
+    "15. Click button \"Add to cart\" on / [button:has-text(\"Add to cart\") >> nth=1]"
+  ],
+  "agent_remediation_prompt": null,
+  "error": null
+}

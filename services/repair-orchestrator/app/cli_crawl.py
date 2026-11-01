@@ -463,7 +463,8 @@ def _trigger(report: dict[str, Any], failure: dict[str, Any]) -> str | None:
         return None
     verb = _GATE_VERBS.get(str(crumb.get("action")), str(crumb.get("action")))
     label = crumb.get("label")
-    target = json.dumps(label) if label else str(crumb.get("selector"))
+    # Keep non-ASCII labels (emoji, accents) readable in a prompt meant for people and models.
+    target = json.dumps(label, ensure_ascii=False) if label else str(crumb.get("selector"))
     if label and crumb.get("selector"):
         target += f" ({crumb['selector']})"
     page = urllib.parse.urlsplit(str(crumb.get("url", ""))).path or "/"

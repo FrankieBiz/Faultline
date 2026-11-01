@@ -275,6 +275,25 @@ function errorOf(response: Response, body: unknown): ApiError {
  * One event of a Playwright chaos crawl. The controller loads the page, counts what can be
  * clicked or submitted, then works through it until a request fails or the step budget runs out.
  */
+/** The crawler's first defect signal, as `crawler_service.telemetry` reports it. */
+export interface CrawlFailure {
+  kind: "http_error" | "request_failed" | "page_error" | "console_error";
+  method?: string; url?: string; endpoint?: string; status?: number | null;
+  message?: string | null; response_body?: string | null; stack?: string | null;
+  step?: number; console_errors?: string[];
+}
+
+/** `crawler_service.telemetry(report)`, sent with the final `done` event. */
+export interface CrawlTelemetry {
+  status?: string; target_url?: string; elements_explored?: number;
+  screens_visited?: { url?: string; path?: string; title?: string; elements?: number; forms?: number }[];
+  actions_taken?: number;
+  actions?: { step: number; action: string; label?: string | null; selector?: string | null; page?: string; ok: boolean }[];
+  failure?: CrawlFailure | null;
+  reproduction_trail?: string[];
+  duration_ms?: number | null;
+}
+
 export type CrawlEvent =
   | { type: "scan"; url: string; buttons: number; forms: number; links: number }
   | {
@@ -289,7 +308,7 @@ export type CrawlEvent =
     /** The registered repair scenario covering this route, when the controller knows one. */
     scenario_id?: string | null;
   }
-  | { type: "done"; steps: number; defect: boolean }
+  | { type: "done"; steps: number; defect: boolean; telemetry?: CrawlTelemetry }
   | { type: "error"; message: string };
 
 /** Thrown when a crawl stream breaks after events arrived, so it is not mistaken for a crawler still starting. */

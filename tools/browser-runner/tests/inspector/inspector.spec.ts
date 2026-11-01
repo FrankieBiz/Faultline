@@ -664,6 +664,93 @@ test("a hunt that finds nothing ends on the clean shield", async ({ page }) => {
   await expect(hud.getByRole("alert")).toHaveCount(0);
 });
 
+// The crawler telemetry of a recorded AuraScale gate run, and the prompt Python's gate_result
+// (services/repair-orchestrator/app/cli_crawl.py) returns for it: the Inspector must match it exactly.
+const AURASCALE_TELEMETRY = {"status": "failure", "target_url": "http://127.0.0.1:5050/", "elements_explored": 25, "actions_taken": 7, "reproduction_trail": ["1. Open http://127.0.0.1:5050/", "2. Click link \"Explore Pricing\" on / [a:has-text(\"Explore Pricing\")]", "3. Click link \"Start Free\" on /pricing [a:has-text(\"Start Free\")]", "4. Fill \"Full Name\" with \"Alex Tester\" on /signup [#name]", "5. Fill \"Work Email\" with \"test@example.com\" on /signup [#email]", "6. Fill \"Organization Identifier\" with \"FaultLine QA\" on /signup [#org]", "7. Fill \"Cluster Name\" with \"Alex Tester\" on /signup [#cluster_name]", "8. Click button \"🚀 Provision Dedicated Cluster\" on /signup [#btn-activate] -> HTTP 500 on POST /api/provision-cluster"], "screens_visited": [{"url": "http://127.0.0.1:5050/", "path": "/"}, {"url": "http://127.0.0.1:5050/pricing", "path": "/pricing"}, {"url": "http://127.0.0.1:5050/signup", "path": "/signup"}], "actions": [{"step": 2, "action": "click", "label": "Explore Pricing", "selector": "a:has-text(\"Explore Pricing\")", "page": "/", "ok": true}, {"step": 3, "action": "click", "label": "Start Free", "selector": "a:has-text(\"Start Free\")", "page": "/pricing", "ok": true}, {"step": 4, "action": "fill", "label": "Full Name", "selector": "#name", "page": "/signup", "ok": true}, {"step": 5, "action": "fill", "label": "Work Email", "selector": "#email", "page": "/signup", "ok": true}, {"step": 6, "action": "fill", "label": "Organization Identifier", "selector": "#org", "page": "/signup", "ok": true}, {"step": 7, "action": "fill", "label": "Cluster Name", "selector": "#cluster_name", "page": "/signup", "ok": true}, {"step": 8, "action": "click", "label": "🚀 Provision Dedicated Cluster", "selector": "#btn-activate", "page": "/signup", "ok": false}], "failure": {"kind": "http_error", "method": "POST", "url": "http://127.0.0.1:5050/api/provision-cluster", "endpoint": "/api/provision-cluster", "status": 500, "response_body": "{\"status\": 500, \"error\": \"NVMeLeaseAllocationException\", \"message\": \"ResourceExhausted: unable to acquire read/write lock on isolated cgroup enclave #109\", \"code\": \"AURA_RESOURCE_LOCKED\", \"received_payload\": 94}", "step": 8}};
+const AURASCALE_PROMPT = "FaultLine caught an unhandled HTTP 500 error on POST /api/provision-cluster. Triggered by clicking \"🚀 Provision Dedicated Cluster\" (#btn-activate) on /signup.\nServer response: {\"status\": 500, \"error\": \"NVMeLeaseAllocationException\", \"message\": \"ResourceExhausted: unable to acquire read/write lock on isolated cgroup enclave #109\", \"code\": \"AURA_RESOURCE_LOCKED\", \"received_payload\": 94}\nReproduce:\n  1. Open http://127.0.0.1:5050/\n  2. Click link \"Explore Pricing\" on / [a:has-text(\"Explore Pricing\")]\n  3. Click link \"Start Free\" on /pricing [a:has-text(\"Start Free\")]\n  4. Fill \"Full Name\" with \"Alex Tester\" on /signup [#name]\n  5. Fill \"Work Email\" with \"test@example.com\" on /signup [#email]\n  6. Fill \"Organization Identifier\" with \"FaultLine QA\" on /signup [#org]\n  7. Fill \"Cluster Name\" with \"Alex Tester\" on /signup [#cluster_name]\n  8. Click button \"🚀 Provision Dedicated Cluster\" on /signup [#btn-activate] -> HTTP 500 on POST /api/provision-cluster\nFix the server-side exception handling for POST /api/provision-cluster so it no longer returns HTTP 500 before deploying, then re-run `faultline gate http://127.0.0.1:5050/ --json` and continue only when it exits 0.";
+
+test("the pre-flight gate blocks with the CLI's exact fix prompt, clears a clean site, and copies agent snippets", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  const calls = await mock(page, { crawl: (body) => body.url === "http://127.0.0.1:5050" ? { status: 200, ndjson: [
+    { type: "step", n: 1, action: "visit", target: "http://127.0.0.1:5050/", page: "/", ok: true },
+    { type: "scan", url: "http://127.0.0.1:5050/", buttons: 3, forms: 0, links: 6 },
+    { type: "step", n: 2, action: "click", target: "Explore Pricing", page: "/", ok: true },
+    { type: "step", n: 3, action: "click", target: "Start Free", page: "/pricing", ok: true },
+    { type: "step", n: 4, action: "fill", target: "Full Name", page: "/signup", ok: true },
+    { type: "step", n: 5, action: "fill", target: "Work Email", page: "/signup", ok: true },
+    { type: "step", n: 6, action: "fill", target: "Organization Identifier", page: "/signup", ok: true },
+    { type: "step", n: 7, action: "fill", target: "Cluster Name", page: "/signup", ok: true },
+    { type: "step", n: 8, action: "click", target: "🚀 Provision Dedicated Cluster", page: "/signup", ok: false, note: "HTTP 500" },
+    { type: "defect", method: "POST", path: "/api/provision-cluster", status: 500, trigger: { kind: "Button", label: "🚀 Provision Dedicated Cluster", page: "/signup" } },
+    { type: "done", steps: 8, defect: true, telemetry: AURASCALE_TELEMETRY },
+  ] } : { status: 200, ndjson: [
+    { type: "step", n: 1, action: "visit", target: "http://localhost:4321/", page: "/", ok: true },
+    { type: "step", n: 2, action: "click", target: "Docs", page: "/", ok: true },
+    { type: "done", steps: 2, defect: false, telemetry: { status: "clean", target_url: "http://localhost:4321/", elements_explored: 7,
+      screens_visited: [{ url: "http://localhost:4321/", path: "/" }], actions_taken: 1, failure: null, reproduction_trail: [] } },
+  ] } });
+  await page.goto("/");
+  await page.getByRole("link", { name: "Pre-Flight Gate" }).click();
+  const gate = page.getByRole("region", { name: "Nothing ships until the gate clears it." });
+  await expect(gate).toHaveAttribute("data-verdict", "idle");
+  await expect(gate.getByRole("button", { name: /AuraScale Cloud \(:5050\)/ })).toContainText("Defect → Deployment Blocked!");
+
+  // One click runs the real crawl; the verdict shows in the gate, and the Mission HUD stays closed.
+  await gate.getByRole("button", { name: /AuraScale Cloud/ }).click();
+  await expect(gate).toHaveAttribute("data-verdict", "blocked");
+  expect(calls.crawls).toEqual([{ url: "http://127.0.0.1:5050", max_steps: 25 }]);
+  await expect(page.locator(".hud")).toHaveCount(0);
+  await expect(gate.locator(".seis")).toHaveAttribute("data-mode", "rupture");
+  await expect(gate.locator(".gate-badge")).toHaveText("🛡️ Verdict: Deployment blocked");
+  await expect(gate).toContainText("Defect intercepted before going live");
+  await expect(gate.getByRole("list", { name: "Reproduction trail" }).getByRole("listitem")).toHaveText([
+    "01Open /",
+    "02Click “Explore Pricing” on /",
+    "03Click “Start Free” on /pricing",
+    "04Fill “Full Name”, “Work Email”, “Organization Identifier”, “Cluster Name” on /signup",
+    "05Click “🚀 Provision Dedicated Cluster” on /signup → HTTP 500 on POST /api/provision-cluster",
+  ]);
+  const payload = gate.getByRole("figure");
+  await expect(payload.locator("pre")).toHaveText(AURASCALE_PROMPT);
+  await payload.getByRole("button", { name: "Copy the agent fix prompt" }).click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(AURASCALE_PROMPT);
+  await payload.getByRole("button", { name: "JSON" }).click();
+  await payload.getByRole("button", { name: "Copy the JSON verdict" }).click();
+  const verdict = JSON.parse(await page.evaluate(() => navigator.clipboard.readText()));
+  expect(verdict).toMatchObject({
+    gate_status: "FAILED", verdict: "DEPLOYMENT_BLOCKED", exit_code: 1, target_url: "http://127.0.0.1:5050/",
+    summary: "Defect intercepted: HTTP 500 on POST /api/provision-cluster after 7 actions across 3 screens.",
+    elements_explored: 25, agent_remediation_prompt: AURASCALE_PROMPT, error: null,
+  });
+  expect(verdict.reproduction_trail).toEqual(AURASCALE_TELEMETRY.reproduction_trail);
+
+  // Handing over opens the Mission HUD with its repair offer and keeps the gate's verdict.
+  await gate.getByRole("button", { name: /Open in Mission HUD/ }).click();
+  await expect(page.getByRole("region", { name: "Live Agent Mission · Playwright" })).toBeVisible();
+  await expect(gate).toHaveAttribute("data-verdict", "blocked");
+
+  // A typed URL runs the same gate; a clean crawl ends on Safe to Deploy with the CLI's summary.
+  await gate.getByRole("textbox", { name: "Target preview URL" }).fill("localhost:4321/");
+  await gate.getByRole("button", { name: "Run Pre-Flight Gate" }).click();
+  await expect(gate).toHaveAttribute("data-verdict", "safe");
+  await expect(page.locator(".hud")).toHaveCount(0);
+  await expect(gate.locator(".gate-badge")).toHaveText("✅ Verdict: Safe to deploy");
+  await expect(gate.locator(".gate-stats")).toContainText("Elements7");
+  await expect(gate.locator(".gate-stats")).toContainText("Defects0");
+  await expect(gate).toContainText("No defects found: explored 7 elements across 1 screen with 1 action. faultline gate exits 0");
+
+  // The snippets follow the gated URL; arrow keys move between the tabs.
+  const tabs = gate.getByRole("tab");
+  await expect(tabs).toHaveText(["Cursor / Claude Code", "GitHub Actions CI/CD", "CLI Pre-Flight", "Agent Skill"]);
+  await tabs.first().focus();
+  await page.keyboard.press("ArrowLeft");
+  await expect(gate.getByRole("tab", { name: "Agent Skill" })).toHaveAttribute("aria-selected", "true");
+  await expect(gate.getByRole("tabpanel")).toContainText("name: faultline-gate");
+  await page.keyboard.press("Home");
+  await gate.getByRole("button", { name: "Copy Cursor / Claude Code" }).click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toContain("2. Run: faultline gate http://localhost:4321/ --json");
+});
+
 test("the mission HUD repairs, verifies, and applies the fix it caught", async ({ page }) => {
   const calls = await mock(page, {
     detail: verifiedDetail(),

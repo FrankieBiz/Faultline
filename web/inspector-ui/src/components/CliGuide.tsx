@@ -23,6 +23,12 @@ const STEPS: { title: string; commands: string[]; terminal: string; dashboard: s
     dashboard: "Run live check sends the same rule through the same engine and shows both sessions' evidence. The rail keeps each rule's last verdict.",
   },
   {
+    title: "Gate a deploy",
+    commands: ["faultline gate http://localhost:3000", "faultline gate http://localhost:3000 --json"],
+    terminal: "Crawls the preview like scan but never repairs. Exit 0 is SAFE_TO_DEPLOY; exit 1 is DEPLOYMENT_BLOCKED, for a defect or a crawl that could not finish; exit 2 is bad input. --json prints one verdict with the reproduction trail and an agent fix prompt, --markdown a PR or job summary, and --format agent|ci prompt or log text.",
+    dashboard: "The Pre-Flight Gate panel runs the same crawl, shows the same verdict and fix prompt, and has the agent rule, CI workflow, and skill to copy.",
+  },
+  {
     title: "Probe the demo store",
     commands: ["faultline verify"],
     terminal: "Sends one checkout request to the store on port 8000 and reports whether the seeded defect is active.",

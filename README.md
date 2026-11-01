@@ -278,7 +278,7 @@ Static AST inspection and Git worktrees are policy and source-management tools; 
 
 ### Pre-Flight Agent Gate
 
-`faultline gate http://127.0.0.1:3000 --json` turns the crawler into a deployment gate that coding agents (Claude, Codex, Cursor, Devin) and pipelines can obey: exit 0 is `SAFE_TO_DEPLOY`, exit 1 is `DEPLOYMENT_BLOCKED` with the reproduction trail and an `agent_remediation_prompt` the agent can act on. [`docs/PREFLIGHT_GATE.md`](docs/PREFLIGHT_GATE.md) covers the contract, the agent skill ([`.agents/skills/faultline-gate`](.agents/skills/faultline-gate/SKILL.md)), the drop-in [`.github/workflows/faultline-gate.yml`](.github/workflows/faultline-gate.yml) that writes the verdict to the job summary, and the optional [`.githooks/pre-push`](.githooks/pre-push) hook.
+`faultline gate http://127.0.0.1:3000 --json` turns the crawler into a deployment gate that coding agents (Claude, Codex, Cursor, Devin) and pipelines can obey: exit 0 is `SAFE_TO_DEPLOY`, exit 1 is `DEPLOYMENT_BLOCKED` with the reproduction trail and an `agent_remediation_prompt` the agent can act on. [`docs/PREFLIGHT_GATE.md`](docs/PREFLIGHT_GATE.md) covers the contract, the agent skill ([`.agents/skills/faultline-gate`](.agents/skills/faultline-gate/SKILL.md)), the drop-in [`.github/workflows/faultline-gate.yml`](.github/workflows/faultline-gate.yml) that writes the verdict to the job summary, and the optional [`.githooks/pre-push`](.githooks/pre-push) hook. The Inspector's Pre-Flight Gate panel runs the same check from the browser and shows the same verdict and fix prompt, with the agent rule, workflow, and skill ready to copy. The [judge page](https://frankiebiz.github.io/Faultline/#gate) replays two recorded verdicts.
 
 ---
 
@@ -311,14 +311,14 @@ These results describe an authored corpus for one checkout route, not arbitrary 
 
 | Suite | Tests |
 | --- | ---: |
-| Backend, scripts, and fixtures (pytest) | 286 |
-| Repair orchestrator and CLI (pytest) | 769 |
+| Backend, scripts, and fixtures (pytest) | 289 |
+| Repair orchestrator and CLI (pytest) | 799 |
 | Browser runner unit tests | 123 |
-| **Unit and integration total** (`make check`) | **1,178** |
-| Inspector browser tests (Playwright) | 40 |
+| **Unit and integration total** (`make check`) | **1,211** |
+| Inspector browser tests (Playwright) | 41 |
 | Storefront browser test (Playwright) | 1 |
-| **Browser total** (`make browser`) | **41** |
-| **All automated tests** | **1,219** |
+| **Browser total** (`make browser`) | **42** |
+| **All automated tests** | **1,253** |
 
 `make check` also runs Ruff lint and format checks, strict mypy, fixture and corpus provenance, the storefront, runner, and Inspector builds, and both Python distribution builds. `make integration` exercises real isolated Chromium and cgroup enforcement, and `make evaluate` runs the corpus.
 

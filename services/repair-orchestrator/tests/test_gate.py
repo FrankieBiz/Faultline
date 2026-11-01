@@ -250,6 +250,17 @@ def test_client_errors_ask_for_a_request_or_route_fix() -> None:
     assert "Fix the request the page sends to POST /api/checkout" in prompt
 
 
+def test_prompt_keeps_non_ascii_control_labels_readable() -> None:
+    report = _failure()
+    step = report["failure"]["step"]
+    for crumb in report["breadcrumbs"]:
+        if crumb["step"] == step:
+            crumb["label"] = "🚀 Place order"
+    prompt = remediation_prompt(report, report["failure"], "http://x")
+    assert 'Triggered by clicking "🚀 Place order"' in prompt
+    assert "\\u" not in prompt
+
+
 def test_page_errors_point_at_client_code_and_the_stack() -> None:
     report = _failure(
         kind="page_error",

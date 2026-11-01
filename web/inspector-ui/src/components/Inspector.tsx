@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import AgentGatePanel from "@/components/AgentGatePanel";
 import CliGuide from "@/components/CliGuide";
 import CrawlerHud, { applyCrawlEvent, crawlFromCheck, crawlInFlight, startCrawl, type CrawlState, type MissionRepair } from "@/components/CrawlerHud";
 import { STEP_LABELS, currentStep } from "@/components/Evidence";
@@ -66,6 +67,8 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
   const [dialogSeed, setDialogSeed] = useState("");
   const [quickTesting, setQuickTesting] = useState(false);
   const [crawlState, setCrawlState] = useState<CrawlState | null>(null);
+  /** Which surface shows the crawl: the Mission HUD, the Pre-Flight Gate that launched it, or both once the gate hands it over. */
+  const [crawlOrigin, setCrawlOrigin] = useState<"hud" | "gate" | "both">("hud");
   const crawlAbort = useRef<AbortController | null>(null);
   /** The sandbox run started for the defect the HUD shows, so the HUD follows only that repair. */
   const [missionJobId, setMissionJobId] = useState<string | null>(null);
@@ -514,7 +517,7 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
    * (no answer, 502, 503) it is retried briefly; when it is still unavailable, or absent (404),
    * `fallback` sends a real HTTP check instead and the HUD shows that check's sessions, labeled as such.
    */
-  const runCrawl = async (url: string, fallback: CrawlFallback | null) => {
+  const runCrawl = async (url: string, fallback: CrawlFallback | null, origin: "hud" | "gate" = "hud") => {
     crawlAbort.current?.abort();
     const controller = new AbortController();
     crawlAbort.current = controller;
@@ -522,8 +525,9 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
       if (!controller.signal.aborted) setCrawlState((state) => state && change(state));
     };
     setCrawlState(startCrawl(url));
+    setCrawlOrigin(origin);
     setMissionJobId(null);
-    revealHud();
+    if (origin === "hud") revealHud();
     for (let attempt = 1; ; attempt++) {
       let seen = false;
       try {
@@ -629,9 +633,9 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
   };
 
   /** Hero crawl: on the store's origins the checkout check stands in for the crawler, elsewhere a GET ping. */
-  const autoBreak = async (url: string) => {
+  const autoBreak = async (url: string, origin: "hud" | "gate" = "hud") => {
     const onStore = sameOrigin(url, storefrontUrl, null) || (store !== null && sameOrigin(url, store.url, null));
-    await runCrawl(url, (onStore ? storeFallback(false) : null) ?? { title: `GET ${url}`, run: () => quickTest(url) });
+    await runCrawl(url, (onStore ? storeFallback(false) : null) ?? { title: `GET ${url}`, run: () => quickTest(url) }, origin);
   };
 
   const select = (next: Selection) => {
@@ -740,6 +744,7 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
               <span className="readiness-dot" aria-hidden="true" />
               <span className="readiness-key">Engine Status:</span> {engineLabel}
             </span>
+            <a className="btn quiet tool gate-link" href="#gate"><span className="gate-lock" aria-hidden="true" />Pre-Flight Gate</a>
             <button type="button" className="btn quiet tool" onClick={() => setGuideRequest((n) => n + 1)} aria-keyshortcuts="?" aria-haspopup="dialog">
               CLI guide <kbd aria-hidden="true">?</kbd>
             </button>
@@ -751,10 +756,13 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
       </header>
       <HeroArena storefrontUrl={storefrontUrl} apiUrl={store?.url ?? null}
         busy={busy !== null || quickTesting || flowAction !== null || crawlRunning}
-        hunting={crawlRunning && flowAction === null} pinging={quickTesting && !crawlRunning}
+        hunting={crawlRunning && flowAction === null && crawlOrigin !== "gate"} pinging={quickTesting && !crawlRunning}
         onHunt={autoBreak} onPing={async (url) => { await quickTest(url); }} />
-      {crawlState && <CrawlerHud state={crawlState} repairLabel={repairLabel} repairBlocked={crawlRepairBlocked}
+      {crawlState && crawlOrigin !== "gate" && <CrawlerHud state={crawlState} repairLabel={repairLabel} repairBlocked={crawlRepairBlocked}
         repair={missionRepair} onRepair={repairFromCrawl} onApply={() => void applyAndConfirm()} onDismiss={closeCrawl} />}
+      <AgentGatePanel state={crawlOrigin !== "hud" ? crawlState : null} missionOpen={crawlOrigin === "both"} storefrontUrl={storefrontUrl} storeState={store?.state ?? null}
+        busy={busy !== null || quickTesting || flowAction !== null || crawlRunning}
+        onRun={(url) => autoBreak(url, "gate")} onOpenMission={() => { setCrawlOrigin("both"); revealHud(); }} onReset={closeCrawl} />
       {(storePack || !listing) && <GuidedFlow store={store} error={storeError} storefrontUrl={storefrontUrl}
         liveCheck={liveCheck} canCheckLive={liveCheckout !== null} run={flowRun} hunt={hunt}
         verifiedJobId={verified && job ? job.id : null}

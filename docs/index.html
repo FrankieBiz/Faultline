@@ -264,8 +264,8 @@
     .seis-label::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 8px currentColor; }
     @media (prefers-reduced-motion: no-preference) {
       /* The rupture: one short shake of the player and a red pulse from the seismograph. */
-      .player[data-seismic="rupture"] { animation: quake 250ms cubic-bezier(0.36, 0.07, 0.19, 0.97); }
-      .player[data-seismic="rupture"]::after {
+      .player[data-seismic="rupture"], .preflight[data-seismic="rupture"] { animation: quake 250ms cubic-bezier(0.36, 0.07, 0.19, 0.97); }
+      .player[data-seismic="rupture"]::after, .preflight[data-seismic="rupture"]::after {
         content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0;
         background: radial-gradient(90% 70% at 50% 0%, rgba(255, 77, 106, 0.32), transparent 70%);
         animation: flare 900ms ease-out;
@@ -316,6 +316,7 @@
 
     @keyframes pulse { 50% { opacity: 0.3; } }
     @keyframes breathe { 50% { opacity: 1; } }
+    @keyframes rise { from { opacity: 0; transform: translateY(6px) scale(0.99); } }
     @keyframes glow { 50% { opacity: 0.42; } }
     @keyframes seis-scroll { to { transform: translateX(-200px); } }
     @keyframes seis-draw { from { stroke-dashoffset: 1; } }
@@ -347,6 +348,96 @@
     .linkline .copy { position: static; }
     h3.sub { margin: 40px 0 12px; font-size: 16px; }
 
+    /*
+     * Pre-Flight Agent Gate, matching the Inspector's AgentGatePanel: the same seismograph and
+     * color rule. Cyan while the gate scans, a green resonance when safe, rose spikes when blocked.
+     */
+    .gate-lock { flex: none; display: inline-block; width: 9px; height: 11px; border: 1.5px solid currentColor; border-radius: 2px 2px 5px 5px; }
+    .top nav a.nav-gate { display: inline-flex; align-items: center; gap: 7px; color: var(--cyan); }
+    .preflight {
+      position: relative; padding: 18px 20px 0; border: 1px solid var(--line); border-radius: 16px; overflow: hidden;
+      background: linear-gradient(180deg, rgba(45, 212, 255, 0.035), transparent 220px), var(--well); transition: border-color 300ms ease-out;
+    }
+    .preflight[data-verdict="running"] { border-color: rgba(45, 212, 255, 0.4); }
+    .preflight[data-verdict="safe"] { border-color: rgba(61, 255, 162, 0.35); }
+    .preflight[data-verdict="blocked"] { border-color: rgba(255, 77, 106, 0.45); }
+    .preflight h2 { max-width: 26ch; font-size: clamp(24px, 3vw, 34px); line-height: 1.08; letter-spacing: -0.03em; font-weight: 650; }
+    .preflight .intro { max-width: 76ch; margin-bottom: 0; }
+    .gate-kicker .gate-lock { margin-right: 10px; vertical-align: -1px; }
+    .gate-kicker { margin: 6px 0 12px; color: var(--cyan); font: 500 11px/1.5 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+    .gate-grid { display: grid; grid-template-columns: minmax(0, 1.08fr) minmax(0, 1fr); margin: 22px -20px 0; border-top: 1px solid var(--line); }
+    .gate-sim { min-width: 0; padding: 22px 24px 26px; }
+    .gate-connect { min-width: 0; padding: 22px 24px 26px; border-left: 1px solid var(--line); background: rgba(255, 255, 255, 0.012); }
+    .gate-label, .gate-connect-h { margin: 0 0 8px; color: var(--ink-3); font: 500 10.5px var(--mono); letter-spacing: 0.07em; text-transform: uppercase; }
+    .gate-connect-h { margin-bottom: 12px; }
+    .gate-field { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-height: 52px; padding: 8px 14px; border: 1px solid var(--line-strong); border-radius: 12px; background: rgba(0, 0, 0, 0.45); transition: border-color 160ms, box-shadow 160ms; }
+    .preflight[data-verdict="running"] .gate-field { border-color: rgba(45, 212, 255, 0.55); box-shadow: 0 0 0 4px var(--cyan-wash); }
+    .gate-prompt { color: var(--green); font: 600 12.5px var(--mono); white-space: nowrap; }
+    .gate-field code { color: var(--ink); font-size: 14px; }
+    .gate-pills { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 0; }
+    .gate-pill {
+      display: grid; gap: 1px; min-height: 44px; padding: 7px 13px; border: 1px solid var(--line-strong); border-radius: 10px;
+      background: rgba(0, 0, 0, 0.3); color: var(--ink); font: 550 13px/1.35 var(--mono); text-align: left; cursor: pointer;
+      transition: border-color 120ms, background-color 120ms, transform 120ms ease-out;
+    }
+    .gate-pill:hover { border-color: var(--ink-2); }
+    .gate-pill:active { transform: scale(0.97); }
+    .gate-pill[aria-pressed="true"] { border-color: var(--cyan); background: var(--cyan-wash); }
+    .gate-expect { font-size: 11px; font-weight: 500; }
+    .gate-expect.ok { color: var(--green); }
+    .gate-expect.bad { color: var(--red); }
+    .gate-verdict { margin-top: 20px; }
+    .gate-verdict p { margin: 0; }
+    .gate-await { display: flex; align-items: center; gap: 12px; padding: 16px; border: 1px dashed var(--line-strong); border-radius: 12px; color: var(--ink-2); font: 13px/1.5 var(--mono); }
+    .gate-await-mark { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--ink-3); }
+    .gate-scan { display: grid; gap: 4px; padding: 16px; border-radius: 12px; background: var(--cyan-wash); box-shadow: inset 3px 0 0 var(--cyan); font-family: var(--mono); }
+    .gate-scan-line { display: flex; align-items: center; gap: 10px; color: var(--cyan); font-size: 13.5px; font-weight: 600; overflow-wrap: anywhere; }
+    .gate-scan-line::before { content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%; background: currentColor; box-shadow: 0 0 10px currentColor; animation: pulse 1s ease-in-out infinite; }
+    .gate-scan-step { color: var(--ink-3); font-size: 12px; overflow-wrap: anywhere; }
+    .gate-result { display: grid; gap: 12px; animation: rise 220ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+    .gate-badge { position: relative; justify-self: start; display: inline-flex; align-items: center; gap: 4px; padding: 11px 18px; border: 1px solid; border-radius: 10px; font: 700 clamp(14px, 1.6vw, 17px)/1.2 var(--mono); letter-spacing: 0.04em; text-transform: uppercase; }
+    .gate-badge::after { content: ""; position: absolute; inset: -1px; border-radius: inherit; pointer-events: none; opacity: 0.35; box-shadow: 0 0 36px currentColor; animation: breathe 2.4s ease-in-out infinite; }
+    .gate-badge.ok { border-color: rgba(61, 255, 162, 0.6); background: rgba(61, 255, 162, 0.1); color: var(--green); text-shadow: 0 0 18px rgba(61, 255, 162, 0.45); }
+    .gate-badge.bad { border-color: rgba(255, 77, 106, 0.7); background: rgba(255, 77, 106, 0.13); color: var(--red); text-shadow: 0 0 18px rgba(255, 77, 106, 0.5); }
+    .gate-intercept { color: var(--red); font: 600 11px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+    .gate-defect { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; color: var(--ink); font: 600 clamp(16px, 1.8vw, 20px)/1.3 var(--mono); overflow-wrap: anywhere; }
+    .gate-code-pill { padding: 1px 9px; border-radius: 6px; background: var(--red); color: #16070a; }
+    .gate-confirm { color: var(--ink-2); font-size: 14px; }
+    .gate-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0; border: 1px solid var(--line); border-radius: 10px; background: rgba(0, 0, 0, 0.25); }
+    .gate-stats > div { display: grid; gap: 2px; padding: 10px 14px; }
+    .gate-stats > div + div { border-left: 1px solid var(--line); }
+    .gate-stats dt { color: var(--ink-3); font: 500 10.5px var(--mono); letter-spacing: 0.07em; text-transform: uppercase; }
+    .gate-stats dd { margin: 0; color: var(--ink); font: 600 20px/1.25 var(--mono); }
+    .gate-stats .ok dd { color: var(--green); }
+    .gate-trail { display: grid; gap: 2px; margin: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: rgba(0, 0, 0, 0.25); list-style: none; font: 12.5px/1.6 var(--mono); color: var(--ink-2); }
+    .gate-trail li { display: grid; grid-template-columns: 3ch minmax(0, 1fr); gap: 10px; overflow-wrap: anywhere; }
+    .gate-trail .n { color: var(--ink-3); }
+    .gate-trail li.bad, .gate-trail li.bad .n { color: var(--red); }
+    .gate-payload { margin: 0; border: 1px solid rgba(45, 212, 255, 0.28); border-radius: 10px; background: #000; overflow: hidden; }
+    .gate-payload figcaption, .gate-file { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 6px 6px 12px; border-bottom: 1px solid var(--line); }
+    .gate-payload figcaption { background: var(--cyan-wash); color: var(--cyan); font: 600 11px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; }
+    .gate-payload-tools { display: inline-flex; align-items: center; gap: 6px; }
+    .gate-views { display: inline-flex; padding: 2px; border: 1px solid var(--line); border-radius: 7px; background: rgba(0, 0, 0, 0.35); }
+    .gate-views button { min-height: 26px; padding: 0 9px; border: 0; border-radius: 5px; background: transparent; color: var(--ink-3); font: 600 10.5px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; }
+    .gate-views button:hover { color: var(--ink); }
+    .gate-views button[aria-pressed="true"] { background: var(--raised); color: var(--cyan); }
+    .gate-payload pre, .gate-code { max-height: 300px; margin: 0; padding: 12px 14px; overflow: auto; color: #d7dbe0; font: 12px/1.65 var(--mono); white-space: pre; overscroll-behavior: contain; }
+    .gate-payload pre code, .gate-code code { font-size: inherit; overflow-wrap: normal; }
+    /* The prompt is prose: wrap it. Snippets keep their lines. */
+    .gate-payload pre { white-space: pre-wrap; }
+    .gate-payload pre code { overflow-wrap: anywhere; }
+    .gate-payload-note, .gate-note { margin: 0; padding: 8px 12px 10px; border-top: 1px solid var(--line); color: var(--ink-3); font-size: 12.5px; }
+    .gate-source { color: var(--ink-3); font-size: 13px; }
+    .preflight .copy { position: static; flex: none; text-transform: none; letter-spacing: 0; }
+    .gate-tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: 10px; background: rgba(0, 0, 0, 0.3); }
+    .gate-tab { flex: 1 1 auto; min-height: 36px; padding: 0 10px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--ink-2); font: 500 12px var(--mono); white-space: nowrap; cursor: pointer; transition: color 120ms, background-color 120ms, border-color 120ms; }
+    .gate-tab:hover { color: var(--ink); }
+    .gate-tab[aria-selected="true"] { border-color: var(--line-strong); background: var(--raised); color: var(--ink); box-shadow: inset 0 -2px 0 var(--cyan); }
+    .gate-panel { margin-top: 12px; border: 1px solid var(--line); border-radius: 10px; background: #000; overflow: hidden; }
+    .gate-file { background: var(--raised); }
+    .gate-file code { min-width: 0; color: var(--ink-2); font-size: 12px; }
+    .gate-code { max-height: 360px; }
+
     footer { padding: 40px 0 64px; border-top: 1px solid var(--line); color: var(--ink-3); font-size: 13px; }
     footer p { margin: 0 0 8px; max-width: 90ch; }
 
@@ -360,6 +451,8 @@
       .timeline .what { grid-column: 2 / -1; }
       .timeline .t { grid-row: 1; grid-column: 3; }
       .picker { display: grid; gap: 0; }
+      .gate-grid { grid-template-columns: 1fr; }
+      .gate-connect { border-left: 0; border-top: 1px solid var(--line); }
     }
     @media (max-width: 520px) {
       .shell { padding: 0 18px; }
@@ -367,6 +460,13 @@
       .verdicts { grid-template-columns: 1fr; }
       .failing li { grid-template-columns: 1fr; }
       .top nav { gap: 2px 14px; font-size: 13px; }
+      .preflight { padding-inline: 16px; }
+      .preflight .seis { margin-inline: -16px; }
+      .gate-grid { margin-inline: -16px; }
+      .gate-sim, .gate-connect { padding-inline: 16px; }
+      .gate-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .gate-stats > div:nth-child(odd) { border-left: 0; }
+      .gate-stats > div:nth-child(n + 3) { border-top: 1px solid var(--line); }
     }
   </style>
 </head>
@@ -376,6 +476,7 @@
     <div class="shell top-row">
       <a class="wordmark" href="#main"><span class="glyph" aria-hidden="true"></span>FaultLine</a>
       <nav aria-label="Sections">
+        <a href="#gate" class="nav-gate"><span class="gate-lock" aria-hidden="true"></span>Agent gate</a>
         <a href="#repair">Meta repair</a>
         <a href="#live">Break it</a>
         <a href="#gates">Try the gates</a>
@@ -398,6 +499,7 @@
       </p>
       <div class="actions">
         <button class="btn primary" type="button" data-play-recorded>Play the recorded Meta repair</button>
+        <a class="btn" href="#gate">Try the pre-flight agent gate</a>
         <a class="btn" href="#live">Break it yourself</a>
         <a class="btn" href="https://github.com/FrankieBiz/Faultline">Source on GitHub</a>
       </div>
@@ -411,6 +513,40 @@
         </ol>
       </div>
     </div>
+
+    <section id="gate" class="block" aria-labelledby="gate-title">
+      <div class="preflight" id="preflight" data-verdict="idle">
+        <div class="seis" id="gate-seis" data-mode="still" aria-hidden="true">
+          <div class="seis-track"></div>
+          <span class="seis-label"></span>
+        </div>
+        <p class="gate-kicker"><span class="gate-lock" aria-hidden="true"></span>Pre-Flight Agent Gate · Claude Code · Codex · Cursor · Devin · CI</p>
+        <h2 id="gate-title">Nothing ships until the gate clears it.</h2>
+        <p class="intro">Before an AI coding agent or a pipeline deploys, FaultLine crawls the preview: every screen, button, and form. <code>faultline gate</code> exits 0 when the preview is safe to deploy. It exits 1 to block the release and hands the agent the exact reproduction to fix. Both runs below are real <code>faultline gate --json</code> verdicts from November 1, 2026, replayed in your browser. Each one links to its raw verdict.</p>
+        <div class="gate-grid">
+          <div class="gate-sim">
+            <p class="gate-label" id="gate-target-label">Target preview URL</p>
+            <div class="gate-field" aria-labelledby="gate-target-label"><span class="gate-prompt" aria-hidden="true">$ faultline gate</span><code id="gate-target">http://localhost:3000</code></div>
+            <div class="gate-pills" role="group" aria-label="Recorded gate runs">
+              <button class="gate-pill" type="button" data-gate="clean" aria-pressed="false"><span>Test Clean Site</span><span class="gate-expect ok">Storefront, fix applied &rarr; Safe to Deploy</span></button>
+              <button class="gate-pill" type="button" data-gate="broken" aria-pressed="false"><span>Test Broken Site (AuraScale :5050)</span><span class="gate-expect bad">Defect &rarr; Deployment Blocked</span></button>
+            </div>
+            <div class="gate-verdict" id="gate-verdict" aria-live="polite">
+              <p class="gate-await"><span class="gate-await-mark" aria-hidden="true"></span>Gate armed. Pick a site to replay its recorded gate verdict.</p>
+            </div>
+          </div>
+          <div class="gate-connect">
+            <h3 class="gate-connect-h">Connect your agents</h3>
+            <div class="gate-tabs" role="tablist" aria-label="Integrations" id="gate-tabs"></div>
+            <div class="gate-panel" role="tabpanel" id="gate-panel">
+              <div class="gate-file"><code id="gate-file"></code><button class="copy" type="button" id="gate-copy" data-copy="">Copy</button></div>
+              <pre class="gate-code"><code id="gate-code"></code></pre>
+              <p class="gate-note" id="gate-note"></p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
 
     <section id="repair" class="block" aria-labelledby="repair-title">
       <h2 id="repair-title">The recorded Meta repair</h2>
@@ -916,6 +1052,11 @@ FAULTLINE_INSPECTOR_URL=http://127.0.0.1:4400 ./scripts/rehearse-demo.sh</code><
 
     /** Switches the trace; the SVG is rebuilt so the line draws itself again. Decorative: the timeline says the same in words. */
     function setSeismic(mode, label, shake) {
+      paintSeismic(seis, recordedPlayer, mode, label, shake);
+    }
+
+    /** Draws `mode` into a seismograph strip and marks its frame, which shakes and flares on a rupture. */
+    function paintSeismic(seis, frame, mode, label, shake) {
       if (seis.dataset.mode === mode && seis.querySelector(".seis-label").textContent === label) return;
       const NS = "http://www.w3.org/2000/svg";
       const svg = document.createElementNS(NS, "svg");
@@ -934,9 +1075,9 @@ FAULTLINE_INSPECTOR_URL=http://127.0.0.1:4400 ./scripts/rehearse-demo.sh</code><
       seis.dataset.mode = mode;
       seis.querySelector(".seis-label").textContent = label;
       // Restart the shake and flare on every replay, not only the first.
-      delete recordedPlayer.dataset.seismic;
-      if (shake) void recordedPlayer.offsetWidth;
-      recordedPlayer.dataset.seismic = mode;
+      delete frame.dataset.seismic;
+      if (shake) void frame.offsetWidth;
+      frame.dataset.seismic = mode;
     }
 
     // ---- Journey ribbon: the recorded run as a chain. Each node lights up from the same recorded events. ----
@@ -1433,6 +1574,362 @@ FAULTLINE_INSPECTOR_URL=http://127.0.0.1:4400 ./scripts/rehearse-demo.sh</code><
 
     live.timeline.reset();
     refreshLive().then(openLinkedRun);
+
+    // ---- Pre-Flight Agent Gate: two recorded `faultline gate --json` verdicts, replayed in the browser ----
+    // GATE_RUNS[*].verdict is docs/evidence/2026-11-01-gate-*.json verbatim. The snippets are copied
+    // from web/inspector-ui/src/lib/agent-gate.ts (tests/test_agent_gate_snippets.py keeps them in step).
+    const GATE_URL = "http://localhost:3000";
+    const GATE_RUNS = {
+      clean: {
+        site: "the demo storefront with its verified fix applied",
+        evidence: "evidence/2026-11-01-gate-storefront-patched.json",
+        actions: 12, // from the verdict's summary: "... with 12 actions."
+        verdict: {"gate_status": "PASSED", "verdict": "SAFE_TO_DEPLOY", "exit_code": 0, "target_url": "http://127.0.0.1:3400/", "summary": "No defects found: explored 45 elements across 4 screens with 12 actions.", "elements_explored": 45, "screens_visited": [{"url": "http://127.0.0.1:3400/", "path": "/", "title": "BuggyShop", "elements": 9, "forms": 0, "first_step": 1}, {"url": "http://127.0.0.1:3400/product/trail-mug", "path": "/product/trail-mug", "title": "Product details | BuggyShop", "elements": 8, "forms": 1, "first_step": 2}, {"url": "http://127.0.0.1:3400/checkout", "path": "/checkout", "title": "Checkout | BuggyShop", "elements": 11, "forms": 1, "first_step": 4}, {"url": "http://127.0.0.1:3400/product/field-notebook", "path": "/product/field-notebook", "title": "Product details | BuggyShop", "elements": 8, "forms": 1, "first_step": 9}], "failure": null, "reproduction_trail": ["1. Open http://127.0.0.1:3400/", "2. Click link \"Trail Mug\" on / [a:has-text(\"Trail Mug\") >> nth=0]", "3. Click button \"Add to cart\" on /product/trail-mug [button:has-text(\"Add to cart\")]", "4. Click link \"Go to checkout\" on /product/trail-mug [a:has-text(\"Go to checkout\")]", "5. Fill \"Name\" with \"Alex Tester\" on /checkout [#name]", "6. Fill \"Email\" with \"test@example.com\" on /checkout [#email]", "7. Fill \"Address\" with \"123 Main St\" on /checkout [#address]", "8. Click button \"Place order\" on /checkout [button:has-text(\"Place order\")]", "9. Open http://127.0.0.1:3400/product/field-notebook", "10. Click button \"Add to cart\" on /product/field-notebook [button:has-text(\"Add to cart\")]", "11. Click button \"Increase quantity\" on /product/field-notebook [button:has-text(\"+\")]", "12. Click button \"Decrease quantity\" on /product/field-notebook [button:has-text(\"−\")]", "13. Open http://127.0.0.1:3400/", "14. Click button \"Add to cart\" on / [button:has-text(\"Add to cart\") >> nth=0]", "15. Click button \"Add to cart\" on / [button:has-text(\"Add to cart\") >> nth=1]"], "agent_remediation_prompt": null, "error": null}
+      },
+      broken: {
+        site: "AuraScale Cloud, a standalone app outside this repository",
+        evidence: "evidence/2026-11-01-gate-aurascale.json",
+        // The reproduction trail with consecutive fills folded into one line, as the Inspector shows it.
+        steps: [
+          { text: "Open /" },
+          { text: "Click “Explore Pricing” on /" },
+          { text: "Click “Start Free” on /pricing" },
+          { text: "Fill “Full Name”, “Work Email”, “Organization Identifier”, “Cluster Name” on /signup" },
+          { text: "Click “\u{1F680} Provision Dedicated Cluster” on /signup", bad: true }
+        ],
+        verdict: {"gate_status": "FAILED", "verdict": "DEPLOYMENT_BLOCKED", "exit_code": 1, "target_url": "http://127.0.0.1:5050/", "summary": "Defect intercepted: HTTP 500 on POST /api/provision-cluster after 7 actions across 3 screens.", "elements_explored": 25, "screens_visited": [{"url": "http://127.0.0.1:5050/", "path": "/", "title": "AuraScale Cloud — Autonomous Inference Engine", "elements": 9, "forms": 0, "first_step": 1}, {"url": "http://127.0.0.1:5050/pricing", "path": "/pricing", "title": "AuraScale Cloud — Autonomous Inference Engine", "elements": 7, "forms": 0, "first_step": 2}, {"url": "http://127.0.0.1:5050/signup", "path": "/signup", "title": "AuraScale Cloud — Autonomous Inference Engine", "elements": 9, "forms": 1, "first_step": 3}], "failure": {"kind": "http_error", "message": "500 Internal Server Error", "method": "POST", "url": "http://127.0.0.1:5050/api/provision-cluster", "endpoint": "/api/provision-cluster", "status": 500, "response_body": "{\"status\": 500, \"error\": \"NVMeLeaseAllocationException\", \"message\": \"ResourceExhausted: unable to acquire read/write lock on isolated cgroup enclave #109\", \"code\": \"AURA_RESOURCE_LOCKED\", \"received_payload\": 94}", "step": 8, "console_errors": ["Failed to load resource: the server responded with a status of 500 (Internal Server Error)"], "related": []}, "reproduction_trail": ["1. Open http://127.0.0.1:5050/", "2. Click link \"Explore Pricing\" on / [a:has-text(\"Explore Pricing\")]", "3. Click link \"Start Free\" on /pricing [a:has-text(\"Start Free\")]", "4. Fill \"Full Name\" with \"Alex Tester\" on /signup [#name]", "5. Fill \"Work Email\" with \"test@example.com\" on /signup [#email]", "6. Fill \"Organization Identifier\" with \"FaultLine QA\" on /signup [#org]", "7. Fill \"Cluster Name\" with \"Alex Tester\" on /signup [#cluster_name]", "8. Click button \"🚀 Provision Dedicated Cluster\" on /signup [#btn-activate] -> HTTP 500 on POST /api/provision-cluster"], "agent_remediation_prompt": "FaultLine caught an unhandled HTTP 500 error on POST /api/provision-cluster. Triggered by clicking \"🚀 Provision Dedicated Cluster\" (#btn-activate) on /signup.\nServer response: {\"status\": 500, \"error\": \"NVMeLeaseAllocationException\", \"message\": \"ResourceExhausted: unable to acquire read/write lock on isolated cgroup enclave #109\", \"code\": \"AURA_RESOURCE_LOCKED\", \"received_payload\": 94}\nReproduce:\n  1. Open http://127.0.0.1:5050/\n  2. Click link \"Explore Pricing\" on / [a:has-text(\"Explore Pricing\")]\n  3. Click link \"Start Free\" on /pricing [a:has-text(\"Start Free\")]\n  4. Fill \"Full Name\" with \"Alex Tester\" on /signup [#name]\n  5. Fill \"Work Email\" with \"test@example.com\" on /signup [#email]\n  6. Fill \"Organization Identifier\" with \"FaultLine QA\" on /signup [#org]\n  7. Fill \"Cluster Name\" with \"Alex Tester\" on /signup [#cluster_name]\n  8. Click button \"🚀 Provision Dedicated Cluster\" on /signup [#btn-activate] -> HTTP 500 on POST /api/provision-cluster\nFix the server-side exception handling for POST /api/provision-cluster so it no longer returns HTTP 500 before deploying, then re-run `faultline gate http://127.0.0.1:5050/ --json` and continue only when it exits 0.", "error": null}
+      }
+    };
+
+    const GATE_SKILL = `---
+name: faultline-gate
+description: Use before declaring a web-app task done, opening or updating a pull request, merging, or deploying - runs \`faultline gate <url> --json\` against the running local or preview server as a mandatory pre-deployment check, interprets the verdict and exit code, and drives the fix-and-re-gate loop when FaultLine intercepts a defect.
+---
+
+# FaultLine Pre-Flight Gate
+
+## Overview
+
+\`faultline gate\` points headless Chromium at a running site, explores every
+same-origin screen, fills forms, clicks controls, and stops at the first
+defect: an HTTP 4xx/5xx from the app's own API, a failed request, an uncaught
+JavaScript exception, or a \`console.error\`. It returns one verdict:
+\`SAFE_TO_DEPLOY\` (exit 0) or \`DEPLOYMENT_BLOCKED\` (exit 1).
+
+**Core rule:** a change to a web app is not done until the gate exits 0
+against the running app. Unit tests passing is not the same as the clicked
+flows working.
+
+## When to run it
+
+Run the gate, and do not skip it, when **all** of these are true:
+
+- The repository serves a web UI or HTTP API you can start locally or reach as a preview.
+- Your change touches anything a user can reach: routes, handlers, templates, components, client JS, forms, API contracts, migrations, or config that affects them.
+- You are about to do any of the following: report the task as complete, \`git commit\` the final change, open or update a PR, merge, or deploy.
+
+Skip it only for changes with no runtime surface (docs, comments, CI config
+that does not change the app). Say that you skipped it and why.
+
+## How to run it
+
+1. **Start the app** if it is not running (use the project's dev command, e.g.
+   \`npm run dev\`, \`uv run uvicorn ...\`). Run it in the background and wait
+   until the port answers: \`curl -s -o /dev/null http://127.0.0.1:<port>\`.
+2. **Gate it** from the FaultLine checkout (or a \`faultline\` on \`PATH\`):
+
+   \`\`\`bash
+   ./faultline gate http://127.0.0.1:<port> --json
+   \`\`\`
+
+   - \`--json\` prints exactly one JSON object on stdout. Parse that object; do not scrape the prose formats.
+   - \`--format agent\` prints the same verdict as labelled plain text, ready to paste into a prompt.
+   - \`--max-actions N\` (1-100, default 25) and \`--timeout S\` (1-300, default 90) bound the crawl. Raise them for large apps.
+3. **Read the exit code first**, then the JSON.
+
+## Exit codes
+
+| Exit | Verdict | What it means | What you do |
+| --- | --- | --- | --- |
+| \`0\` | \`SAFE_TO_DEPLOY\` | Every explored flow was clean. | Proceed. Mention the gate result (elements and screens explored) in your summary or PR body. |
+| \`1\` | \`DEPLOYMENT_BLOCKED\` with \`failure\` set | FaultLine intercepted a defect. | Enter the self-healing loop below. Do **not** commit as done, open the PR, or deploy. |
+| \`1\` | \`DEPLOYMENT_BLOCKED\` with \`error\` set and \`failure: null\` | The gate could not explore the site (server down, page would not load, browser runner not built). | Fix the environment named in \`error.message\`, then re-run. This is not a pass. |
+| \`2\` | \`DEPLOYMENT_BLOCKED\` | Invalid arguments or URL. | Correct the command (absolute \`http://\` or \`https://\` URL) and re-run. |
+
+## JSON schema
+
+\`\`\`jsonc
+{
+  "gate_status": "PASSED" | "FAILED",
+  "verdict": "SAFE_TO_DEPLOY" | "DEPLOYMENT_BLOCKED",
+  "exit_code": 0 | 1 | 2,
+  "target_url": "http://127.0.0.1:3000/",
+  "summary": "Defect intercepted: HTTP 500 on POST /api/checkout after 3 actions across 2 screens.",
+  "elements_explored": 20,
+  "screens_visited": [{"url": "...", "path": "/checkout", "title": "Checkout", "elements": 11, "forms": 1}],
+  "failure": {                       // null when the gate passed or could not run
+    "kind": "http_error" | "request_failed" | "page_error" | "console_error",
+    "method": "POST", "url": "...", "endpoint": "/api/checkout", "status": 500,
+    "message": "...", "response_body": "...", "stack": "...", "step": 4,
+    "console_errors": ["..."]
+  },
+  "reproduction_trail": [
+    "1. Open http://127.0.0.1:3000/",
+    "2. Click link \\"Trail Mug\\" on / [a:has-text(\\"Trail Mug\\") >> nth=0]",
+    "3. Fill \\"Email\\" with \\"test@example.com\\" on /checkout [#email]",
+    "4. Click button \\"Place order\\" on /checkout [button:has-text(\\"Place order\\")] -> HTTP 500 on POST /api/checkout"
+  ],
+  "agent_remediation_prompt": "FaultLine caught an unhandled HTTP 500 error on POST /api/checkout. Triggered by clicking ...",
+  "error": null                      // {"code": "...", "message": "..."} when the gate could not run
+}
+\`\`\`
+
+\`agent_remediation_prompt\` is self-contained: the defect, the control that
+triggered it, the server response or stack, the full reproduction, and the
+required fix. Treat it as your next instruction.
+
+## The self-healing loop
+
+\`\`\`
+gate --json
+  exit 0 ──────────────► done: report the verdict, continue to commit / PR / deploy
+  exit 2 ──────────────► fix the command, re-run
+  exit 1, error set ───► fix the environment (start server, build runner), re-run
+  exit 1, failure set ─► 1. read agent_remediation_prompt and failure
+                         2. reproduce: follow reproduction_trail; find the handler for
+                            failure.method + failure.endpoint (or the script in failure.stack)
+                         3. fix the root cause in application code
+                         4. run the project's own tests
+                         5. restart the server if it does not hot-reload
+                         6. gate --json again
+\`\`\`
+
+Rules for the loop:
+
+- **Fix the cause, not the symptom.** Do not catch-and-swallow the exception, return 200 with an empty body, hide the button, or disable the form to make the gate pass. A fix must leave the flow working for a real user.
+- **Never weaken the gate.** Do not lower \`--max-actions\`/\`--timeout\` to dodge a defect, point it at a different URL, or edit FaultLine.
+- **A new defect after a fix is progress, not failure.** The gate stops at the first defect, so a fixed bug can reveal the next one. Keep going.
+- **Stop after three gate runs that block on the same \`failure.endpoint\` and \`failure.kind\`.** Do not keep guessing. Report the verdict, the reproduction trail, what you tried, and your best root-cause hypothesis to the user, and leave the change unmerged.
+- **Never report the task as complete while the last gate run exited non-zero.**
+
+## Reporting
+
+When the gate passes, include one line in your final summary or PR body:
+
+> FaultLine gate: SAFE_TO_DEPLOY, 20 elements across 2 screens explored on http://127.0.0.1:3000.
+
+When you hand a blocked gate to the user, paste \`summary\`, the
+\`reproduction_trail\`, and the \`agent_remediation_prompt\` verbatim.
+
+## In CI
+
+\`.github/workflows/faultline-gate.yml\` runs
+\`faultline gate "$PREVIEW_URL" --markdown >> "$GITHUB_STEP_SUMMARY"\` on every
+pull request and push to \`main\` and fails the job on exit 1. If that check is
+red on your PR, open the job summary. It holds the same reproduction trail and
+fix prompt; run the loop above locally against the same flow.`;
+
+    const GATE_SNIPPETS = (url) => [
+  {
+    id: "rules",
+    tab: "Cursor / Claude Code",
+    file: "AGENTS.md · CLAUDE.md · .cursorrules",
+    note: "Paste into the agent's rules so it gates itself before every deploy.",
+    body: `## Pre-flight gate (FaultLine)
+Before you call a web change done, commit it, open or update a pull request, or deploy:
+1. Start the preview server and wait until it answers.
+2. Run: faultline gate ${url} --json
+3. Exit 0 (SAFE_TO_DEPLOY): continue, and report the elements and screens explored.
+4. Exit 1 (DEPLOYMENT_BLOCKED): treat \`agent_remediation_prompt\` as your next
+   instruction. Follow \`reproduction_trail\`, fix the root cause in source
+   (never swallow the error or hide the control), and run the gate again.
+5. Exit 2: fix the command. Never deploy or report success until the gate exits 0.`,
+  },
+  {
+    id: "ci",
+    tab: "GitHub Actions CI/CD",
+    file: ".github/workflows/faultline-gate.yml",
+    note: "Fails the pull request on DEPLOYMENT_BLOCKED and writes the trail and fix prompt to the job summary. FaultLine's own copy adds a self-test and annotations.",
+    body: `name: FaultLine pre-flight gate
+on: [pull_request]
+permissions:
+  contents: read
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          repository: FrankieBiz/Faultline
+          path: .faultline
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - uses: astral-sh/setup-uv@v10
+      - name: Build the FaultLine crawler
+        working-directory: .faultline/tools/browser-runner
+        run: npm ci && npx playwright install --with-deps chromium && npm run build
+      - name: Start the preview
+        run: |
+          npm ci && npm run build
+          npm start &
+          npx --yes wait-on ${url}
+      - name: FaultLine pre-flight gate
+        run: .faultline/faultline gate ${url} --markdown >> "$GITHUB_STEP_SUMMARY"`,
+  },
+  {
+    id: "cli",
+    tab: "CLI Pre-Flight",
+    file: "Terminal",
+    note: "Run it by hand, from a git hook, or from any script that respects exit codes.",
+    body: `./faultline gate ${url}                   # live HUD, verdict, fix prompt
+./faultline gate ${url} --json            # one JSON verdict for agents
+./faultline gate ${url} --format agent    # plain text for an LLM prompt
+./faultline gate ${url} --markdown        # PR comment or job summary
+# exit 0 SAFE_TO_DEPLOY · exit 1 DEPLOYMENT_BLOCKED · exit 2 invalid input`,
+  },
+  {
+    id: "skill",
+    tab: "Agent Skill",
+    file: ".agents/skills/faultline-gate/SKILL.md",
+    note: "Copy the file into your repository's skills folder; agents that load skills pick it up by name.",
+    body: GATE_SKILL,
+  },
+    ];
+
+    const preflight = document.getElementById("preflight");
+    const gateSeis = document.getElementById("gate-seis");
+    const gateVerdict = document.getElementById("gate-verdict");
+    const gatePills = [...document.querySelectorAll("[data-gate]")];
+    let gateTimer = 0;
+
+    function gateSource(run) {
+      const v = run.verdict;
+      return el("p", { class: "gate-source" },
+        "Recorded November 1, 2026: ", el("code", {}, `faultline gate ${v.target_url} --json`), ` exited ${v.exit_code} against ${run.site}. `,
+        el("a", { href: run.evidence }, "Raw verdict"));
+    }
+
+    /** The agent fix prompt or the whole recorded JSON verdict, as the Inspector's payload shows them. */
+    function gatePayloadFigure(verdict) {
+      const views = { prompt: verdict.agent_remediation_prompt, json: JSON.stringify(verdict, null, 2) };
+      const code = el("code", {}, views.prompt);
+      const copy = el("button", { class: "copy", type: "button", "data-copy": views.prompt, "aria-label": "Copy the agent fix prompt" }, "Copy");
+      wireCopy(copy);
+      const buttons = Object.keys(views).map((key) => {
+        const button = el("button", { type: "button", "aria-pressed": String(key === "prompt") }, key === "prompt" ? "Prompt" : "JSON");
+        button.addEventListener("click", () => {
+          buttons.forEach((b) => b.setAttribute("aria-pressed", String(b === button)));
+          code.textContent = views[key];
+          copy.dataset.copy = views[key];
+          copy.setAttribute("aria-label", key === "prompt" ? "Copy the agent fix prompt" : "Copy the JSON verdict");
+        });
+        return button;
+      });
+      return el("figure", { class: "gate-payload" },
+        el("figcaption", {},
+          el("span", {}, el("span", { "aria-hidden": "true" }, "\u{1F916} "), "AI Agent Remediation Payload"),
+          el("span", { class: "gate-payload-tools" }, el("span", { class: "gate-views", role: "group", "aria-label": "Payload format" }, ...buttons), copy)),
+        el("pre", {}, code),
+        el("p", { class: "gate-payload-note" }, "The exact ", el("code", {}, "agent_remediation_prompt"), " and verdict ", el("code", {}, "faultline gate --json"), " returned. Hand it to the coding agent, then fix the bug and run the gate again."));
+    }
+
+    function gateResult(run) {
+      const v = run.verdict;
+      if (v.verdict === "SAFE_TO_DEPLOY") {
+        const stats = el("dl", { class: "gate-stats" });
+        for (const [key, value, cls] of [["Elements", v.elements_explored], ["Actions", run.actions], ["Screens", v.screens_visited.length], ["Defects", 0, "ok"]]) {
+          stats.append(el("div", cls ? { class: cls } : {}, el("dt", {}, key), el("dd", { class: "num" }, String(value))));
+        }
+        return el("div", { class: "gate-result" },
+          el("p", { class: "gate-badge ok" }, el("span", { "aria-hidden": "true" }, "✅ "), "Verdict: Safe to deploy"),
+          stats,
+          el("p", { class: "gate-confirm" }, v.summary + " The screens included checkout. ", el("code", {}, "faultline gate"), " exits 0, so the deploy may proceed."),
+          gateSource(run));
+      }
+      const f = v.failure;
+      const trail = el("ol", { class: "gate-trail", "aria-label": "Reproduction trail" });
+      run.steps.forEach((step, i) => {
+        const what = el("span", {}, step.text);
+        if (step.bad) what.append(el("strong", {}, ` → HTTP ${f.status} on ${f.method} ${f.endpoint}`));
+        trail.append(el("li", step.bad ? { class: "bad" } : {}, el("span", { class: "n", "aria-hidden": "true" }, String(i + 1).padStart(2, "0")), what));
+      });
+      return el("div", { class: "gate-result" },
+        el("p", { class: "gate-badge bad" }, el("span", { "aria-hidden": "true" }, "\u{1F6E1}\u{FE0F} "), "Verdict: Deployment blocked"),
+        el("p", { class: "gate-intercept" }, "Defect intercepted before going live"),
+        el("p", { class: "gate-defect" }, el("span", { class: "gate-code-pill" }, `HTTP ${f.status}`), el("span", { class: "sr-only" }, " on "), el("span", {}, `${f.method} ${f.endpoint}`)),
+        el("p", { class: "gate-confirm" }, v.summary),
+        trail,
+        gatePayloadFigure(v),
+        gateSource(run));
+    }
+
+    /** Replays a recorded run briefly (instantly with reduced motion), then shows its verdict. */
+    function runGate(key) {
+      const run = GATE_RUNS[key];
+      const v = run.verdict;
+      const blocked = v.verdict === "DEPLOYMENT_BLOCKED";
+      clearTimeout(gateTimer);
+      gatePills.forEach((pill) => pill.setAttribute("aria-pressed", String(pill.dataset.gate === key)));
+      document.getElementById("gate-target").textContent = v.target_url;
+      const finish = () => {
+        preflight.dataset.verdict = blocked ? "blocked" : "safe";
+        paintSeismic(gateSeis, preflight, blocked ? "rupture" : "resonance", blocked ? `Rupture · HTTP ${v.failure.status}` : "Resonance · 0 defects", blocked);
+        gateVerdict.replaceChildren(gateResult(run));
+      };
+      if (matchMedia("(prefers-reduced-motion: reduce)").matches) return finish();
+      preflight.dataset.verdict = "running";
+      paintSeismic(gateSeis, preflight, "hunt", "Gate scanning", false);
+      // A blocked run replays its reproduction steps; a clean one, the screens it explored.
+      const frames = blocked ? run.steps.map((step, i) => `Step ${i + 1}: ${step.text}`) : v.screens_visited.map((screen) => `Exploring ${screen.path}`);
+      const step = el("p", { class: "gate-scan-step" }, "Launching headless Chromium…");
+      gateVerdict.replaceChildren(el("div", { class: "gate-scan" }, el("p", { class: "gate-scan-line" }, `Scanning ${v.target_url}…`), step));
+      let i = 0;
+      const tick = () => {
+        if (i < frames.length) {
+          step.textContent = frames[i];
+          i += 1;
+          gateTimer = setTimeout(tick, 1100 / frames.length);
+        } else finish();
+      };
+      gateTimer = setTimeout(tick, 200);
+    }
+    gatePills.forEach((pill) => pill.addEventListener("click", () => runGate(pill.dataset.gate)));
+    paintSeismic(gateSeis, preflight, "still", "Gate armed", false);
+
+    // Integration tabs: arrow keys, Home, and End move between them, as in any tablist.
+    const gateSnippets = GATE_SNIPPETS(GATE_URL);
+    const gateTabs = gateSnippets.map((snippet, i) => {
+      const tab = el("button", { class: "gate-tab", type: "button", role: "tab", id: "gate-tab-" + snippet.id, "aria-controls": "gate-panel" }, snippet.tab);
+      tab.addEventListener("click", () => showGateTab(i));
+      tab.addEventListener("keydown", (event) => {
+        const n = gateSnippets.length;
+        const to = event.key === "ArrowRight" ? (i + 1) % n : event.key === "ArrowLeft" ? (i - 1 + n) % n
+          : event.key === "Home" ? 0 : event.key === "End" ? n - 1 : -1;
+        if (to < 0) return;
+        event.preventDefault();
+        showGateTab(to);
+        gateTabs[to].focus();
+      });
+      document.getElementById("gate-tabs").append(tab);
+      return tab;
+    });
+    function showGateTab(index) {
+      const snippet = gateSnippets[index];
+      gateTabs.forEach((tab, i) => {
+        tab.setAttribute("aria-selected", String(i === index));
+        tab.tabIndex = i === index ? 0 : -1;
+      });
+      document.getElementById("gate-panel").setAttribute("aria-labelledby", "gate-tab-" + snippet.id);
+      document.getElementById("gate-file").textContent = snippet.file;
+      document.getElementById("gate-code").textContent = snippet.body;
+      document.getElementById("gate-note").textContent = snippet.note;
+      const copy = document.getElementById("gate-copy");
+      copy.dataset.copy = snippet.body;
+      copy.setAttribute("aria-label", "Copy " + snippet.tab);
+    }
+    showGateTab(0);
 
     buildPicker();
   </script>

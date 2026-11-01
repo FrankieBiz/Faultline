@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { CheckRecord, CrawlEvent, Tone } from "@/lib/faultline-api";
+import type { CheckRecord, CrawlEvent, CrawlTelemetry, Tone } from "@/lib/faultline-api";
 import { checkVerdict } from "@/lib/faultline-api";
 
 type Defect = Extract<CrawlEvent, { type: "defect" }>;
@@ -30,6 +30,8 @@ export interface CrawlState {
   phase: "connecting" | "retrying" | "running" | "fallback" | "caught" | "clean" | "incomplete" | "failed";
   source: "playwright" | "check";
   scan: { buttons: number; forms: number; links: number } | null;
+  /** The crawler's final report summary, from its `done` event; null before then or for a direct check. */
+  telemetry: CrawlTelemetry | null;
   lines: CrawlLine[];
   defect: (Omit<Defect, "type" | "trigger"> & { trigger: { kind: string; label: string; page: string | null } }) | null;
   /** Why a direct check stood in for the crawler; kept for as long as its result is shown. */
@@ -63,9 +65,9 @@ export const crawlInFlight = (state: CrawlState | null) =>
   state !== null && ["connecting", "retrying", "running", "fallback"].includes(state.phase);
 
 export const startCrawl = (target: string): CrawlState =>
-  ({ target, startedAt: Date.now(), phase: "connecting", source: "playwright", scan: null, lines: [], defect: null, fallbackReason: null, note: null });
+  ({ target, startedAt: Date.now(), phase: "connecting", source: "playwright", scan: null, telemetry: null, lines: [], defect: null, fallbackReason: null, note: null });
 
-const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
+export const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
 const pathOf = (url: string) => {
   try {
     return new URL(url).pathname;
@@ -107,7 +109,7 @@ export function applyCrawlEvent(state: CrawlState, event: CrawlEvent): CrawlStat
       return { ...next, phase: "caught", lines, defect: { ...event } };
     }
     case "done":
-      return { ...next, phase: next.defect ? "caught" : "clean" };
+      return { ...next, phase: next.defect ? "caught" : "clean", telemetry: event.telemetry ?? null };
     case "error":
       return { ...next, phase: "failed", note: event.message };
   }
@@ -139,6 +141,16 @@ const PHASE_TONE: Record<CrawlState["phase"], Tone | "active"> = {
   caught: "bad", clean: "ok", incomplete: "warn", failed: "warn",
 };
 
+/** What a crawl covered, counted from its ticker lines, and its click trail up to the failing step. */
+export function crawlSummary(state: CrawlState) {
+  const steps = state.lines.filter((line) => line.kind !== "scan");
+  const actions = steps.filter((line) => line.kind !== "visit" && line.kind !== "session")
+    .reduce((count, line) => count + (line.last !== undefined && line.n !== null ? line.last - line.n + 1 : 1), 0);
+  const screens = new Set(steps.filter((line) => line.kind !== "session").map((line) => line.kind === "visit" ? line.label : line.page)).size;
+  const trail = steps.slice(0, (steps.findLastIndex((line) => !line.ok) + 1) || steps.length);
+  return { steps, actions, screens, trail };
+}
+
 /** The agent's status once a repair takes over from the hunt. */
 function missionStatus(state: CrawlState, repair: MissionRepair | null): { label: string; tone: Tone | "active" } {
   if (repair?.applied) return { label: "Fix applied", tone: "ok" };
@@ -149,7 +161,7 @@ function missionStatus(state: CrawlState, repair: MissionRepair | null): { label
   return { label: PHASE_LABEL[state.phase], tone: PHASE_TONE[state.phase] };
 }
 
-type Seismic = "hunt" | "rupture" | "resonance" | "still";
+export type Seismic = "hunt" | "rupture" | "resonance" | "still";
 const SEISMIC: Record<Tone | "active", Seismic> = { active: "hunt", bad: "rupture", ok: "resonance", warn: "still", idle: "still" };
 
 /**
@@ -180,7 +192,7 @@ const TRACES: Record<Seismic, string> = {
 };
 
 /** A live waveform of the mission: decorative, since the status line says the same in words. */
-function Seismograph({ mode }: { mode: Seismic }) {
+export function Seismograph({ mode }: { mode: Seismic }) {
   return (
     <div className="seis" data-mode={mode} aria-hidden="true">
       <svg key={mode} className="seis-trace" width={TILE * 14} height={40} viewBox={`0 0 ${TILE * 14} 40`}>
@@ -248,16 +260,11 @@ export default function CrawlerHud(props: {
   }, [state.lines]);
 
   const defect = state.defect;
-  const steps = state.lines.filter((line) => line.kind !== "scan");
-  const actions = steps.filter((line) => line.kind !== "visit" && line.kind !== "session")
-    .reduce((count, line) => count + (line.last !== undefined && line.n !== null ? line.last - line.n + 1 : 1), 0);
-  const screens = new Set(steps.filter((line) => line.kind !== "session").map((line) => line.kind === "visit" ? line.label : line.page)).size;
+  const { steps, actions, screens, trail } = crawlSummary(state);
   const status = missionStatus(state, repair);
   const telemetry = crawler
     ? [["Screens Explored", screens], ["Actions", actions]] as const
     : [["Sessions", new Set(steps.map((line) => line.text.split(":")[0])).size], ["Requests", steps.length]] as const;
-  // The click trail: every page visited and control touched, up to the failing step.
-  const trail = steps.slice(0, (steps.findLastIndex((line) => !line.ok) + 1) || steps.length);
   const seismic = SEISMIC[status.tone];
   const working = running || Boolean(repair?.running || repair?.applying);
   // The journey ribbon: where the agent started, each step of the trail, and the request that broke.

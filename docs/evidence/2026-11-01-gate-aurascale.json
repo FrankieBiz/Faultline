@@ -1,0 +1,60 @@
+{
+  "gate_status": "FAILED",
+  "verdict": "DEPLOYMENT_BLOCKED",
+  "exit_code": 1,
+  "target_url": "http://127.0.0.1:5050/",
+  "summary": "Defect intercepted: HTTP 500 on POST /api/provision-cluster after 7 actions across 3 screens.",
+  "elements_explored": 25,
+  "screens_visited": [
+    {
+      "url": "http://127.0.0.1:5050/",
+      "path": "/",
+      "title": "AuraScale Cloud — Autonomous Inference Engine",
+      "elements": 9,
+      "forms": 0,
+      "first_step": 1
+    },
+    {
+      "url": "http://127.0.0.1:5050/pricing",
+      "path": "/pricing",
+      "title": "AuraScale Cloud — Autonomous Inference Engine",
+      "elements": 7,
+      "forms": 0,
+      "first_step": 2
+    },
+    {
+      "url": "http://127.0.0.1:5050/signup",
+      "path": "/signup",
+      "title": "AuraScale Cloud — Autonomous Inference Engine",
+      "elements": 9,
+      "forms": 1,
+      "first_step": 3
+    }
+  ],
+  "failure": {
+    "kind": "http_error",
+    "message": "500 Internal Server Error",
+    "method": "POST",
+    "url": "http://127.0.0.1:5050/api/provision-cluster",
+    "endpoint": "/api/provision-cluster",
+    "status": 500,
+    "response_body": "{\"status\": 500, \"error\": \"NVMeLeaseAllocationException\", \"message\": \"ResourceExhausted: unable to acquire read/write lock on isolated cgroup enclave #109\", \"code\": \"AURA_RESOURCE_LOCKED\", \"received_payload\": 94}",
+    "step": 8,
+    "console_errors": [
+      "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+    ],
+    "related": []
+  },
+  "reproduction_trail": [
+    "1. Open http://127.0.0.1:5050/",
+    "2. Click link \"Explore Pricing\" on / [a:has-text(\"Explore Pricing\")]",
+    "3. Click link \"Start Free\" on /pricing [a:has-text(\"Start Free\")]",
+    "4. Fill \"Full Name\" with \"Alex Tester\" on /signup [#name]",
+    "5. Fill \"Work Email\" with \"test@example.com\" on /signup [#email]",
+    "6. Fill \"Organization Identifier\" with \"FaultLine QA\" on /signup [#org]",
+    "7. Fill \"Cluster Name\" with \"Alex Tester\" on /signup [#cluster_name]",
+    "8. Click button \"🚀 Provision Dedicated Cluster\" on /signup [#btn-activate] -> HTTP 500 on POST /api/provision-cluster"
+  ],
+  "agent_remediation_prompt": "FaultLine caught an unhandled HTTP 500 error on POST /api/provision-cluster. Triggered by clicking \"🚀 Provision Dedicated Cluster\" (#btn-activate) on /signup.\nServer response: {\"status\": 500, \"error\": \"NVMeLeaseAllocationException\", \"message\": \"ResourceExhausted: unable to acquire read/write lock on isolated cgroup enclave #109\", \"code\": \"AURA_RESOURCE_LOCKED\", \"received_payload\": 94}\nReproduce:\n  1. Open http://127.0.0.1:5050/\n  2. Click link \"Explore Pricing\" on / [a:has-text(\"Explore Pricing\")]\n  3. Click link \"Start Free\" on /pricing [a:has-text(\"Start Free\")]\n  4. Fill \"Full Name\" with \"Alex Tester\" on /signup [#name]\n  5. Fill \"Work Email\" with \"test@example.com\" on /signup [#email]\n  6. Fill \"Organization Identifier\" with \"FaultLine QA\" on /signup [#org]\n  7. Fill \"Cluster Name\" with \"Alex Tester\" on /signup [#cluster_name]\n  8. Click button \"🚀 Provision Dedicated Cluster\" on /signup [#btn-activate] -> HTTP 500 on POST /api/provision-cluster\nFix the server-side exception handling for POST /api/provision-cluster so it no longer returns HTTP 500 before deploying, then re-run `faultline gate http://127.0.0.1:5050/ --json` and continue only when it exits 0.",
+  "error": null
+}
