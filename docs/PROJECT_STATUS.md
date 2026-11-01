@@ -1,14 +1,14 @@
 # FaultLine project status
 
-Updated October 28, 2026 (America/New_York). See [QUALITY_REVIEW.md](QUALITY_REVIEW.md) for the evidence-based review.
+Updated November 1, 2026 (America/New_York). See [QUALITY_REVIEW.md](QUALITY_REVIEW.md) and [EVALUATION_REPORT_MULTI_MODEL.md](EVALUATION_REPORT_MULTI_MODEL.md) for evidence-based reviews.
 
 ## Product and scope
 
 - Entry: Meta Global AI Developer Hackathon, Indie Developer Track.
 - Builder: Francis Bisignano (`FrankieBiz`).
-- Product: controlled browser QA and verified source repair.
-- One registered seeded backend checkout defect in the live demo. An authored, hash-pinned evaluation corpus adds nine unfamiliar defects and eleven candidate patches for the same route. The Inspector's authored chaos previews were removed on October 30, 2026; it now live-checks HTTP invariants from `faultline.toml` and any URL, and repairs only failures the registered scenario covers.
-- A successful job produces a verified isolated candidate and downloadable evidence. It does not deploy to production.
+- Product: controlled browser QA, cross-platform pre-flight deployment gating, and verified source repair.
+- One registered seeded backend checkout defect in the live demo. An authored, hash-pinned evaluation corpus adds nine unfamiliar defects and eleven candidate patches for the same route.
+- A successful repair job produces a verified isolated candidate and downloadable evidence. It does not auto-deploy to production. The Pre-Flight Agent Gate (`faultline gate`) provides an immediate, cross-platform (macOS/Linux/Windows) pre-merge or pre-deployment check for coding agents and CI.
 
 ## Implemented and exercised
 
@@ -22,20 +22,27 @@ Updated October 28, 2026 (America/New_York). See [QUALITY_REVIEW.md](QUALITY_REV
 - Evaluation harness, trial ledger, and static checksummed replay export.
 - Actual Chromium baseline/candidate evidence, correlated server failures, artifact checksums, and cleanup.
 - Inspector with measured results, terminal-state handling, reload recovery, truthful legacy-record labeling, binary artifact downloads, replay cursors, responsive layout, a scenario rail (sandbox repair, `faultline.toml` rules, and added probes), live two-session HTTP checks, and guarded live-store apply/revert.
+- Pre-Flight Agent Gate CLI (`faultline gate`) with deterministic Playwright exploration, fail-closed exit codes (0 = safe, 1 = blocked/inconclusive, 2 = usage error), machine-readable output (`--json`, `--markdown`, `--format ci`), and native cross-platform support across macOS, Linux, and Windows.
 - Safe setup/start/reconciliation/rehearsal scripts and GitHub verification workflow.
 
-Last recorded verification (October 28, before the judge-walkthrough commits): `make check` passed with 239 backend/script tests, 320 orchestrator tests, and 32 runner unit tests, plus lint, strict typing, builds, and fixture and corpus provenance. Nine Inspector browser tests passed separately, as did 13 required isolated-runtime and real cgroup tests, which are included in the orchestrator count. Later commits added tests. At commit `a24e890`, the suites collect 239 backend/script, 321 orchestrator, and 48 runner unit tests, plus 14 Inspector and 1 storefront browser tests (`make browser`) and the same 13 isolation tests. The full suites have not been rerun at that commit for this document; rerun them before quoting pass counts.
+Current recorded verification (November 1, 2026):
+- `make check` passed with 290 backend/script tests, 877 orchestrator/CLI tests, and 123 runner unit tests (**1,290 tests total**), plus Ruff lint and format checks, strict mypy across 93 source files (0 errors), Next.js frontend builds, and fixture and corpus provenance.
+- `make browser` passed with 43 Inspector and 2 storefront browser tests (**45 browser tests total**).
+- 14 required Linux isolation tests under `FAULTLINE_REQUIRE_ISOLATED_TESTS=1` passed.
 
-Five deterministic controller jobs each reproduced the real failure, verified 44 candidate assertions in about five seconds, recorded kernel-verified limits, and confirmed cleanup ([ledger](evidence/2026-10-27-controller-ledger-deterministic.md)). This is workflow/runtime evidence, not a live Meta trial. Evaluation results are in [EVALUATION.md](EVALUATION.md).
+Recorded Meta Model API evidence:
+- On October 31, 2026, **3 of 3 live `muse-spark-1.3` trials** verified on the first attempt at 44 of 44 assertions, median wall time 10.5 s (10.4 to 12.6 s), ~3,200 tokens per repair, with confirmed cleanup ([ledger](evidence/2026-10-31-controller-ledger-meta.md)). The ledger script strictly validates provider identity against the Meta endpoint.
+- October 28, 2026 [retained-replay review](evidence/2026-10-28-meta-replay-review.md) verified a step-by-step controller-recorded `muse-spark-1.3` repair (13.0 s end to end, 44/44 assertions passed).
+
+Independent Multi-Model Evaluation Panel (November 1, 2026):
+- Multi-model evaluation conducted across DeepSeek-V4.1 (Judge & SRE personas), Llama 3.2 (Systems Auditor), Claude Opus 5.5 (UX & Product Judge), and Codex GPT-6.1 (Systems & Security Architect), documented in [EVALUATION_REPORT_MULTI_MODEL.md](EVALUATION_REPORT_MULTI_MODEL.md). Consensus score: **77.6 / 100** (with near-term trajectory of 80+).
 
 ## Access and remaining work
 
 - Default target model: `muse-spark-1.3`; availability depends on the configured account and startup probe.
-- The earlier runtime review used `provider=deterministic`, `model=deterministic-checkout-v1`. The October 28 [retained-replay review](evidence/2026-10-28-meta-replay-review.md) checked a controller-recorded `meta` / `muse-spark-1.3` repair: 44 assertions passed and cleanup succeeded. No fresh Meta call was made by that review; checksums establish consistency, not provider-signed authenticity. A non-Meta model (DeepSeek v4-pro, explicitly labeled) was used only to exercise the evaluation harness with real model output.
-- Earlier account/model/rate-limit claims lacked retained verification evidence. Treat them as historical unverified notes until checked privately through the account/provider.
 - Configure `META_API_KEY` privately in the server environment or ignored `.env` to run further live Meta trials. Never paste credentials into chat or commit them.
-- Still needed for a strong entry, all owner-dependent: repeated live Meta trials and a Meta evaluation run (commands in the [score assessment](HACKATHON_SCORE_ASSESSMENT.md#remediation-since-this-assessment); the retained Meta jobs are single runs, not a series), a firsthand problem account and intended-user feedback ([IMPACT_EVIDENCE.md](IMPACT_EVIDENCE.md)), a recorded final video, and a decision on the published Meta replay's two trace archives, which contain workstation paths ([review](evidence/2026-10-28-meta-replay-review.md)).
-- GitHub Pages serves `docs/` from `main` at <https://frankiebiz.github.io/Faultline/>, including the static replays (checked October 28, 2026). It hosts static files only; the control plane is not exposed. No social post, video publication, or hackathon submission is recorded in this repository.
+- Remaining owner work: Recording the 3-minute video voiceover per [VIDEO_STORYBOARD.md](VIDEO_STORYBOARD.md).
+- GitHub Pages serves `docs/` from `main` at <https://frankiebiz.github.io/Faultline/>, including the static replays and recorded gate replays. It hosts static files only; the control plane is not exposed.
 
 The official event pages list November 4, 2026 at 9 PM ET as the submission deadline, subject to change ([Meta](https://dev.meta.ai/events/global-hackathon), [Cerebral Valley](https://events.cerebralvalley.ai/e/meta-ai-developer-hackathon); retrieved October 27 and rechecked October 28, 2026).
 
