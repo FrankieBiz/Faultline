@@ -86,7 +86,8 @@ jobs:
       - name: FaultLine pre-flight gate
         shell: bash
         run: |
-          set -uo pipefail
+          # Actions runs bash with -e; keep going so the exit code can be reported.
+          set +e -uo pipefail
           ./faultline gate "$PREVIEW_URL" --markdown >> "$GITHUB_STEP_SUMMARY"
           status=$?
           if [ "$status" -ne 0 ]; then
@@ -98,9 +99,10 @@ jobs:
         if: env.SELF_TEST_BROKEN_URL != ''
         shell: bash
         run: |
-          set -uo pipefail
+          set +e -uo pipefail
           ./faultline gate "$SELF_TEST_BROKEN_URL" --json > "$RUNNER_TEMP/broken-gate.json"
           status=$?
+          set -e
           cat "$RUNNER_TEMP/broken-gate.json"
           test "$status" -eq 1
           jq -e '.verdict == "DEPLOYMENT_BLOCKED" and .failure.status == 500
