@@ -10,6 +10,7 @@ import GuidedFlow, { type FlowRun, type StoreHunt } from "@/components/GuidedFlo
 import HeroArena from "@/components/HeroArena";
 import InvariantPanel from "@/components/InvariantPanel";
 import JobResult, { summarizeJob } from "@/components/JobResult";
+import JudgeEvidence from "@/components/JudgeEvidence";
 import PackPanel from "@/components/PackPanel";
 import ProbeDialog, { type ProbeValues } from "@/components/ProbeDialog";
 import ScenarioRail, { type RailStatus, type Selection } from "@/components/ScenarioRail";
@@ -76,6 +77,8 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
   const [flowAction, setFlowAction] = useState<FlowAction>(null);
   /** Bumped to open the CLI guide; the dialog closes itself. */
   const [guideRequest, setGuideRequest] = useState(0);
+  /** Bumped to open the judge evidence drawer. */
+  const [judgeRequest, setJudgeRequest] = useState(0);
   const [sound, setSound] = useState(false);
   const soundRef = useRef(false);
   const [checkingId, setCheckingId] = useState<string | null>(null);
@@ -193,14 +196,15 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
   // A crawl streams until it finishes; leaving the page ends it.
   useEffect(() => () => crawlAbort.current?.abort(), []);
 
-  // "?" opens the workflow quick sheet from anywhere except a text field or an open dialog.
+  // "?" opens the workflow quick sheet and "J" the judge evidence, from anywhere except a text field or an open dialog.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "?" || event.ctrlKey || event.metaKey || event.altKey) return;
+      const open = event.key === "?" ? setGuideRequest : event.key === "j" || event.key === "J" ? setJudgeRequest : null;
+      if (!open || event.ctrlKey || event.metaKey || event.altKey || event.repeat) return;
       const target = event.target as HTMLElement | null;
       if (target?.closest("input, textarea, select, [contenteditable='true'], dialog[open]")) return;
       event.preventDefault();
-      setGuideRequest((n) => n + 1);
+      open((n) => n + 1);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -750,6 +754,9 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
               <span className="readiness-dot" aria-hidden="true" />
               <span className="readiness-key">Engine Status:</span> {engineLabel}
             </span>
+            <button type="button" className="btn tool judge-open" onClick={() => setJudgeRequest((n) => n + 1)} aria-keyshortcuts="J" aria-haspopup="dialog">
+              <span className="judge-mark" aria-hidden="true" />Judge evidence <kbd aria-hidden="true">J</kbd>
+            </button>
             <a className="btn quiet tool gate-link" href="#gate"><span className="gate-lock" aria-hidden="true" />Pre-Flight Gate</a>
             <button type="button" className="btn quiet tool" onClick={() => setGuideRequest((n) => n + 1)} aria-keyshortcuts="?" aria-haspopup="dialog">
               CLI guide <kbd aria-hidden="true">?</kbd>
@@ -838,6 +845,7 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
         </div>
       </main>
       <CliGuide request={guideRequest} />
+      <JudgeEvidence request={judgeRequest} readiness={readiness} readinessError={readinessError} />
       <ProbeDialog open={dialogOpen} seedUrl={dialogSeed} storeUrl={store?.url ?? null} onClose={() => setDialogOpen(false)} onSubmit={submitProbe} />
       <footer className="shell foot"><span>FaultLine · verified repair runs locally; nothing is pushed or deployed.</span><a href="https://github.com/FrankieBiz/Faultline">Source</a></footer>
     </>

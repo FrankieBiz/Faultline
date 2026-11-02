@@ -1191,7 +1191,7 @@ test("a verified run reads failure, patch, gates, checks, and evidence without e
   await expect(source).toContainText("Deterministic fallback");
   await expect(source).toContainText("not a Meta model trial");
   await expect(page.getByText("12 of 18 checks failed", { exact: true })).toBeVisible();
-  await expect(page.getByLabel("Unified diff from attempt 1")).toBeVisible();
+  await expect(page.getByLabel("Verified patch from attempt 1")).toBeVisible();
   await expect(page.locator(".technical-details")).not.toHaveAttribute("open");
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -1284,6 +1284,172 @@ test("the CLI guide pairs each real command with its dashboard control, copies c
   await open.click();
   const box = await guide.boundingBox();
   expect(box && box.x >= 0 && box.x + box.width <= 390).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test("judge evidence opens from the header and J with the rubric, the Meta ledger, live sandbox status, and record links", async ({ page }) => {
+  await mock(page, { readiness: { ...ready,
+    resource_limits: { requested: "required", mode: "cgroup-v2-scope", enforcement_preflight: "passed", reason: null, configured: { memory_max_bytes: 536870912, tasks_max: 64, cpu_quota_percent: 100 } } } });
+  await page.goto("/");
+  const open = page.getByRole("button", { name: "Judge evidence" });
+  await expect(open).toHaveAttribute("aria-keyshortcuts", "J");
+  // Recorded Meta evidence is not in the page until the drawer opens.
+  await expect(page.getByText("Live Meta Model API ledger")).toHaveCount(0);
+  await open.click();
+  const drawer = page.getByRole("dialog", { name: "Judge scorecard & telemetry" });
+  await expect(drawer).toBeVisible();
+  await expect(drawer.getByRole("button", { name: "Close" })).toBeFocused();
+  await expect(drawer.getByRole("tab", { name: "Scorecard & telemetry" })).toHaveAttribute("aria-selected", "true");
+
+  const rubric = drawer.locator(".rubric > li");
+  await expect(rubric).toHaveCount(4);
+  await expect(rubric.locator(".rubric-weight")).toHaveText(["30%", "25%", "20%", "25%"]);
+  await expect(rubric.locator("h4")).toHaveText(["Impact", "Use of Meta AI tooling", "Technical depth", "Demo"]);
+  await expect(drawer).toContainText("FaultLine claims none");
+
+  const ledger = drawer.locator(".ledger-stats");
+  await expect(ledger.locator("dd")).toHaveText(["3/3", "44/44", "10.5 s", "0"]);
+  await expect(drawer.locator(".judge-table").first().locator("tbody tr")).toHaveCount(3);
+  await expect(drawer).toContainText("muse-spark-1.3");
+  await expect(drawer).toContainText("one registered scenario");
+
+  const sandbox = drawer.locator(".sandbox-live");
+  await expect(sandbox).toHaveAttribute("data-tone", "ok");
+  await expect(sandbox).toContainText("cgroup v2 · 512 MiB · 64 tasks · 100% CPU · enforced");
+  await expect(drawer).toContainText("Bubblewrap");
+
+  for (const doc of ["DEVPOST_SUBMISSION.md", "IMPACT_EVIDENCE.md", "EVALUATION.md"]) {
+    await expect(drawer.locator(`.judge-docs a[href="https://github.com/FrankieBiz/Faultline/blob/main/docs/${doc}"]`)).toBeVisible();
+  }
+
+  await page.keyboard.press("Escape");
+  await expect(drawer).toBeHidden();
+  await expect(open).toBeFocused();
+  await expect(page.getByText("Live Meta Model API ledger")).toHaveCount(0);
+  await page.locator("body").press("j");
+  await expect(drawer).toBeVisible();
+  await drawer.getByRole("button", { name: "Close" }).click();
+  await expect(drawer).toBeHidden();
+
+  // Typing "j" into a field is text, not a shortcut.
+  await page.getByRole("button", { name: "Custom URL check" }).click();
+  const field = page.getByRole("dialog", { name: "Custom URL check" }).getByLabel("URL");
+  await field.pressSequentially("https://jj.test/");
+  await expect(field).toHaveValue("https://jj.test/");
+  await expect(drawer).toBeHidden();
+  await page.keyboard.press("Escape");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await open.click();
+  const box = await drawer.boundingBox();
+  expect(box && box.x >= 0 && box.x + box.width <= 390).toBe(true);
+  expect(await drawer.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+});
+
+test("an engine without enforced limits never shows the sandbox as verified", async ({ page }) => {
+  await mock(page, { readiness: { ...ready,
+    resource_limits: { requested: "required", mode: null, enforcement_preflight: "failed", reason: "cgroup delegation unavailable", configured: null } } });
+  await page.goto("/");
+  await page.locator("body").press("J");
+  const sandbox = page.getByRole("dialog", { name: "Judge scorecard & telemetry" }).locator(".sandbox-live");
+  await expect(sandbox).toHaveAttribute("data-tone", "bad");
+  await expect(sandbox).toContainText("blocked (cgroup delegation unavailable)");
+});
+
+test("the evaluation corpus contrasts the symptom check with the oracle and explores ten holdout defects by keyboard", async ({ page }) => {
+  await mock(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Judge evidence" }).click();
+  const drawer = page.getByRole("dialog", { name: "Judge scorecard & telemetry" });
+  await drawer.getByRole("tab", { name: "Scorecard & telemetry" }).press("ArrowRight");
+  const corpusTab = drawer.getByRole("tab", { name: "Evaluation corpus" });
+  await expect(corpusTab).toBeFocused();
+  await expect(corpusTab).toHaveAttribute("aria-selected", "true");
+
+  await expect(drawer.locator(".verdict[data-tone='bad']")).toContainText("Accepted 5 of 6 wrong patches");
+  await expect(drawer.locator(".verdict[data-tone='bad']")).toContainText("False green");
+  await expect(drawer.locator(".verdict[data-tone='ok']")).toContainText("Rejected 6 of 6 wrong patches");
+  await expect(drawer.locator(".verdict[data-tone='ok']")).toContainText("Accepted 2 of 2 correct repairs, and refused 3 of 3 out-of-policy diffs");
+  await drawer.getByText("All 11 candidate patches").click();
+  await expect(drawer.locator(".gauntlet tbody tr")).toHaveCount(11);
+  await expect(drawer.locator(".gauntlet tbody tr").filter({ hasText: "null_coupon_only" })).toContainText("✕ accepted");
+
+  const defects = drawer.getByRole("tablist", { name: "Holdout defects" }).getByRole("tab");
+  await expect(defects).toHaveCount(10);
+  const ids = ["seeded_missing_coupon", "fifteen_float_rounding", "coupon_case_sensitive", "coupon_whitespace_untrimmed", "line_total_ignores_quantity",
+    "discount_sign_inverted", "discount_first_line_only", "unknown_coupon_accepted", "missing_coupon_key_error", "order_wrong_namespace"];
+  await expect(defects.locator("code")).toHaveText(ids);
+  await expect(defects.locator(".holdout-count")).toHaveText(["6/27", "1/27", "1/27", "2/27", "3/27", "4/27", "1/27", "1/27", "6/27", "10/27"]);
+
+  const panel = drawer.locator(".holdout-detail");
+  await expect(panel).toContainText("A checkout without a coupon has zero discount");
+  await expect(panel.locator(".strip-cell")).toHaveCount(27);
+  await expect(panel.locator(".strip-cell[data-fail]")).toHaveCount(6);
+  await expect(panel.locator(".holdout-verdicts")).toContainText("Symptom check");
+  await expect(panel.locator(".holdout-verdicts")).toContainText("Caught: 6 failing checks on the defective build");
+
+  await defects.first().click();
+  await page.keyboard.press("ArrowDown");
+  await expect(defects.nth(1)).toBeFocused();
+  await expect(defects.nth(1)).toHaveAttribute("aria-selected", "true");
+  await expect(panel.locator("h4")).toHaveText("FIFTEEN uses float rounding instead of floored cents");
+  await expect(panel.getByRole("list", { name: "Failing checks" })).toHaveText("regression.fifteen");
+  await expect(panel.locator(".defect-code [data-kind='defect']")).toContainText("round(subtotal * 0.15)");
+  // The gauntlet's symptom-check result belongs to the registered defect only.
+  await expect(panel.locator(".holdout-verdicts")).not.toContainText("Symptom check");
+
+  await page.keyboard.press("End");
+  await expect(defects.nth(9)).toBeFocused();
+  await expect(panel.locator(".strip-cell[data-fail]")).toHaveCount(10);
+  await expect(panel).toContainText("Trial 1: not verified; the oracle rejected the patch");
+  await expect(panel).toContainText("Neither patch was counted as a repair");
+  await expect(panel).toContainText("DeepSeek");
+  await expect(drawer).toContainText("Meta has not yet been run on this corpus.");
+  await page.keyboard.press("ArrowDown");
+  await expect(defects.nth(0)).toBeFocused();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await drawer.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+});
+
+test("a verified run puts its patch first: copy it, download it as a .patch, and fetch the checksummed bundle", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  const verified = verifiedDetail();
+  const artifacts = [
+    { id: "bundle", execution_id: null, attempt_id: null, role: "proof_bundle", content_type: "application/json", size_bytes: 2048, sha256: "feedc0ffee00112233" },
+    { id: "summary", execution_id: null, attempt_id: null, role: "proof_bundle_md", content_type: "text/markdown", size_bytes: 100, sha256: "abc123abc123abc123" },
+  ];
+  await mock(page, { detail: { ...verified, artifacts } });
+  await page.goto("/");
+  await inspectPastRun(page);
+  const proof = page.getByRole("region", { name: "Verified patch" });
+  await expect(proof).toBeVisible();
+  await expect(proof).toContainText("+1 −1");
+  await expect(proof).toContainText(target);
+  await expect(proof.getByLabel("Verified patch from attempt 1")).toContainText("discounts.get(coupon_code, 0)");
+  // The diff appears once: the attempt below collapses and points up to it.
+  await expect(page.getByLabel("Unified diff from attempt 1")).toBeHidden();
+  await expect(page.locator(".attempt").first()).toContainText("diff shown in the proof export above");
+
+  await proof.getByRole("button", { name: "Copy patch" }).click();
+  await expect(proof.getByRole("status")).toHaveText("Patch copied to the clipboard");
+  const copied = await page.evaluate(() => navigator.clipboard.readText());
+  expect(copied).toBe(`${verified.attempts[0]?.parsed_diff}\n`);
+
+  const downloading = page.waitForEvent("download");
+  await proof.getByRole("button", { name: "Download .patch" }).click();
+  const download = await downloading;
+  expect(download.suggestedFilename()).toBe(`faultline-${id.slice(0, 8)}.patch`);
+  await expect(proof).toContainText(`git apply faultline-${id.slice(0, 8)}.patch`);
+
+  const bundle = page.getByRole("link", { name: /Download evidence bundle/ });
+  await expect(bundle).toHaveCount(1);
+  await expect(bundle).toHaveAttribute("href", "/api/faultline/artifacts/bundle");
+  await expect(bundle).toContainText("sha256 feedc0ffee00");
+  await expect(page.getByRole("link", { name: /Download review summary/ })).toHaveCount(1);
+
+  await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 

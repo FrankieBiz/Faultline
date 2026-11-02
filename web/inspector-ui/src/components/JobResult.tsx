@@ -1,5 +1,5 @@
 import type { RefObject } from "react";
-import { Artifacts, Assertions, Attempts, EventLog, Pipeline, STEP_LABELS, Seam, currentStep } from "@/components/Evidence";
+import { Artifacts, Assertions, Attempts, EventLog, Pipeline, ProofExport, STEP_LABELS, Seam, currentStep } from "@/components/Evidence";
 import {
   OUTCOME, TERMINAL, limitsName, providerName, providerNote,
   type JobDetail, type JobEvent, type Tone,
@@ -35,6 +35,8 @@ export default function JobResult(props: {
   const sourced = detail.attempts.findLast((a) => typeof a.validation_result?.provider === "string" && typeof a.validation_result?.model === "string");
   const jobProvider = sourced ? String(sourced.validation_result?.provider) : null;
   const jobSource = sourced ? providerName(String(sourced.validation_result?.provider), String(sourced.validation_result?.model)) : null;
+  // Only a run that meets every verification condition offers its patch for export.
+  const exported = verified && verifiedAttempt?.parsed_diff ? { ...verifiedAttempt, parsed_diff: verifiedAttempt.parsed_diff } : null;
 
   const downloadRecord = () => {
     const blob = new Blob([JSON.stringify(detail, null, 2)], { type: "application/json" });
@@ -69,8 +71,9 @@ export default function JobResult(props: {
       <Seam baseline={detail.baseline} verification={verification} verified={verified}
         step={running ? currentStep(job, events) : null}
         attemptNumber={verifiedAttempt?.attempt_number ?? null} artifacts={detail.artifacts} />
-      <Attempts attempts={detail.attempts} terminal={terminal} />
-      <Artifacts artifacts={detail.artifacts} executions={detail.executions} attempts={detail.attempts} />
+      {exported && <ProofExport jobId={job.id} attempt={exported} artifacts={detail.artifacts} />}
+      <Attempts attempts={detail.attempts} terminal={terminal} exported={exported?.id ?? null} />
+      <Artifacts artifacts={detail.artifacts} executions={detail.executions} attempts={detail.attempts} exported={exported !== null} />
       <details className="technical-details">
         <summary>Explore the full run details</summary>
         <dl className="facts">

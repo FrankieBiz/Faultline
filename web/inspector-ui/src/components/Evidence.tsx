@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   STAGE_LABEL, TERMINAL, providerName,
   type Artifact, type Attempt, type Execution, type JobDetail, type JobEvent, type JobStage, type Tone,
@@ -242,7 +243,69 @@ function Policy({ result }: { result: Record<string, unknown> | null }) {
   );
 }
 
-export function Attempts({ attempts, terminal }: { attempts: Attempt[]; terminal: boolean }) {
+/** Bundles a verified run exports for review, highest level first. */
+const BUNDLES = ["proof_bundle", "proof_bundle_md"] as const;
+const bundleLabel = (role: string) => role === "proof_bundle_md" ? "Download review summary" : "Download evidence bundle";
+
+/**
+ * The verified patch and its proof, first in line: the diff to copy or save as a .patch file,
+ * and the checksummed evidence bundle beside it.
+ */
+export function ProofExport({ jobId, attempt, artifacts }: { jobId: string; attempt: Attempt & { parsed_diff: string }; artifacts: Artifact[] }) {
+  const [copied, setCopied] = useState("");
+  const target = typeof attempt.validation_result?.target_file === "string" ? attempt.validation_result.target_file : null;
+  const bundles = BUNDLES.flatMap((role) => artifacts.filter((a) => a.role === role));
+  const patch = attempt.parsed_diff.endsWith("\n") ? attempt.parsed_diff : `${attempt.parsed_diff}\n`;
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(patch);
+      setCopied("Patch copied to the clipboard");
+    } catch {
+      setCopied("The clipboard is unavailable here. Download the patch instead.");
+    }
+  };
+  const download = () => {
+    const url = URL.createObjectURL(new Blob([patch], { type: "text/x-diff" }));
+    Object.assign(document.createElement("a"), { href: url, download: `faultline-${jobId.slice(0, 8)}.patch` }).click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  };
+  return (
+    <section className="block proof" aria-labelledby="proof-h">
+      <div className="proof-head">
+        <div>
+          <p className="proof-kicker"><span className="proof-mark" aria-hidden="true" />Proof export</p>
+          <h3 id="proof-h">Verified patch</h3>
+          <p className="proof-meta">
+            <span>{diffStat(attempt.parsed_diff)}</span>
+            {target && <code>{target}</code>}
+            <span>attempt {attempt.attempt_number}</span>
+          </p>
+        </div>
+        <div className="proof-actions">
+          <button type="button" className="btn primary" onClick={copy}>Copy patch</button>
+          <button type="button" className="btn" onClick={download}>Download .patch</button>
+        </div>
+      </div>
+      <Diff text={attempt.parsed_diff} label={`Verified patch from attempt ${attempt.attempt_number}`} />
+      <div className="proof-foot">
+        <p className="proof-apply"><span className="judge-key">From the repository root</span><code>git apply faultline-{jobId.slice(0, 8)}.patch</code></p>
+        {bundles.length > 0 && (
+          <p className="evidence-actions">
+            {bundles.map((a) => (
+              <a key={a.id} className="btn proof-bundle" href={artifactUrl(a.id)} download>
+                {bundleLabel(a.role)}<span className="muted">sha256 {a.sha256.slice(0, 12)}</span>
+              </a>
+            ))}
+          </p>
+        )}
+      </div>
+      <p className="sr-only" role="status" aria-live="polite">{copied}</p>
+      {copied && <p className="proof-copied" aria-hidden="true">{copied}</p>}
+    </section>
+  );
+}
+
+export function Attempts({ attempts, terminal, exported = null }: { attempts: Attempt[]; terminal: boolean; exported?: string | null }) {
   if (!attempts.length) return null;
   return (
     <section className="block" aria-labelledby="attempts-h">
@@ -255,7 +318,7 @@ export function Attempts({ attempts, terminal }: { attempts: Attempt[]; terminal
         let explanation: string | null = null;
         try { explanation = a.raw_patch ? (JSON.parse(a.raw_patch) as { explanation?: string }).explanation ?? null : null; } catch {}
         return (
-          <details key={a.id} open={index === 0} className="attempt">
+          <details key={a.id} open={index === 0 && a.id !== exported} className="attempt">
             <summary>
               <strong>Attempt {a.attempt_number}</strong>
               <span className="muted">{provider}</span>
@@ -268,6 +331,7 @@ export function Attempts({ attempts, terminal }: { attempts: Attempt[]; terminal
               <span data-tone={a.outcome === "verified" ? "ok" : a.outcome ? "bad" : "idle"}>
                 {a.outcome?.replaceAll("_", " ") ?? (terminal ? "no outcome recorded" : "in progress")}
               </span>
+              {a.id === exported && <span className="muted">diff shown in the proof export above</span>}
             </summary>
             <PriorFeedback value={v?.prior_feedback} number={a.attempt_number} />
             <Policy result={v} />
@@ -314,8 +378,8 @@ export function Assertions({ runs }: { runs: { label: string; run: Execution }[]
   );
 }
 
-export function Artifacts(props: { artifacts: Artifact[]; executions: Execution[]; attempts: Attempt[] }) {
-  const { artifacts, executions, attempts } = props;
+export function Artifacts(props: { artifacts: Artifact[]; executions: Execution[]; attempts: Attempt[]; exported?: boolean }) {
+  const { artifacts, executions, attempts, exported = false } = props;
   if (!artifacts.length) return null;
   const origin = (a: Artifact) => {
     const run = executions.find((x) => belongsTo(a, x));
@@ -326,11 +390,12 @@ export function Artifacts(props: { artifacts: Artifact[]; executions: Execution[
     <section className="block" aria-labelledby="artifacts-h">
       <h3 id="artifacts-h">Evidence</h3>
       <p className="block-note">Screenshots, Playwright traces, request logs, and reports from both runs, each recorded with a SHA-256 checksum.</p>
-      <p className="evidence-actions">
+      {/* A verified run offers its bundles in the proof export instead. */}
+      {!exported && <p className="evidence-actions">
         {artifacts.filter((a) => a.role === "proof_bundle_md" || a.role === "proof_bundle").map((a) => (
-          <a key={a.id} className="btn" href={artifactUrl(a.id)} download>{a.role === "proof_bundle_md" ? "Download review summary" : "Download evidence bundle"}</a>
+          <a key={a.id} className="btn" href={artifactUrl(a.id)} download>{bundleLabel(a.role)}</a>
         ))}
-      </p>
+      </p>}
       <details>
         <summary>All artifacts · {artifacts.length} files</summary>
         <ul className="rows">
