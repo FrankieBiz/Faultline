@@ -137,7 +137,7 @@ export default function CliGuide({ request }: { request: number }) {
         </ol>
         <p className="dialog-note">
           From a clone, run each command through the launcher at the repository root, as in <code>./faultline check --port 8000</code>. It also works from another project by absolute path or a symlink on <code>PATH</code>.
-          Press <kbd>?</kbd> anywhere outside a text field to open this sheet.
+          Press <kbd>?</kbd> anywhere outside a text field to open this sheet, <kbd>Esc</kbd> to close it or cancel a pending confirmation, and <kbd>Space</kbd> to run the guided demo&apos;s next step.
         </p>
         <p className="sr-only" role="status" aria-live="polite">{copied}</p>
         {copied && <p className="guide-copied" aria-hidden="true">{copied}</p>}

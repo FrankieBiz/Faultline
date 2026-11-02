@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import ConfirmButton from "@/components/ConfirmButton";
 import { requestLabel } from "@/components/ScenarioRail";
 import { checkVerdict, type BodyCheck, type CheckRecord, type Invariant, type ReproStepWire, type SessionResult } from "@/lib/faultline-api";
 
@@ -77,7 +78,7 @@ function CheckResult(props: {
   return (
     <section className="check" data-tone={verdict.tone} aria-labelledby="check-h" aria-busy={stale}>
       <p className="result-kicker">Live check, {clock(check.created_at)}</p>
-      <h2 id="check-h" aria-live="polite">{verdict.title}</h2>
+      <h3 id="check-h" className="check-title" aria-live="polite">{verdict.title}</h3>
       <p className="lede">{verdict.detail}</p>
       <p className="check-target"><code>{check.method} {check.url}</code></p>
       <div className="sessions">
@@ -137,7 +138,7 @@ export default function InvariantPanel(props: {
   return (
     <article className="workspace" aria-labelledby="scenario-h">
       <p className="result-kicker">{KICKER[invariant.source]} <code className="muted">{invariant.id}</code></p>
-      <h1 id="scenario-h">{invariant.title}</h1>
+      <h2 id="scenario-h" className="workspace-title">{invariant.title}</h2>
       {invariant.description && invariant.description !== invariant.title && <p className="lede">{invariant.description}</p>}
       {steps ? (
         <ol className="request-list" aria-label="Requests in this ReproSpec">
@@ -176,7 +177,7 @@ export default function InvariantPanel(props: {
         )}
         <button type="submit" className="btn primary run-button" disabled={busy || !portValid || invariant.live_note !== null}>{checking ? "Checking live…" : "Run live check"}</button>
         {invariant.source === "probe" && (
-          <button type="button" className="btn quiet" onClick={onRemove} disabled={busy}>Remove this URL</button>
+          <ConfirmButton className="btn quiet" disabled={busy} confirmLabel="Confirm remove?" onConfirm={onRemove}>Remove this URL</ConfirmButton>
         )}
         {checking && <p className="scan" role="status"><span className="scan-bar" aria-hidden="true" />Sending the request from two fresh sessions…</p>}
       </form>

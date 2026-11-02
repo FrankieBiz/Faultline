@@ -1,5 +1,7 @@
+import { useEffect, useRef } from "react";
 import type { CheckRecord, StoreStatus, Tone } from "@/lib/faultline-api";
 import { checkVerdict } from "@/lib/faultline-api";
+import ConfirmButton from "@/components/ConfirmButton";
 import { CtaIcon } from "@/components/CtaIcon";
 
 function headline(store: StoreStatus): { tone: Tone; text: string } {
@@ -29,6 +31,9 @@ export interface FlowRun {
   /** Why a repair cannot start right now, in a few words; null when it can. */
   blocked: string | null;
 }
+
+/** Space belongs to whatever has focus when it is a control, a scroller, or anything inside an open dialog. */
+const OWNS_SPACE = "input, textarea, select, button, a[href], summary, [contenteditable='true'], [role='tab'], [tabindex='0'], dialog[open]";
 
 const httpStatus = (check: CheckRecord) => check.sessions.find((s) => s.status !== null)?.status ?? null;
 
@@ -103,13 +108,29 @@ export default function GuidedFlow(props: {
     { n: 2, title: run.label, detail: "Sandboxed, verified by every check", status: step2, done: step2Done, enabled: canRepair, onClick: props.onRepair },
     { n: 3, title: "Apply fix", detail: "Checkout returns HTTP 201", status: step3, done: step3Done, enabled: canApply, onClick: props.onApply },
   ];
+  const next = steps.find((step) => step.n === current && step.enabled) ?? null;
+
+  // Space runs the highlighted step from anywhere on the page that is not itself a control.
+  const advance = useRef<(() => void) | null>(null);
+  advance.current = next ? next.onClick : null;
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.code !== "Space" || event.repeat || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+      if ((event.target as HTMLElement | null)?.closest(OWNS_SPACE) || document.querySelector("dialog[open]")) return;
+      if (!advance.current) return;
+      event.preventDefault();
+      advance.current();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   return (
-    <section className="playground" data-tone={state?.tone ?? "idle"} aria-labelledby="store-h">
+    <section id="demo" className="playground" data-tone={state?.tone ?? "idle"} aria-labelledby="store-h" tabIndex={-1}>
       <div className="shell">
         <div className="playground-head">
           <div className="store-status">
-            <p className="store-key">Demo Playground <span className="muted">· Sample Store</span></p>
+            <p className="store-key"><span className="start-here">Start here</span>{" "}Demo Playground <span className="muted">· Sample Store</span></p>
             <h2 id="store-h" aria-live="polite">{state?.text ?? (error ? "Store state unavailable" : "Reading store state…")}</h2>
           </div>
           {store ? (
@@ -121,9 +142,9 @@ export default function GuidedFlow(props: {
                   {checking && !breaking && !confirming ? "Checking…" : "Check checkout live"}
                 </button>
               )}
-              <button type="button" className="btn quiet inline-btn" onClick={props.onRevert} disabled={!canRevert}>
+              <ConfirmButton className="btn quiet inline-btn" disabled={!canRevert} confirmLabel="Confirm revert?" onConfirm={props.onRevert}>
                 {reverting && !breaking ? "Reverting…" : "Revert store"}
-              </button>
+              </ConfirmButton>
             </div>
           ) : error ? (
             <p className="store-meta">{error} <button type="button" className="btn quiet inline-btn" onClick={props.onRetry}>Check again</button></p>
@@ -149,6 +170,11 @@ export default function GuidedFlow(props: {
             );
           })}
         </ol>
+        <p className="flow-hint">
+          {next ? <><kbd>Space</kbd> runs step {next.n}, {next.title}</>
+            : current === null ? "All three steps are done. Break it again to replay the demo."
+            : `Step ${current} is not available yet; its status line says why.`}
+        </p>
       </div>
     </section>
   );

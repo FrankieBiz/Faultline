@@ -97,9 +97,14 @@ export default function HeroArena(props: {
           Paste any local or web URL. The agent clicks every button, fills every form, and <strong>catches silent regressions before code goes live</strong>.
           Then a sandboxed repair has to pass independent checks before it counts.
         </p>
-        <p className="hero-core" data-tone={props.repairCore.tone}>
-          <span className="hero-core-dot" aria-hidden="true" /><span className="hero-core-k">Repair core</span>{props.repairCore.text}
-        </p>
+        <div className="hero-paths">
+          <p className="hero-core" data-tone={props.repairCore.tone}>
+            <span className="hero-core-dot" aria-hidden="true" /><span className="hero-core-k">Repair core</span>{props.repairCore.text}
+          </p>
+          <a className="hero-demo" href="#demo">
+            <span className="hero-demo-k">New here?</span>Guided 3-minute demo<span className="hero-demo-arrow" aria-hidden="true">↓</span>
+          </a>
+        </div>
         <form className="arena" onSubmit={submit} noValidate aria-label="Autonomous bug hunt" data-hunting={hunting || undefined}>
           <label className="sr-only" htmlFor={`${ids}-u`}>Target URL</label>
           <div className="arena-field">

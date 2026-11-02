@@ -22,7 +22,7 @@ export default function PackPanel(props: {
   return (
     <article className="workspace" aria-labelledby="scenario-h">
       <p className="result-kicker">{project ? "Your project · sandbox scenario" : "Demo Playground · Sample Store defect"}</p>
-      <h1 id="scenario-h">{scenario.title}</h1>
+      <h2 id="scenario-h" className="workspace-title">{scenario.title}</h2>
       {scenario.description && <p className="lede">{scenario.description.replace(/\.?$/, ".")}</p>}
       {scenario.route && <p className="request-line"><span className="method">{method}</span><code>{path.join(" ")}</code></p>}
       <dl className="facts">
@@ -59,7 +59,7 @@ export default function PackPanel(props: {
       </p>
       {covering.length > 0 && (
         <section className="covering" aria-labelledby="covering-h">
-          <h2 id="covering-h">{project ? "Live check of this scenario" : "Live checks on this route"}</h2>
+          <h3 id="covering-h">{project ? "Live check of this scenario" : "Live checks on this route"}</h3>
           <ul className="rows">
             {covering.map((invariant) => {
               const verdict = invariant.latest_check ? checkVerdict(invariant.latest_check) : null;

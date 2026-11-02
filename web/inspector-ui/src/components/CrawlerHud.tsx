@@ -341,8 +341,9 @@ export default function CrawlerHud(props: {
           <p className="hud-note">{state.phase === "retrying" ? "Waiting for the crawler to start…" : `Launching headless Chromium against ${state.target}…`}</p>
         )}
 
+        {/* A crawl logs dozens of steps a second; the status and the defect alert announce what matters, so the log stays quiet. */}
         {state.lines.length > 0 && (
-          <ol ref={tickerRef} className="hud-ticker" role="log" aria-label="Agent steps" aria-live="polite" data-running={running || undefined}>
+          <ol ref={tickerRef} className="hud-ticker" role="log" aria-label="Agent steps" aria-live="off" data-running={running || undefined}>
             {state.lines.map((line, i) => (
               <li key={i} data-ok={line.ok} data-kind={line.kind} data-focus={focus === i || undefined}>
                 <span className="hud-pulse" aria-hidden="true" />

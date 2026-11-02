@@ -188,8 +188,8 @@ async function inspectPastRun(page: Page) {
 }
 const rail = (page: Page) => page.getByRole("navigation", { name: "Scenarios" });
 const runRepair = (page: Page) => page.getByRole("button", { name: "Run sandbox repair" });
-// Next.js renders its own empty role="alert" route announcer, so scope to the dashboard notice.
-const notice = (page: Page) => page.locator("#workspace > .notice[role=alert]");
+// Failures are alerts and confirmations are status messages; scope to the dashboard notice either way.
+const notice = (page: Page) => page.locator("#workspace > .notice");
 
 test("blocked execution is actionable and never claims a repair", async ({ page }) => {
   await mock(page, { readiness: { ...ready, status: "blocked", runtime_ready: false, reason: "isolated_runtime_unavailable" } });
@@ -229,11 +229,11 @@ test("the rail lists sandbox repairs, faultline.toml rules, config errors, and a
   // The hero names the repair engine exactly as readiness reports it, in amber because it is not Meta.
   await expect(page.locator(".hero-core")).toHaveText("Repair coreDeterministic fallback · deterministic-checkout-v1 · no model call");
   await expect(page.locator(".hero-core")).toHaveAttribute("data-tone", "warn");
-  await expect(page.getByRole("heading", { name: "E-Commerce Checkout Defect", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "E-Commerce Checkout Defect", level: 2 })).toBeVisible();
   await expect(page.locator(".covering")).toContainText("Checkout without a coupon creates an order");
 
   await nav.getByRole("button", { name: /Checkout without a coupon creates an order/ }).click();
-  await expect(page.getByRole("heading", { name: "Checkout without a coupon creates an order", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Checkout without a coupon creates an order", level: 2 })).toBeVisible();
   await expect(page.locator(".request-line")).toContainText("POST");
   await expect(page.locator(".request-line")).toContainText("http://127.0.0.1:{port}/api/checkout");
   await expect(page.getByText("HTTP status 201; $.discount equals 0; $.total equals $.subtotal")).toBeVisible();
@@ -335,10 +335,13 @@ test("a failure no sandbox repair covers is detection only, and probes can be re
   await page.waitForTimeout(300);
   expect(calls.posts).toBe(0);
   await page.getByRole("button", { name: "Remove this URL" }).click();
+  await page.waitForTimeout(100);
+  expect(calls.removes).toBe(0);
+  await page.getByRole("button", { name: "Confirm remove?" }).click();
   await expect(notice(page)).toContainText('Removed "GET https://api.example.com/orders"');
   expect(calls.removes).toBe(1);
   await expect(rail(page).getByText("Test any URL from the bar at the top.")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "E-Commerce Checkout Defect", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "E-Commerce Checkout Defect", level: 2 })).toBeVisible();
 });
 
 test("rules with {port} ask for the port, and outcomes read from the recorded sessions", async ({ page }) => {
@@ -390,7 +393,15 @@ test("the playground applies only an opened verified run, reverts, and checks ch
   await expect(patched.getByRole("button", { name: "Apply fix" })).toBeDisabled();
   await patched.getByRole("button", { name: "Check checkout live" }).click();
   await expect.poll(() => calls.checks.length).toBe(2);
+  // Reverting asks once inline; Escape backs out without touching the store.
   await patched.getByRole("button", { name: "Revert store" }).click();
+  await expect(patched.getByRole("button", { name: "Confirm revert?" })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(patched.getByRole("button", { name: "Confirm revert?" })).toHaveCount(0);
+  await expect(patched.getByRole("button", { name: "Revert store" })).toBeFocused();
+  expect(calls.reverts).toBe(0);
+  await patched.getByRole("button", { name: "Revert store" }).click();
+  await patched.getByRole("button", { name: "Confirm revert?" }).click();
   await expect(page.getByRole("heading", { name: "Checkout is broken: the seeded defect is live" })).toBeVisible();
   expect(calls.reverts).toBe(1);
 });
@@ -451,6 +462,30 @@ test("the guided demo advances Break it, repair, and Apply fix on recorded evide
   await expect(steps.nth(0).locator(".flow-status")).toHaveText("HTTP 500 · checkout crashes");
   expect(calls.reverts).toBe(1);
   expect(calls.checks).toHaveLength(3);
+});
+
+test("one h1 and one main lead to the guided demo, and Space runs its highlighted step", async ({ page }) => {
+  const calls = await mock(page, { onCheck: () => check("scenario.checkout_api", "detected") });
+  await page.route("**/api/faultline/jobs?*", (route) => route.fulfill({ json: { jobs: [] } }));
+  await page.goto("/");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("FaultLine Autonomous Immune System");
+  await expect(page.getByRole("main")).toHaveCount(1);
+  await expect(page.getByRole("main").getByRole("list", { name: "Guided demo" })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Guided 3-minute demo/ })).toHaveAttribute("href", "#demo");
+  const flow = page.getByRole("list", { name: "Guided demo" });
+  const steps = flow.getByRole("listitem");
+  await expect(steps.nth(0)).toHaveAttribute("aria-current", "step");
+  await expect(page.locator(".flow-hint")).toHaveText("Space runs step 1, Break it");
+  // Space inside a field is text, and on a control it presses that control; neither runs the demo.
+  await page.getByLabel("Target URL").first().press("Space");
+  expect(calls.crawls).toHaveLength(0);
+  // Clicking plain copy leaves nothing focused, as a presenter would before pressing Space.
+  await page.locator(".hero-sub").click();
+  await page.keyboard.press("Space");
+  await expect.poll(() => calls.crawls.length).toBe(1);
+  await expect(steps.nth(0)).toHaveAttribute("data-state", "done");
+  await expect(steps.nth(1)).toHaveAttribute("aria-current", "step");
 });
 
 test("the repair step says Meta only for the Meta Model API and explains a blocked engine", async ({ page }) => {
@@ -933,7 +968,7 @@ test("project mode lists the runner's scenario, covers its own entry, and hides 
     target_file: "app/routes/checkout.py", executor: "repro", expected_assertions: ["no_coupon.status", "no_coupon.discount", "unknown.status"] };
   const calls = await mock(page, { listing: { ...listing, scenarios: [projectScenario], invariants: [scenario] } });
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Checkout without a coupon", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Checkout without a coupon", level: 2 })).toBeVisible();
   await expect(page.getByText("Your project · sandbox scenario")).toBeVisible();
   await expect(page.getByText("3 ReproSpec assertions, rerun on the baseline twice and on every candidate")).toBeVisible();
   await expect(page.locator(".workspace > .request-line")).toHaveCount(0);
@@ -977,6 +1012,7 @@ test("reset errors stay visible and do not report success", async ({ page }) => 
   await page.goto("/");
   await page.getByText("Setup and recovery").click();
   await page.getByRole("button", { name: "Reset environment" }).click();
+  await page.getByRole("button", { name: "Confirm reset?" }).click();
   await expect(page.getByRole("alert").filter({ hasText: "Reset could not reconcile" })).toBeVisible();
   await expect(page.getByText("Environment reset.", { exact: false })).toHaveCount(0);
 });

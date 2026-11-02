@@ -50,6 +50,10 @@ const STEP_DOING = [
   "The isolated runtime is disposed of and checksummed evidence is recorded.",
 ];
 type StepState = "done" | "current" | "pending" | "failed" | "skipped";
+/** A shape for each mark, so a step never reads by its ring color alone; steps not yet settled keep their number. */
+const markGlyph = (state: StepState, tone: Tone, n: number) =>
+  tone === "ok" ? "✓" : tone === "bad" || state === "failed" ? "✕" : tone === "warn" ? "!"
+    : state === "done" ? "✓" : state === "skipped" ? "–" : String(n);
 const STEP_STATE_TEXT: Record<StepState, string> = {
   done: "complete", current: "in progress", pending: "not started", failed: "failed", skipped: "not reached",
 };
@@ -112,7 +116,7 @@ export function Pipeline(props: { detail: JobDetail; events: JobEvent[]; verific
           : recorded[i] ?? { state: "skipped" as const, tone: "idle" as const, text: "Not reached in this run." };
         return (
           <li key={label} data-state={step.state} data-step-tone={step.tone} aria-current={step.state === "current" ? "step" : undefined}>
-            <span className="pipeline-mark" aria-hidden="true">{i + 1}</span>
+            <span className="pipeline-mark" aria-hidden="true">{markGlyph(step.state, step.tone, i + 1)}</span>
             <strong>{label}<span className="sr-only"> ({STEP_STATE_TEXT[step.state]})</span></strong>
             <p>{step.text}</p>
           </li>

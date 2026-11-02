@@ -16,6 +16,11 @@ const verdictOf = (state: CrawlState | null): Verdict =>
     : state.phase === "clean" && state.source === "playwright" && crawlCompleted(state.telemetry) ? "safe" : "inconclusive";
 
 const SEISMIC: Record<Verdict, Seismic> = { idle: "still", running: "hunt", safe: "resonance", blocked: "rupture", inconclusive: "still" };
+/** One short announcement per verdict change; the scan's step-by-step progress stays visual only. */
+const ANNOUNCE: Record<Verdict, string> = {
+  idle: "", running: "Gate scanning the preview.", safe: "Verdict: safe to deploy.",
+  blocked: "Verdict: deployment blocked.", inconclusive: "Verdict: inconclusive. Deployment blocked.",
+};
 
 /** Ends a crawler message with a period, so the next sentence does not run into it. */
 const sentence = (text: string) => /[.!?…]$/.test(text.trim()) ? text.trim() : `${text.trim()}.`;
@@ -249,7 +254,8 @@ export default function AgentGatePanel(props: {
               </ul>
             </form>
 
-            <div className="gate-verdict" aria-live="polite">
+            <p className="sr-only" role="status">{ANNOUNCE[verdict]}</p>
+            <div className="gate-verdict">
               {verdict === "idle" && (
                 <p className="gate-await">
                   <span className="gate-await-mark" aria-hidden="true" />

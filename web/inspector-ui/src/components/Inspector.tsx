@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import AgentGatePanel from "@/components/AgentGatePanel";
 import CliGuide from "@/components/CliGuide";
+import ConfirmButton from "@/components/ConfirmButton";
 import CrawlerHud, { applyCrawlEvent, crawlFromCheck, crawlInFlight, startCrawl, type CrawlState, type MissionRepair } from "@/components/CrawlerHud";
 import { STEP_LABELS, currentStep } from "@/components/Evidence";
 import GuidedFlow, { type FlowRun, type StoreHunt } from "@/components/GuidedFlow";
@@ -740,6 +741,7 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
   return (
     <>
       <a className="skip" href="#workspace">Skip to the selected scenario</a>
+      <a className="skip" href="#demo">Skip to the guided demo</a>
       <header className="top">
         <div className="shell top-row">
           <span className="wordmark"><span aria-hidden="true" className="glyph" />FaultLine{" "}<span className="wordmark-sub">Inspector</span></span>
@@ -758,77 +760,83 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
           </div>
         </div>
       </header>
-      <HeroArena storefrontUrl={storefrontUrl} apiUrl={store?.url ?? null}
-        busy={busy !== null || quickTesting || flowAction !== null || crawlRunning}
-        hunting={crawlRunning && flowAction === null && crawlOrigin !== "gate"} pinging={quickTesting && !crawlRunning}
-        onHunt={autoBreak} onPing={async (url) => { await quickTest(url); }} repairCore={repairCore} engineTone={readinessTone} />
-      {crawlState && crawlOrigin !== "gate" && <CrawlerHud state={crawlState} repairLabel={repairLabel} repairBlocked={crawlRepairBlocked}
-        repair={missionRepair} onRepair={repairFromCrawl} onApply={() => void applyAndConfirm()} onDismiss={closeCrawl} />}
-      <AgentGatePanel state={crawlOrigin !== "hud" ? crawlState : null} missionOpen={crawlOrigin === "both"} storefrontUrl={storefrontUrl} storeState={store?.state ?? null}
-        busy={busy !== null || quickTesting || flowAction !== null || crawlRunning}
-        onRun={(url) => autoBreak(url, "gate")} onOpenMission={() => { setCrawlOrigin("both"); revealHud(); }} onReset={closeCrawl} />
-      {(storePack || !listing) && <GuidedFlow store={store} error={storeError} storefrontUrl={storefrontUrl}
-        liveCheck={liveCheck} canCheckLive={liveCheckout !== null} run={flowRun} hunt={hunt}
-        verifiedJobId={verified && job ? job.id : null}
-        busy={busy !== null || running || flowAction !== null || quickTesting || crawlRunning}
-        breaking={flowAction === "break"} applying={busy === "apply"} confirming={flowAction === "confirm"}
-        reverting={busy === "revert"} checking={liveCheckout !== null && checkingId === liveCheckout.id}
-        onBreak={() => void breakStore()} onRepair={repairStore} onApply={() => void applyAndConfirm()}
-        onRevert={() => void revertStore()} onRetry={refreshStore} onCheckLive={() => void settleLive("bad", false)} />}
+      {/* One reading order for the demo: what it is, the guided path, its live evidence, the deploy gate, then every scenario. */}
+      <main>
+        <HeroArena storefrontUrl={storefrontUrl} apiUrl={store?.url ?? null}
+          busy={busy !== null || quickTesting || flowAction !== null || crawlRunning}
+          hunting={crawlRunning && flowAction === null && crawlOrigin !== "gate"} pinging={quickTesting && !crawlRunning}
+          onHunt={autoBreak} onPing={async (url) => { await quickTest(url); }} repairCore={repairCore} engineTone={readinessTone} />
+        {(storePack || !listing) && <GuidedFlow store={store} error={storeError} storefrontUrl={storefrontUrl}
+          liveCheck={liveCheck} canCheckLive={liveCheckout !== null} run={flowRun} hunt={hunt}
+          verifiedJobId={verified && job ? job.id : null}
+          busy={busy !== null || running || flowAction !== null || quickTesting || crawlRunning}
+          breaking={flowAction === "break"} applying={busy === "apply"} confirming={flowAction === "confirm"}
+          reverting={busy === "revert"} checking={liveCheckout !== null && checkingId === liveCheckout.id}
+          onBreak={() => void breakStore()} onRepair={repairStore} onApply={() => void applyAndConfirm()}
+          onRevert={() => void revertStore()} onRetry={refreshStore} onCheckLive={() => void settleLive("bad", false)} />}
+        {crawlState && crawlOrigin !== "gate" && <CrawlerHud state={crawlState} repairLabel={repairLabel} repairBlocked={crawlRepairBlocked}
+          repair={missionRepair} onRepair={repairFromCrawl} onApply={() => void applyAndConfirm()} onDismiss={closeCrawl} />}
+        <AgentGatePanel state={crawlOrigin !== "hud" ? crawlState : null} missionOpen={crawlOrigin === "both"} storefrontUrl={storefrontUrl} storeState={store?.state ?? null}
+          busy={busy !== null || quickTesting || flowAction !== null || crawlRunning}
+          onRun={(url) => autoBreak(url, "gate")} onOpenMission={() => { setCrawlOrigin("both"); revealHud(); }} onReset={closeCrawl} />
 
-      <div className="shell dashboard">
-        <ScenarioRail listing={listing} error={listingError} selection={selection} packStatus={packStatus} checkingId={checkingId}
-          onSelect={select} onNew={() => { setDialogSeed(""); setDialogOpen(true); }} onRetry={refreshListing} />
-        <main id="workspace" tabIndex={-1}>
-          {notice && <p className="notice" data-tone={notice.tone} role="alert">{notice.text}</p>}
-          {pack ? (
-            <PackPanel scenario={pack} covering={listing?.invariants.filter((i) => covers(i, pack)) ?? []}
-              readiness={readiness} readinessError={readinessError} gate={gate}
-              running={running} busy={busy !== null} submitting={busy === "submit"} cancelling={busy === "cancel"}
-              cancelRequested={Boolean(job?.cancel_requested)}
-              onRun={(mode) => start(mode, pack.id)} onCancel={running && job ? cancel : null} onRetry={refreshReadiness}
-              onSelect={select} />
-          ) : invariant ? (
-            <InvariantPanel key={invariant.id} invariant={invariant} checks={checks[invariant.id]} checksError={checksError}
-              checking={busy === "check"} busy={busy !== null}
-              canRepair={status === "ready" && !running && busy === null} repairGate={repairGate} repairing={busy === "submit"}
-              onCheck={(port) => void runCheck(invariant, port)} onRepair={(id) => void start("repair", id)}
-              onRemove={() => void removeProbe(invariant)} />
-          ) : listing ? (
-            <p className="empty">Choose a scenario, or test any URL from the bar above.</p>
-          ) : (
-            <p className="empty" role="status">{listingError ?? "Loading scenarios…"}</p>
-          )}
+        <div className="shell dashboard">
+          <ScenarioRail listing={listing} error={listingError} selection={selection} packStatus={packStatus} checkingId={checkingId}
+            onSelect={select} onNew={() => { setDialogSeed(""); setDialogOpen(true); }} onRetry={refreshListing} />
+          <section id="workspace" tabIndex={-1} aria-label="Selected scenario">
+            {/* Failures interrupt; confirmations wait their turn, so a guided step never stacks alerts. */}
+            {notice && <p className="notice" data-tone={notice.tone} role={notice.tone === "bad" || notice.tone === "warn" ? "alert" : "status"}>{notice.text}</p>}
+            {pack ? (
+              <PackPanel scenario={pack} covering={listing?.invariants.filter((i) => covers(i, pack)) ?? []}
+                readiness={readiness} readinessError={readinessError} gate={gate}
+                running={running} busy={busy !== null} submitting={busy === "submit"} cancelling={busy === "cancel"}
+                cancelRequested={Boolean(job?.cancel_requested)}
+                onRun={(mode) => start(mode, pack.id)} onCancel={running && job ? cancel : null} onRetry={refreshReadiness}
+                onSelect={select} />
+            ) : invariant ? (
+              <InvariantPanel key={invariant.id} invariant={invariant} checks={checks[invariant.id]} checksError={checksError}
+                checking={busy === "check"} busy={busy !== null}
+                canRepair={status === "ready" && !running && busy === null} repairGate={repairGate} repairing={busy === "submit"}
+                onCheck={(port) => void runCheck(invariant, port)} onRepair={(id) => void start("repair", id)}
+                onRemove={() => void removeProbe(invariant)} />
+            ) : listing ? (
+              <p className="empty">Choose a scenario, or test any URL from the bar above.</p>
+            ) : (
+              <p className="empty" role="status">{listingError ?? "Loading scenarios…"}</p>
+            )}
 
-          {!loaded ? <p className="empty" role="status">Checking for an active run…</p>
-          : !jobId ? null
-          : !job || !detail ? <p className="empty" role="status">{syncError ?? "Starting the sandbox run…"}</p>
-          : <JobResult detail={detail} events={events} stream={stream} running={running} pastRun={pastRun}
-              syncError={syncError} scenarioTitle={jobScenario} resultRef={resultRef} headingRef={headingRef} />}
+            {!loaded ? <p className="empty" role="status">Checking for an active run…</p>
+            : !jobId ? null
+            : !job || !detail ? <p className="empty" role="status">{syncError ?? "Starting the sandbox run…"}</p>
+            : <JobResult detail={detail} events={events} stream={stream} running={running} pastRun={pastRun}
+                syncError={syncError} scenarioTitle={jobScenario} resultRef={resultRef} headingRef={headingRef} />}
 
-          <details className="history block">
-            <summary>Past sandbox runs · {history.length} recent {history.length === 1 ? "run" : "runs"}</summary>
-            {historyError && <p role="status">{historyError}</p>}
-            {history.length === 0 ? <p className="muted">No sandbox runs yet.</p> : <ul className="rows">
-              {history.map((entry) => <li key={entry.id}>
-                <button type="button" className="btn quiet" disabled={running || entry.id === jobId} onClick={() => { scrollToResult.current = true; follow(entry.id, true); }} aria-label={`Inspect job ${entry.id.slice(0, 8)}`}>
-                  {entry.id.slice(0, 8)}{entry.id === jobId ? " · selected" : ""}
-                </button>
-                <time dateTime={entry.created_at}>{new Date(entry.created_at).toLocaleString()}</time>
-                <span>{entry.outcome?.replaceAll("_", " ") ?? entry.state}</span>
-                <span className="muted">{historyProviders[entry.id] ?? "Reading provider record…"}</span>
-              </li>)}
-            </ul>}
-            <button type="button" className="btn quiet" onClick={refreshHistory}>Refresh history</button>
-          </details>
-          <details className="setup-details">
-            <summary>Setup and recovery</summary>
-            <p>Containment: {readiness ? limitsStatusLabel(readiness.resource_limits) : "unknown"}</p>
-            <button type="button" className="btn" onClick={reset} disabled={running || busy !== null || !readiness}>{busy === "reset" ? "Resetting…" : "Reset environment"}</button>{" "}
-            <button type="button" className="btn quiet" onClick={refreshReadiness} disabled={busy !== null}>Refresh readiness</button>
-          </details>
-        </main>
-      </div>
+            <details className="history block">
+              <summary>Past sandbox runs · {history.length} recent {history.length === 1 ? "run" : "runs"}</summary>
+              {historyError && <p role="status">{historyError}</p>}
+              {history.length === 0 ? <p className="muted">No sandbox runs yet.</p> : <ul className="rows">
+                {history.map((entry) => <li key={entry.id}>
+                  <button type="button" className="btn quiet" disabled={running || entry.id === jobId} onClick={() => { scrollToResult.current = true; follow(entry.id, true); }} aria-label={`Inspect job ${entry.id.slice(0, 8)}`}>
+                    {entry.id.slice(0, 8)}{entry.id === jobId ? " · selected" : ""}
+                  </button>
+                  <time dateTime={entry.created_at}>{new Date(entry.created_at).toLocaleString()}</time>
+                  <span>{entry.outcome?.replaceAll("_", " ") ?? entry.state}</span>
+                  <span className="muted">{historyProviders[entry.id] ?? "Reading provider record…"}</span>
+                </li>)}
+              </ul>}
+              <button type="button" className="btn quiet" onClick={refreshHistory}>Refresh history</button>
+            </details>
+            <details className="setup-details">
+              <summary>Setup and recovery</summary>
+              <p>Containment: {readiness ? limitsStatusLabel(readiness.resource_limits) : "unknown"}</p>
+              <ConfirmButton className="btn" disabled={running || busy !== null || !readiness} confirmLabel="Confirm reset?" onConfirm={() => void reset()}>
+                {busy === "reset" ? "Resetting…" : "Reset environment"}
+              </ConfirmButton>{" "}
+              <button type="button" className="btn quiet" onClick={refreshReadiness} disabled={busy !== null}>Refresh readiness</button>
+            </details>
+          </section>
+        </div>
+      </main>
       <CliGuide request={guideRequest} />
       <ProbeDialog open={dialogOpen} seedUrl={dialogSeed} storeUrl={store?.url ?? null} onClose={() => setDialogOpen(false)} onSubmit={submitProbe} />
       <footer className="shell foot"><span>FaultLine · verified repair runs locally; nothing is pushed or deployed.</span><a href="https://github.com/FrankieBiz/Faultline">Source</a></footer>
