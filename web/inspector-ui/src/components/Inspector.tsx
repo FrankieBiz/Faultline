@@ -761,7 +761,7 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
       <HeroArena storefrontUrl={storefrontUrl} apiUrl={store?.url ?? null}
         busy={busy !== null || quickTesting || flowAction !== null || crawlRunning}
         hunting={crawlRunning && flowAction === null && crawlOrigin !== "gate"} pinging={quickTesting && !crawlRunning}
-        onHunt={autoBreak} onPing={async (url) => { await quickTest(url); }} repairCore={repairCore} />
+        onHunt={autoBreak} onPing={async (url) => { await quickTest(url); }} repairCore={repairCore} engineTone={readinessTone} />
       {crawlState && crawlOrigin !== "gate" && <CrawlerHud state={crawlState} repairLabel={repairLabel} repairBlocked={crawlRepairBlocked}
         repair={missionRepair} onRepair={repairFromCrawl} onApply={() => void applyAndConfirm()} onDismiss={closeCrawl} />}
       <AgentGatePanel state={crawlOrigin !== "hud" ? crawlState : null} missionOpen={crawlOrigin === "both"} storefrontUrl={storefrontUrl} storeState={store?.state ?? null}

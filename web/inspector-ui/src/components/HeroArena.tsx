@@ -27,6 +27,8 @@ export default function HeroArena(props: {
   onPing: (url: string) => Promise<void>;
   /** The engine that writes repairs, as readiness reports it. */
   repairCore: { tone: "ok" | "warn" | "bad" | "idle"; text: string };
+  /** Overall engine readiness, the same tone the header's Engine Status shows. */
+  engineTone: "ok" | "warn" | "bad" | "active";
 }) {
   const { storefrontUrl, busy, hunting, pinging, onHunt, onPing } = props;
   const ids = useId();
@@ -89,7 +91,7 @@ export default function HeroArena(props: {
   return (
     <section className="hero" aria-labelledby={`${ids}-h`}>
       <div className="shell hero-inner">
-        <p className="tag hero-kicker"><span className="hero-live" aria-hidden="true" />The autonomous immune system for AI coding agents and web apps</p>
+        <p className="tag hero-kicker"><span className="hero-live" data-tone={props.engineTone} aria-hidden="true" />The autonomous immune system for AI coding agents and web apps</p>
         <h1 id={`${ids}-h`}>FaultLine Autonomous Immune System</h1>
         <p className="hero-sub">
           Paste any local or web URL. The agent clicks every button, fills every form, and <strong>catches silent regressions before code goes live</strong>.

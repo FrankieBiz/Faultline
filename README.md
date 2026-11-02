@@ -112,9 +112,9 @@ The [judge page](https://frankiebiz.github.io/Faultline/) is static and works wi
 - **Try to fool the gates.** Compare eleven recorded candidate patches under a naive "did it return 201?" check and under FaultLine. The naive check accepts 5 of 6 wrong fixes; FaultLine's authored business assertions reject all six.
 - **Read the raw record.** The [replays](https://frankiebiz.github.io/Faultline/replay/3573b32b-09bd-4f14-897d-cf6dccf9b118/) are static, script-free, and SHA-256 checksummed.
 
-![Inspector after a local run: the failed baseline, the five recorded steps, and 44 of 44 candidate checks passing, with the patch source labeled as the deterministic fallback and not a Meta trial](docs/assets/inspector.png)
+![Inspector after a local run: the failed baseline, the five recorded steps, and 44 of 44 candidate checks passing; this capture's patch source is labeled as the deterministic fallback](docs/assets/inspector.png)
 
-*Recorded local workflow evidence. This screenshot shows the deterministic fallback, not a live Meta trial.*
+*The same 44-check gate verified Meta's `muse-spark-1.3` patch in 3 of 3 live trials, each on the first attempt at 44/44 ([Oct 31 ledger](docs/evidence/2026-10-31-controller-ledger-meta.md)). This capture is a local run of that pipeline; its patch source is labeled as the deterministic fallback.*
 
 ---
 

@@ -220,6 +220,8 @@ export interface ClickableInfo {
   value: string;
   /** Absolute URL for links and `data-href` cards, otherwise empty. */
   href: string;
+  /** An anchor with a `download` attribute: it saves a file instead of opening a screen. */
+  download: boolean;
   /** ARIA role attribute, e.g. `link` for a clickable product card. */
   role: string;
   disabled: boolean;
@@ -291,6 +293,20 @@ export function isLocalHost(hostname: string): boolean {
   return isLocalHost(`${high >> 8}.${high & 255}.${low >> 8}.${low & 255}`);
 }
 
+/** Files, archives, media, and checksum lists: links to these start a download instead of opening a screen. */
+const DOWNLOAD_PATH =
+  /(\.(pdf|zip|tar|gz|tgz|bz2|xz|zst|7z|rar|dmg|pkg|exe|msi|deb|rpm|apk|iso|whl|jar|png|jpe?g|gif|svg|webp|avif|ico|mp3|mp4|mov|webm|wav|csv|tsv|xlsx?|docx?|pptx?|txt|log|sig|asc|sha(1|256|512)|md5)|\/((sha(1|256|512)|md5)sums|checksums)(\.\w+)?)$/i;
+
+/** True when a URL path names a downloadable file rather than a page. */
+export function isDownloadPath(pathname: string): boolean {
+  return DOWNLOAD_PATH.test(pathname);
+}
+
+/** True for the error `page.goto` throws when the response is a download (e.g. `Content-Disposition: attachment`). */
+export function isDownloadError(error: unknown): boolean {
+  return error instanceof Error && /Download is starting/.test(error.message);
+}
+
 /** Strips the fragment so in-page anchors do not count as new pages; hash routes (`#/cart`, `#!/cart`) are kept. */
 export function normalizeUrl(raw: string): string {
   const url = new URL(raw);
@@ -349,7 +365,7 @@ export function scoreClickable(
       return null;
     }
     if (target.origin !== context.origin) return null;
-    if (/\.(pdf|zip|png|jpe?g|gif|svg|csv|xlsx?|docx?)$/i.test(target.pathname)) return null;
+    if (info.download || isDownloadPath(target.pathname)) return null;
     if (context.visited.has(normalizeUrl(target.toString()))) return null;
     score = CHECKOUT.test(name) || CART_PATH.test(target.pathname) ? 40 : 30;
   } else if (commit) {
@@ -745,6 +761,7 @@ async function discover(page: Page): Promise<Discovery> {
         ariaLabel: (el.getAttribute("aria-label") ?? "").trim(),
         value: tag === "input" ? input.value : "",
         href,
+        download: tag === "a" && el.hasAttribute("download"),
         role: (el.getAttribute("role") ?? "").toLowerCase(),
         disabled: button.disabled === true || el.getAttribute("aria-disabled") === "true",
         visible: rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none",
@@ -893,6 +910,8 @@ export async function runAutonomousCrawler(options: CrawlOptions): Promise<Crawl
   const screens = new Map<string, ScreenVisit>();
   /** Same-origin screens linked from explored ones, by best link score. */
   const frontier = new Map<string, number>();
+  /** Frontier URLs that started a download when opened. */
+  const downloads = new Set<string>();
   /** Commit controls the guard kept the crawler from clicking, by identity. */
   const skippedCommits = new Set<string>();
   let actionsTaken = 0;
@@ -1001,6 +1020,7 @@ export async function runAutonomousCrawler(options: CrawlOptions): Promise<Crawl
           const score = scoreClickable(info, { origin: start.origin, visited, allowCommit });
           if (score === null) continue;
           const target = normalizeUrl(info.href);
+          if (downloads.has(target)) continue;
           frontier.set(target, Math.max(score, frontier.get(target) ?? -Infinity));
         }
         if (announced !== pageUrl) {
@@ -1070,7 +1090,15 @@ export async function runAutonomousCrawler(options: CrawlOptions): Promise<Crawl
             .sort((a, b) => b[1] - a[1])[0];
           if (jump && screens.size < MAX_SCREENS) {
             frontier.delete(jump[0]);
-            failure = await navigate(jump[0]);
+            try {
+              failure = await navigate(jump[0]);
+            } catch (error) {
+              if (!isDownloadError(error)) throw error;
+              // The link served a file the URL did not reveal; drop its step and keep exploring.
+              breadcrumbs.pop();
+              downloads.add(jump[0]);
+              continue;
+            }
             if (failure) return halt(failure);
             continue;
           }

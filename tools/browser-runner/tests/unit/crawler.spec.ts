@@ -9,6 +9,8 @@ import {
   formatCrawlEvent,
   formatReproductionTrail,
   isCommitControl,
+  isDownloadError,
+  isDownloadPath,
   isFailureResponse,
   isLocalHost,
   labelOf,
@@ -37,6 +39,7 @@ function clickable(overrides: Partial<ClickableInfo>): ClickableInfo {
     ariaLabel: "",
     value: "",
     href: "",
+    download: false,
     role: "",
     disabled: false,
     visible: true,
@@ -104,7 +107,22 @@ test.describe("crawler heuristics", () => {
     expect(score({ tag: "a", text: "Docs", href: "https://example.com/docs" })).toBeNull();
     expect(score({ tag: "a", text: "Home", href: `${ORIGIN}/#top` })).toBeNull();
     expect(score({ tag: "a", text: "Invoice", href: `${ORIGIN}/invoice.pdf` })).toBeNull();
+    expect(score({ tag: "a", text: "Checksums", href: `${ORIGIN}/replay/run-1/SHA256SUMS` })).toBeNull();
+    expect(score({ tag: "a", text: "Release", href: `${ORIGIN}/faultline-1.0.tar.gz` })).toBeNull();
+    expect(score({ tag: "a", text: "Notes", href: `${ORIGIN}/notes`, download: true })).toBeNull();
     expect(score({ tag: "a", text: "Broken", href: "not a url" })).toBeNull();
+  });
+
+  test("recognises download paths and the download navigation error", () => {
+    for (const pathname of ["/SHA256SUMS", "/replay/abc/SHA256SUMS", "/sha512sums.txt", "/CHECKSUMS", "/dist/app.zip", "/a.tar", "/a.tar.gz", "/a.tgz", "/report.csv", "/run.log", "/build.dmg"]) {
+      expect(isDownloadPath(pathname), pathname).toBe(true);
+    }
+    for (const pathname of ["/", "/checkout", "/product/widget", "/replay/abc/", "/sums", "/docs/checksums-guide", "/api/data.json"]) {
+      expect(isDownloadPath(pathname), pathname).toBe(false);
+    }
+    expect(isDownloadError(new Error("page.goto: Download is starting\nCall log: ..."))).toBe(true);
+    expect(isDownloadError(new Error("page.goto: net::ERR_CONNECTION_REFUSED"))).toBe(false);
+    expect(isDownloadError("Download is starting")).toBe(false);
   });
 
   test("classifies localhost, loopback, and private addresses as disposable", () => {
@@ -439,6 +457,20 @@ class FixtureShop {
              });
            </script>`,
         );
+      case "GET /releases":
+        return html(
+          200,
+          `<title>Releases</title><main>
+             <a href="/replay/SHA256SUMS">Checksums</a> <a href="/bundle.tar.gz">Bundle</a> <a href="/notes" download>Release notes</a>
+             <a href="/export">Export</a> <a href="/hub/about">About</a>
+           </main>`,
+        );
+      case "GET /replay/SHA256SUMS":
+      case "GET /bundle.tar.gz":
+      case "GET /notes":
+      case "GET /export":
+        response.writeHead(200, { "content-type": "application/octet-stream", "content-disposition": "attachment" }).end("file");
+        return;
       case "GET /shelf":
         return html(200, `<title>Shelf</title><a href="/catalog">Catalog</a>`);
       case "GET /catalog":
@@ -694,6 +726,20 @@ test.describe("runAutonomousCrawler in Chromium", () => {
     if (report.status !== "failure") return;
     expect(report.failure.kind).toBe("console_error");
     expect(report.failure.message).toContain("error boundary");
+  });
+
+  test("skips file downloads instead of crashing the crawl", async () => {
+    const report = await runAutonomousCrawler({ url: `${shop.origin}/releases`, browser });
+    expect(report).toMatchObject({ status: "clean", stop_reason: "exhausted" });
+    // Download links are recognised by name, extension, or `download` attribute and never requested.
+    expect(shop.hits).not.toContain("GET /replay/SHA256SUMS");
+    expect(shop.hits).not.toContain("GET /bundle.tar.gz");
+    expect(shop.hits).not.toContain("GET /notes");
+    // An unrecognisable attachment is skipped when it starts a download, and exploration continues.
+    expect(shop.hits).toContain("GET /export");
+    expect(shop.hits).toContain("GET /hub/about");
+    expect(report.pages_visited).not.toContain(`${shop.origin}/export`);
+    expect(report.breadcrumbs.map(({ url }) => url)).not.toContain(`${shop.origin}/export`);
   });
 
   test("reports a page that fails on load at the navigate step", async () => {

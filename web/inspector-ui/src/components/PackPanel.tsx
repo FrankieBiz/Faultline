@@ -1,3 +1,4 @@
+import { useId } from "react";
 import { checkVerdict, providerLabel, providerNote, type Invariant, type Readiness, type RepairScenario, type Tone } from "@/lib/faultline-api";
 import type { Selection } from "@/components/ScenarioRail";
 
@@ -10,6 +11,7 @@ export default function PackPanel(props: {
   onSelect: (s: Selection) => void;
 }) {
   const { scenario, covering, readiness, readinessError, gate, running, busy, submitting, cancelling, cancelRequested, onRun, onCancel, onRetry, onSelect } = props;
+  const ids = useId();
   const status = readiness?.status;
   const note = readiness?.model ? providerNote(readiness.model.provider) : null;
   const sourceTone: Tone = !readiness?.model ? "idle" : readiness.model.provider === "meta" && readiness.model.available ? "idle" : "warn";
@@ -33,7 +35,7 @@ export default function PackPanel(props: {
       </dl>
       <div className="actions">
         <button type="button" className="btn primary run-button" onClick={() => onRun("repair")}
-          disabled={status !== "ready" || running || busy} aria-describedby={gate ? "gate" : undefined}>
+          disabled={status !== "ready" || running || busy} aria-describedby={gate ? `${ids}-gate` : undefined}>
           {submitting ? "Starting…" : running ? "Repair in progress…" : "Run sandbox repair"}
         </button>
         {onCancel && <button type="button" className="btn" onClick={onCancel} disabled={busy || cancelRequested}>
@@ -46,7 +48,7 @@ export default function PackPanel(props: {
         <span>{readiness ? providerLabel(readiness.model) : readinessError ? "Unknown until the orchestrator responds" : "Checking repair provider…"}</span>
         {note && <span className="source-note">{note}</span>}
       </p>
-      {gate && <p id="gate" className="gate" role="status">{gate}</p>}
+      {gate && <p id={`${ids}-gate`} className="gate" role="status">{gate}</p>}
       {(readinessError || status === "blocked") && (
         <button type="button" className="btn quiet retry" onClick={onRetry} disabled={busy}>Check again</button>
       )}
