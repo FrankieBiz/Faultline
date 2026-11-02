@@ -1,5 +1,12 @@
 # Agent handoff state
 
+## November 1: multi-persona review panel (claude-ui-shell-quoting-crawler)
+
+- Reviewer personas live in `.claude/agents/faultline-*.md`: contrarian, fresh-eyes (no prior audits or `.agents/` notes), ui-qa, bug-hunter, feature-scout, judge (official rubric slide over the derived `meta_rubric.md`), and a verifier. All are read-only and keep scratch files under `/tmp`. ui-qa starts its own Inspector on 4200-4299 and kills only its own PID.
+- `.claude/workflows/review-panel.js` runs them in parallel. Each persona's findings (8 max) go to a verifier, with one retry for any verdict it skipped, and a synthesizer writes `.agents/reviews/<date>-panel.md`. args: `{ date, focus?, personas?, maxPerPersona?, out? }` or a focus string. A full run is 13-19 agents.
+- First report: `.agents/reviews/2026-11-01-panel.md` (37 confirmed, 9 plausible; 22 findings left out by the per-persona cap). Top items not yet fixed: the COMMIT guard is a denylist, so non-matching submit controls still fire on external origins; the gate passes hosted previews whose commit controls were skipped; hitting the 30-screen cap reports `exhausted` (`crawler.ts:1029`, confirmed by reading the code); Devpost Inspiration invents an incident and claims Llama; no Meta run over the 10-defect corpus exists.
+- Verifier verdicts on judgment calls vary between runs (the "immune system" headline item was refuted, then plausible on a re-run). Verdicts on reproducible bugs held.
+
 ## November 1: crawler URL validation and exploration semantics (codex-crawler-url-safety)
 
 - `crawler_service.validate_url` converts URL parser, hostname, and port `ValueError`s into `CrawlError("invalid_url", ...)`. Invalid IPv6 returns structured HTTP 422 through both crawl routes and both JSON/NDJSON modes, and CLI scan/crawl/gate return usage exit 2. Valid IPv6 remains accepted.
