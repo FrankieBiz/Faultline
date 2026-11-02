@@ -26,7 +26,7 @@ Updated November 1, 2026 (America/New_York). See [QUALITY_REVIEW.md](QUALITY_REV
 - Safe setup/start/reconciliation/rehearsal scripts and GitHub verification workflow.
 
 Current recorded verification (November 1, 2026):
-- `make check` passed with 290 backend/script tests, 877 orchestrator/CLI tests, and 123 runner unit tests (**1,290 tests total**), plus Ruff lint and format checks, strict mypy across 93 source files (0 errors), Next.js frontend builds, and fixture and corpus provenance.
+- `make check` passed with 345 backend/script tests, 942 orchestrator/CLI tests, and 127 runner unit tests (**1,414 tests total**; 2 native Windows demo tests skipped on Linux), plus Ruff lint and format checks, strict mypy across 94 source files (0 errors), Next.js frontend builds, and fixture and corpus provenance.
 - `make browser` passed with 43 Inspector and 2 storefront browser tests (**45 browser tests total**).
 - 14 required Linux isolation tests under `FAULTLINE_REQUIRE_ISOLATED_TESTS=1` passed.
 

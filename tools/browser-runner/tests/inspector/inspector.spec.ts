@@ -793,6 +793,13 @@ test("the pre-flight gate blocks with the CLI's exact fix prompt, clears a clean
   await page.keyboard.press("Home");
   await gate.getByRole("button", { name: "Copy Cursor / Claude Code" }).click();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toContain("2. Run: faultline gate http://localhost:4321/ --json");
+
+  // A query string's `&` would background the command in a shell, so copied URLs are quoted.
+  await gate.getByRole("textbox", { name: "Target preview URL" }).fill("localhost:4321/?q=mug&sort=new");
+  await gate.getByRole("button", { name: "Run Pre-Flight Gate" }).click();
+  await expect(gate).toHaveAttribute("data-verdict", "safe");
+  await gate.getByRole("button", { name: "Copy Cursor / Claude Code" }).click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toContain("2. Run: faultline gate 'http://localhost:4321/?q=mug&sort=new' --json");
 });
 
 test("the gate never clears an unfinished crawl or a direct check, and says so in the CLI's words", async ({ page, context }) => {

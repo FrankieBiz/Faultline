@@ -306,8 +306,9 @@ export function labelOf(info: Pick<ClickableInfo, "text" | "ariaLabel" | "value"
  * checkout steps, which beat unexplored content links (a product page), which
  * beat add-to-cart, which beats other buttons. Header, nav, and footer
  * elements are demoted so page content is explored before global chrome.
- * Commit buttons are never clicked unless `allowCommit` is true, which
- * defaults to whether `origin` is disposable (see {@link isLocalHost}).
+ * Commit-named controls, links included, are never clicked unless
+ * `allowCommit` is true, which defaults to whether `origin` is disposable
+ * (see {@link isLocalHost}).
  */
 export function scoreClickable(
   info: ClickableInfo,
@@ -316,6 +317,9 @@ export function scoreClickable(
   if (info.disabled || !info.visible) return null;
   const name = `${info.text} ${info.ariaLabel} ${info.value}`.replace(/\s+/g, " ").trim();
   if (DESTRUCTIVE.test(name)) return null;
+  // Checked before the link branch so a link labeled "Pay" is held to the same bound as a button.
+  const commit = COMMIT.test(name);
+  if (commit && !(context.allowCommit ?? isLocalHost(new URL(context.origin).hostname))) return null;
 
   let score: number;
   // Anchors and `data-href` cards navigate; judge them by their destination.
@@ -330,8 +334,7 @@ export function scoreClickable(
     if (/\.(pdf|zip|png|jpe?g|gif|svg|csv|xlsx?|docx?)$/i.test(target.pathname)) return null;
     if (context.visited.has(normalizeUrl(target.toString()))) return null;
     score = CHECKOUT.test(name) || CART_PATH.test(target.pathname) ? 40 : 30;
-  } else if (COMMIT.test(name)) {
-    if (!(context.allowCommit ?? isLocalHost(new URL(context.origin).hostname))) return null;
+  } else if (commit) {
     score = 50;
   } else if (CHECKOUT.test(name)) {
     score = 40;
