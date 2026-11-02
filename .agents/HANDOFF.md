@@ -1,5 +1,12 @@
 # Agent handoff state
 
+## November 1: Python gate completion evidence (codex-gate-stop-reasons-preview)
+
+- `gate`, `scan`/`auto`, and `crawl`/`break` expose `--allow-commit-actions` (default false). The command handlers pass it to `crawler_service.run_crawl`, which adds the runner flag only when enabled. Help limits the opt-in to disposable previews.
+- Raw crawl reports retain `commit_controls_skipped` and arbitrary string stop reasons; telemetry now retains the skipped count, defaulting to zero for older runners. The gate blocks `screen_limit` and `skipped_commit_controls` as `incomplete_crawl` and provides specific remediation. A positive skipped count also prevents an otherwise `exhausted` report from passing. The gate JSON key set stays unchanged.
+- Scope is the Python CLI/service and regression tests. The browser runner in this branch still needs the separate change to emit the new stop reasons and skipped counts; Python cannot infer a screen cap or suppressed controls from old reports lacking that evidence. Inspector TypeScript verdict parity is also separate work.
+- Regression tests reproduced the missing opt-in/telemetry and the exhausted-plus-skipped false pass before the fix. `make check` exited 0: **324 backend/script + 1,008 orchestrator + 127 runner = 1,459 passed**, with 23 platform/PowerShell skips; lint/format, strict typing (38 + 56 source files), provenance, all Node builds, and both Python distributions passed. A temporary controller's `/healthz` passed the real gate with completed exploration (one screen, zero controls); this is HTTP smoke evidence, with browser behavior covered by the suites. The temporary controller was stopped. The mandatory finish check additionally enables the available PowerShell 7.6.9 binary; its final result is reported in the task completion response.
+
 ## November 1: multi-persona review panel (claude-ui-shell-quoting-crawler)
 
 - Reviewer personas live in `.claude/agents/faultline-*.md`: contrarian, fresh-eyes (no prior audits or `.agents/` notes), ui-qa, bug-hunter, feature-scout, judge (official rubric slide over the derived `meta_rubric.md`), and a verifier. All are read-only and keep scratch files under `/tmp`. ui-qa starts its own Inspector on 4200-4299 and kills only its own PID.

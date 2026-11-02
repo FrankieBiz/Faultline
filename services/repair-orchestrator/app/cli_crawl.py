@@ -167,6 +167,7 @@ def crawl_command(args: argparse.Namespace, c: Palette) -> int:
             url,
             max_actions=args.max_actions,
             timeout_ms=round(args.timeout * 1000),
+            allow_commit_actions=args.allow_commit_actions,
             on_event=None if args.json else show,
         )
     except crawler_service.CrawlError as exc:
@@ -432,6 +433,7 @@ def scan_command(args: argparse.Namespace, c: Palette, *, port: int) -> int:
             url,
             max_actions=args.max_actions,
             timeout_ms=round(args.timeout * 1000),
+            allow_commit_actions=args.allow_commit_actions,
             on_event=hud,
         )
     except crawler_service.CrawlError as exc:
@@ -589,13 +591,30 @@ def remediation_prompt(report: dict[str, Any], failure: dict[str, Any], url: str
     return "\n".join(lines)
 
 
-def _error_prompt(code: str, message: str, url: str) -> str:
+def _error_prompt(code: str, message: str, url: str, *, stop_reason: str | None = None) -> str:
     if code in _INPUT_ERRORS:
         return (
             f"The FaultLine gate rejected its input: {message} Re-run it against the running "
             "preview, e.g. `faultline gate http://127.0.0.1:3000 --json`."
         )
     if code == "incomplete_crawl":
+        if stop_reason == "screen_limit":
+            return (
+                f"The FaultLine gate is inconclusive for {url}: {message} "
+                "The crawler reached its screen cap with flows still unvisited. "
+                "Gate smaller preview entry points separately and verify that every unfinished "
+                "flow is covered. Increasing --max-actions or --timeout alone will not raise "
+                f"the screen cap. Re-run `faultline gate {url} --json` for each entry point. "
+                "Do not deploy until the gate exits 0."
+            )
+        if stop_reason == "skipped_commit_controls":
+            return (
+                f"The FaultLine gate is inconclusive for {url}: {message} "
+                "Checkout, payment, or other commit controls were skipped and remain unverified. "
+                "Use a disposable preview with test data and payment sandboxes, then explicitly "
+                f"opt in with `faultline gate {url} --allow-commit-actions --json`. "
+                "Do not deploy until the gate exits 0."
+            )
         return (
             f"The FaultLine gate is inconclusive for {url}: {message} "
             "Increase --max-actions and --timeout within their supported limits, then re-run "
@@ -620,6 +639,8 @@ def gate_result(report: dict[str, Any], url: str) -> dict[str, Any]:
     failure = summary["failure"]
     status = report.get("status")
     stop_reason = summary["stop_reason"]
+    if stop_reason == "exhausted" and (summary["commit_controls_skipped"] or 0) > 0:
+        stop_reason = "skipped_commit_controls"
     passed = status == "clean" and stop_reason == "exhausted"
     error: dict[str, str] | None = None
     prompt: str | None = None
@@ -637,7 +658,7 @@ def gate_result(report: dict[str, Any], url: str) -> dict[str, Any]:
         )
         error = {"code": "incomplete_crawl", "message": message}
         text = f"Gate inconclusive: {message}"
-        prompt = _error_prompt("incomplete_crawl", message, target)
+        prompt = _error_prompt("incomplete_crawl", message, target, stop_reason=stop_reason)
     elif isinstance(failure, dict):
         if not trail:
             # Reports from older runners carry breadcrumbs only.
@@ -845,6 +866,7 @@ def gate_command(args: argparse.Namespace, c: Palette) -> int:
             url,
             max_actions=args.max_actions,
             timeout_ms=round(args.timeout * 1000),
+            allow_commit_actions=args.allow_commit_actions,
             on_event=progress if fmt in ("human", "ci", "markdown") else None,
         )
         result = gate_result(report, url)

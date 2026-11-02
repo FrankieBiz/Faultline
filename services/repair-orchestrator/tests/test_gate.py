@@ -85,6 +85,22 @@ def test_gate_parses_with_ci_friendly_defaults() -> None:
     assert _args("x", "--format", "ci", "--max-actions", "5").max_actions == 5
 
 
+@pytest.mark.parametrize("allow_commit_actions", [False, True])
+def test_gate_forwards_commit_action_opt_in(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    allow_commit_actions: bool,
+) -> None:
+    seen: dict[str, Any] = {}
+    _fake_crawl(monkeypatch, COMPLETED_REPORT, seen)
+    flags = ["--allow-commit-actions"] if allow_commit_actions else []
+    args = _args("https://preview.example.com", "--json", *flags)
+    assert args.allow_commit_actions is allow_commit_actions
+    assert gate_command(args, PLAIN) == 0
+    assert seen["allow_commit_actions"] is allow_commit_actions
+    capsys.readouterr()
+
+
 @pytest.mark.parametrize(
     "argv",
     [
@@ -230,6 +246,45 @@ def test_only_raw_clean_status_and_exhausted_can_pass() -> None:
     result = gate_result({**COMPLETED_REPORT, "status": "unknown"}, "http://x")
     assert result["exit_code"] == 1
     assert result["verdict"] == "DEPLOYMENT_BLOCKED"
+
+
+@pytest.mark.parametrize(
+    "stop_reason,skipped,remediation",
+    [
+        ("screen_limit", 0, "screen cap"),
+        ("skipped_commit_controls", 2, "--allow-commit-actions"),
+        ("skipped_commit_controls", 0, "--allow-commit-actions"),
+        ("exhausted", 2, "--allow-commit-actions"),
+    ],
+)
+def test_gate_blocks_unverified_screens_and_commit_controls(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    stop_reason: str,
+    skipped: int,
+    remediation: str,
+) -> None:
+    report = {
+        **COMPLETED_REPORT,
+        "target_url": "https://preview.example.com",
+        "stop_reason": stop_reason,
+        "commit_controls_skipped": skipped,
+    }
+    _fake_crawl(monkeypatch, report)
+    assert gate_command(_args("https://preview.example.com", "--json"), PLAIN) == 1
+    body = json.loads(capsys.readouterr().out)
+    assert body["exit_code"] == 1
+    assert body["verdict"] == "DEPLOYMENT_BLOCKED"
+    assert body["error"]["code"] == "incomplete_crawl"
+    assert body["failure"] is None
+    assert body["stop_reason"] == (
+        "skipped_commit_controls" if stop_reason == "exhausted" else stop_reason
+    )
+    assert remediation in body["agent_remediation_prompt"]
+    assert "faultline gate https://preview.example.com" in body["agent_remediation_prompt"]
+    if skipped:
+        assert "disposable" in body["agent_remediation_prompt"]
+    assert "Do not deploy until the gate exits 0." in body["agent_remediation_prompt"]
 
 
 def test_runner_error_report_blocks_with_exit_1(

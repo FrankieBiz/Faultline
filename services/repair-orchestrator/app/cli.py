@@ -1886,6 +1886,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Crawl budget in seconds (1-300, default 60)",
     )
     p_crawl.add_argument("--json", action="store_true", help="Emit exactly one JSON report")
+    p_crawl.add_argument(
+        "--allow-commit-actions",
+        action="store_true",
+        help="Allow checkout, payment, and other commit actions; use only on disposable previews",
+    )
     output_flags(p_crawl)
     p_crawl.set_defaults(func=cmd_crawl)
 
@@ -1922,6 +1927,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_scan.add_argument(
         "--json", action="store_true", help="Emit exactly one JSON report with telemetry"
     )
+    p_scan.add_argument(
+        "--allow-commit-actions",
+        action="store_true",
+        help="Allow checkout, payment, and other commit actions; use only on disposable previews",
+    )
     orchestrator_port_flag(p_scan)
     output_flags(p_scan)
     p_scan.set_defaults(func=cmd_scan)
@@ -1949,6 +1959,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=_bounded_int(1, 300),
         default=90,
         help="Crawl budget in seconds (1-300, default 90)",
+    )
+    p_gate.add_argument(
+        "--allow-commit-actions",
+        action="store_true",
+        help="Allow checkout, payment, and other commit actions; use only on disposable previews",
     )
     gate_output = p_gate.add_mutually_exclusive_group()
     gate_output.add_argument(

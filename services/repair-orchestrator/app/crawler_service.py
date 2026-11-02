@@ -119,6 +119,7 @@ def telemetry(report: dict[str, Any]) -> dict[str, Any]:
         "stop_reason": report.get("stop_reason")
         if isinstance(report.get("stop_reason"), str)
         else None,
+        "commit_controls_skipped": report.get("commit_controls_skipped", 0),
         "actions": actions,
         "failure": failure,
         "reproduction_trail": report.get("reproduction_trail", []),
@@ -147,6 +148,7 @@ def run_crawl(
     *,
     max_actions: int = DEFAULT_MAX_ACTIONS,
     timeout_ms: int = DEFAULT_TIMEOUT_MS,
+    allow_commit_actions: bool = False,
     on_event: Callable[[Event], None] | None = None,
     runner: Path = RUNNER_CLI,
     cancel: threading.Event | None = None,
@@ -156,6 +158,8 @@ def run_crawl(
     Raises CrawlError when input is invalid, the runner is missing, or it
     exits without a report. Page defects are not errors: they come back as a
     report with ``status: "failure"``. Setting ``cancel`` stops the runner.
+    ``allow_commit_actions`` opts into checkout and other commit actions on
+    non-local origins; enable it only against disposable previews.
     """
     target = validate_url(url)
     if not 1 <= max_actions <= MAX_ACTIONS:
@@ -175,6 +179,8 @@ def run_crawl(
         "--timeout-ms",
         str(timeout_ms),
     ]
+    if allow_commit_actions:
+        command.append("--allow-commit-actions")
     stderr_tail: deque[str] = deque(maxlen=20)
     report: dict[str, Any] | None = None
     with subprocess.Popen(

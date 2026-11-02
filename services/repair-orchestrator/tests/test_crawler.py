@@ -179,7 +179,10 @@ def test_malformed_ipv6_cli_is_a_usage_error(
 
 
 @pytest.mark.parametrize("command", ["scan", "crawl"])
-@pytest.mark.parametrize("stop_reason", ["max_actions", "timeout", None, "unknown"])
+@pytest.mark.parametrize(
+    "stop_reason",
+    ["max_actions", "timeout", "screen_limit", "skipped_commit_controls", None, "unknown"],
+)
 @pytest.mark.parametrize("as_json", [False, True])
 def test_exploratory_incomplete_result_requires_gate(
     monkeypatch: pytest.MonkeyPatch,
@@ -215,6 +218,29 @@ def test_crawl_help_explains_completion_contract(
     assert "CI/deployment" in output
     assert "incomplete" in output
     assert "exit 1" in output
+
+
+@pytest.mark.parametrize("command", ["crawl", "break", "scan", "auto"])
+@pytest.mark.parametrize("allow_commit_actions", [False, True])
+def test_exploratory_cli_forwards_commit_action_opt_in(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    command: str,
+    allow_commit_actions: bool,
+) -> None:
+    seen: dict[str, Any] = {}
+
+    def fake(url: str, **kwargs: Any) -> dict[str, Any]:
+        seen.update(kwargs)
+        return CLEAN_REPORT
+
+    monkeypatch.setattr(crawler_service, "run_crawl", fake)
+    flags = ["--allow-commit-actions"] if allow_commit_actions else []
+    args = build_parser().parse_args([command, "https://preview.example.com", "--json", *flags])
+    assert args.allow_commit_actions is allow_commit_actions
+    assert args.func(args) == 0
+    assert seen["allow_commit_actions"] is allow_commit_actions
+    capsys.readouterr()
 
 
 @pytest.mark.parametrize(
@@ -271,6 +297,32 @@ def test_run_crawl_streams_events_and_returns_the_report(tmp_path: Path) -> None
     ]
     assert Path(events[1]["cwd"]) == runner.parent.parent
     assert len(events) == 2
+
+
+@needs_node
+@pytest.mark.parametrize("allow_commit_actions", [None, False, True])
+@pytest.mark.parametrize("stop_reason", ["screen_limit", "skipped_commit_controls"])
+def test_run_crawl_preserves_completion_evidence_and_commit_opt_in(
+    tmp_path: Path, allow_commit_actions: bool | None, stop_reason: str
+) -> None:
+    report = {**CLEAN_REPORT, "stop_reason": stop_reason, "commit_controls_skipped": 2}
+    runner = fake_runner(
+        tmp_path,
+        'console.log(JSON.stringify({type:"argv", argv:process.argv.slice(2)}));\n'
+        f"console.log(JSON.stringify({json.dumps({'type': 'report', 'report': report})}));",
+    )
+    events: list[dict[str, Any]] = []
+    kwargs: dict[str, Any] = (
+        {} if allow_commit_actions is None else {"allow_commit_actions": allow_commit_actions}
+    )
+    result = run_crawl(
+        "https://preview.example.com", runner=runner, on_event=events.append, **kwargs
+    )
+    assert ("--allow-commit-actions" in events[0]["argv"]) is (allow_commit_actions is True)
+    assert result == report
+    summary = crawler_service.telemetry(result)
+    assert summary["stop_reason"] == stop_reason
+    assert summary["commit_controls_skipped"] == 2
 
 
 @needs_node
@@ -1026,6 +1078,7 @@ def test_telemetry_of_clean_and_older_reports() -> None:
     assert clean["failure"] is None
     assert clean["actions"] == []
     assert clean["stop_reason"] == "max_actions"
+    assert clean["commit_controls_skipped"] == 0
     # Reports without screens_visited fall back to pages_visited.
     assert clean["screens_visited"] == [{"url": "http://127.0.0.1:3000/", "path": "/"}]
     errored = crawler_service.telemetry({"status": "error", "error": "Could not load"})
