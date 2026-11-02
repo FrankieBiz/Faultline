@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { crawlCompleted, stopReasonOf } from "@/lib/agent-gate";
 import type { CheckRecord, CrawlEvent, CrawlTelemetry, Tone } from "@/lib/faultline-api";
 import { checkVerdict } from "@/lib/faultline-api";
+import { CtaIcon } from "@/components/CtaIcon";
 
 type Defect = Extract<CrawlEvent, { type: "defect" }>;
 
@@ -398,7 +399,7 @@ export default function CrawlerHud(props: {
               <div className="hud-defect-actions">
                 <button type="button" className="btn primary hud-repair" onClick={props.onRepair} disabled={repairBlocked !== null}
                   aria-describedby={repairBlocked ? "hud-blocked" : undefined}>
-                  <span aria-hidden="true">🛠️ </span>{repairLabel} <span className="hud-repair-sub">(Sandbox Verified)</span>
+                  <span>{repairLabel} <span className="hud-repair-sub">(Sandbox Verified)</span></span><CtaIcon />
                 </button>
                 {repairBlocked && <span id="hud-blocked" className="hud-blocked">{repairBlocked}</span>}
               </div>
@@ -413,7 +414,7 @@ export default function CrawlerHud(props: {
             ) : repair.verified ? (
               <>
                 <p className="hud-repair-title">
-                  <span aria-hidden="true">🎉 </span>Fix verified{repair.checks ? `: ${repair.checks.passed}/${repair.checks.total} assertions passed` : ""} in {repair.sandbox}
+                  <CtaIcon kind="check" className="hud-seal" />Fix verified{repair.checks ? `: ${repair.checks.passed}/${repair.checks.total} assertions passed` : ""} in {repair.sandbox}
                 </p>
                 {repair.applied ? (
                   <p className="hud-repair-line">
@@ -425,7 +426,7 @@ export default function CrawlerHud(props: {
                 ) : repair.canApply || repair.applying ? (
                   <div className="hud-defect-actions">
                     <button type="button" className="btn primary hud-apply" onClick={props.onApply} disabled={!repair.canApply}>
-                      <span aria-hidden="true">✅ </span>{repair.applying ? "Applying the verified fix…" : "Apply Verified Fix to Demo Store"}
+                      {repair.applying ? "Applying the verified fix…" : "Apply Verified Fix to Demo Store"}<CtaIcon kind="check" />
                     </button>
                   </div>
                 ) : repair.applyNote ? <p className="hud-repair-line muted">{repair.applyNote}</p> : null}

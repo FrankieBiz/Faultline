@@ -2,6 +2,7 @@
 
 import { useId, useRef, useState, type FormEvent } from "react";
 import { ApiError } from "@/lib/faultline-api";
+import { CtaIcon } from "@/components/CtaIcon";
 
 const parse = (url: string | null) => {
   try {
@@ -88,7 +89,7 @@ export default function HeroArena(props: {
   return (
     <section className="hero" aria-labelledby={`${ids}-h`}>
       <div className="shell hero-inner">
-        <p className="hero-kicker"><span className="hero-live" aria-hidden="true" />The autonomous immune system for AI coding agents and web apps</p>
+        <p className="tag hero-kicker"><span className="hero-live" aria-hidden="true" />The autonomous immune system for AI coding agents and web apps</p>
         <h1 id={`${ids}-h`}>FaultLine Autonomous Immune System</h1>
         <p className="hero-sub">
           Paste any local or web URL. The agent clicks every button, fills every form, and <strong>catches silent regressions before code goes live</strong>.
@@ -105,7 +106,7 @@ export default function HeroArena(props: {
               placeholder="http://localhost:3000/..." value={url} onChange={(e) => setUrl(e.target.value)}
               aria-invalid={error ? true : undefined} aria-describedby={error ? `${ids}-e` : `${ids}-k`} />
             <button type="submit" className="btn primary arena-go" disabled={busy}>
-              <span aria-hidden="true">🚀 </span>{hunting ? "Scanning preview…" : "Run Autonomous Exploration"}
+              {hunting ? "Scanning preview…" : "Run Autonomous Exploration"}<CtaIcon />
             </button>
           </div>
           {error && <p id={`${ids}-e`} className="arena-error" role="alert">{error}</p>}

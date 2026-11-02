@@ -107,7 +107,7 @@ export default function CliGuide({ request }: { request: number }) {
       <div className="guide">
         <div className="guide-head">
           <div>
-            <p className="eyebrow">Quick sheet</p>
+            <p className="tag" data-tone="active">Quick sheet</p>
             <h2 id={`${ids}-h`}>Developer workflow</h2>
           </div>
           <button type="button" className="btn quiet" onClick={close}>Close</button>

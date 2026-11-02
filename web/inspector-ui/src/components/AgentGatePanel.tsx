@@ -4,6 +4,7 @@ import { useId, useRef, useState, type FormEvent, type KeyboardEvent } from "rea
 import { crawlInFlight, crawlSummary, plural, Seismograph, type CrawlState, type Seismic } from "@/components/CrawlerHud";
 import { agentSnippets, crawlCompleted, DEFAULT_GATE_URL, gateErrorResult, gateResult, trailAction, type GateResult } from "@/lib/agent-gate";
 import type { CrawlTelemetry } from "@/lib/faultline-api";
+import { CtaIcon } from "@/components/CtaIcon";
 
 type Verdict = "idle" | "running" | "safe" | "blocked" | "inconclusive";
 
@@ -231,7 +232,7 @@ export default function AgentGatePanel(props: {
                   placeholder={DEFAULT_GATE_URL} value={url} onChange={(e) => setUrl(e.target.value)}
                   aria-invalid={error ? true : undefined} aria-describedby={error ? `${ids}-e` : undefined} />
                 <button type="submit" className="btn primary gate-run" disabled={busy}>
-                  <span aria-hidden="true">🛡️ </span>{verdict === "running" ? "Gate scanning…" : "Run Pre-Flight Gate"}
+                  {verdict === "running" ? "Gate scanning…" : "Run Pre-Flight Gate"}<CtaIcon kind="shield" />
                 </button>
               </div>
               {error && <p id={`${ids}-e`} className="gate-error" role="alert">{error}</p>}

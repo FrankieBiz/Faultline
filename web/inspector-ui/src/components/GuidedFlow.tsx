@@ -1,5 +1,6 @@
 import type { CheckRecord, StoreStatus, Tone } from "@/lib/faultline-api";
 import { checkVerdict } from "@/lib/faultline-api";
+import { CtaIcon } from "@/components/CtaIcon";
 
 function headline(store: StoreStatus): { tone: Tone; text: string } {
   if (store.state === "seeded") return { tone: "bad", text: "Checkout is broken: the seeded defect is live" };
@@ -142,7 +143,7 @@ export default function GuidedFlow(props: {
                     <span id={`flow-${step.n}-d`} className="flow-detail">{step.detail}</span>
                     <span id={`flow-${step.n}-s`} className="flow-status" data-tone={step.status.tone}>{step.status.text}</span>
                   </span>
-                  {phase === "current" && step.enabled && <span className="flow-go" aria-hidden="true">Start →</span>}
+                  {phase === "current" && step.enabled && <CtaIcon className="flow-go" />}
                 </button>
               </li>
             );
