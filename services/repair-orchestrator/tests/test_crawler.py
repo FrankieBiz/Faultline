@@ -143,6 +143,78 @@ def test_validate_url_rejects_non_http_targets(url: str) -> None:
 def test_validate_url_accepts_http_and_https() -> None:
     assert validate_url(" http://127.0.0.1:3000 ") == "http://127.0.0.1:3000"
     assert validate_url("https://shop.example.com/a?b=1") == "https://shop.example.com/a?b=1"
+    assert validate_url("http://[::1]:3000/") == "http://[::1]:3000/"
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["http://[invalid-ipv6]", "http://[::1", "http://host:bad", "http://host:65536"],
+)
+def test_validate_url_wraps_parse_and_port_errors(url: str) -> None:
+    with pytest.raises(CrawlError) as error:
+        validate_url(url)
+    assert error.value.code == "invalid_url"
+
+
+@pytest.mark.parametrize("path", ["/api/crawl", "/api/faultline/crawl"])
+@pytest.mark.parametrize("stream", [False, True])
+def test_malformed_ipv6_returns_structured_422(client: TestClient, path: str, stream: bool) -> None:
+    headers = {**HEADERS, "Accept": "application/x-ndjson"} if stream else HEADERS
+    response = client.post(path, json={"url": "http://[invalid-ipv6]"}, headers=headers)
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "invalid_url"
+
+
+@pytest.mark.parametrize("command", ["scan", "crawl", "gate"])
+def test_malformed_ipv6_cli_is_a_usage_error(
+    command: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    args = build_parser().parse_args([command, "http://[invalid-ipv6]", "--json"])
+    assert args.func(args) == 2
+    body = json.loads(capsys.readouterr().out)
+    if command == "gate":
+        assert body["error"]["code"] == "invalid_url"
+    else:
+        assert body["code"] == "invalid_url"
+
+
+@pytest.mark.parametrize("command", ["scan", "crawl"])
+@pytest.mark.parametrize("stop_reason", ["max_actions", "timeout", None, "unknown"])
+@pytest.mark.parametrize("as_json", [False, True])
+def test_exploratory_incomplete_result_requires_gate(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    command: str,
+    stop_reason: str | None,
+    as_json: bool,
+) -> None:
+    report = {**CLEAN_REPORT, "stop_reason": stop_reason}
+    monkeypatch.setattr(crawler_service, "run_crawl", lambda url, **_: report)
+    flags = ["--json"] if as_json else []
+    args = build_parser().parse_args([command, "http://x", *flags])
+    code = scan_command(args, PLAIN, port=9000) if command == "scan" else crawl_command(args, PLAIN)
+    assert code == 0
+    captured = capsys.readouterr()
+    warning = captured.err if as_json else captured.out
+    assert "incomplete" in warning.lower()
+    assert "faultline gate" in warning
+    assert "CI/deployment" in warning
+    assert "exit 1" in warning
+    if as_json:
+        assert json.loads(captured.out)["stop_reason"] == stop_reason
+
+
+@pytest.mark.parametrize("command", ["scan", "crawl", "gate"])
+def test_crawl_help_explains_completion_contract(
+    command: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit) as error:
+        build_parser().parse_args([command, "--help"])
+    assert error.value.code == 0
+    output = " ".join(capsys.readouterr().out.split())
+    assert "CI/deployment" in output
+    assert "incomplete" in output
+    assert "exit 1" in output
 
 
 @pytest.mark.parametrize(

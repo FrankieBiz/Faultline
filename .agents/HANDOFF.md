@@ -1,5 +1,13 @@
 # Agent handoff state
 
+## November 1: crawler URL validation and exploration semantics (codex-crawler-url-safety)
+
+- `crawler_service.validate_url` converts URL parser, hostname, and port `ValueError`s into `CrawlError("invalid_url", ...)`. Invalid IPv6 returns structured HTTP 422 through both crawl routes and both JSON/NDJSON modes, and CLI scan/crawl/gate return usage exit 2. Valid IPv6 remains accepted.
+- `scan` and `crawl` remain exploratory: clean incomplete runs retain exit 0, with explicit incomplete-exploration warnings directing CI/deployment to mandatory `faultline gate` (which continues to fail closed with exit 1). JSON stdout keeps its report shape; warnings go to stderr. Help no longer calls exhausted action budgets clean or passing; sandbox repair dispatch also reminds operators to gate.
+- The pre-flight workflow accepts optional `PREVIEW_URL` through manual/reusable inputs or an Actions secret, with precedence input, secret, then existing `FAULTLINE_PREVIEW_URL` variable. An unset URL preserves the healthy/broken fixture smoke test. README and gate documentation describe the contract.
+- Live HTTP invariant checks warn before any requests when any ReproSpec step uses POST/PUT/PATCH/DELETE. The warning explains the two executions without server-state reset and directs operators to disposable environments. This covers later mutation steps after GET and loopback targets, since loopback alone does not establish disposability. This is a warning, not a mutation opt-in or state reset.
+- Verification: regression checks failed before fixes; focused crawler/gate/probes suite passed **187 tests**, including Chromium tests. `make check` exited 0: **324 backend/script + 980 orchestrator + 126 runner = 1,430 passed**, with 23 platform/PowerShell skips; lint/format, strict mypy (38 + 56 source files), provenance, all frontend/runner/Inspector builds, and both Python distributions passed. Workflow GitHub Actions schema validation passed. A temporary controller's `/healthz` passed `faultline gate` with exploration exhausted (one screen, zero interactive elements); this is HTTP smoke evidence. Temporary services were stopped.
+
 ## November 1: backend audit fixes (codex-backend-audit-fixes)
 
 - `ProjectRuntime.execute` enforces its caller's millisecond budget across service/browser startup and reproduction with `asyncio.timeout`. Owned session cleanup remains shielded and awaited before timeout propagation. Regression tests cover cancellation during startup and active reproduction.

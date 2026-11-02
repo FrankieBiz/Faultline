@@ -170,9 +170,12 @@ runs on every pull request and push to `main`:
 
 A blocked verdict fails the job and adds an error annotation. The step summary
 shows the badge, the reproduction trail, and the fix prompt for the agent.
-Set the `FAULTLINE_PREVIEW_URL` repository variable to your preview
-deployment, give deploy jobs `needs: gate`, and make the check required in
-branch protection. Without a preview URL, the workflow tests itself. It
+Pass the optional `PREVIEW_URL` input through `workflow_dispatch` or
+`workflow_call`, set the `PREVIEW_URL` Actions secret (pass it explicitly when
+calling the reusable workflow), or set the `FAULTLINE_PREVIEW_URL` repository
+variable. Precedence is input, secret, then variable. Give deploy jobs
+`needs: gate` and make the check required in branch protection. Without a
+preview URL, the workflow tests itself. It
 starts a healthy store that must pass, then a store with a broken checkout
 that must exit exactly 1 with `POST /api/checkout` in its fix prompt.
 

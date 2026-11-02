@@ -1865,14 +1865,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_crawl = subparsers.add_parser(
         "crawl",
         aliases=["break"],
-        help="Point headless Chromium at a URL and click until something breaks",
+        help="Explore a URL for defects; use faultline gate for CI/deployment",
+        description=(
+            "Exploratory crawl: exit 0 means no defect found, even if exploration is incomplete. "
+            "Use faultline gate for mandatory CI/deployment gates; incomplete exploration "
+            "returns exit 1."
+        ),
     )
     p_crawl.add_argument("url", metavar="URL", help="Site to crawl, e.g. http://127.0.0.1:3000")
     p_crawl.add_argument(
         "--max-actions",
         type=_bounded_int(1, 100),
         default=15,
-        help="Clicks and fills before stopping clean (1-100, default 15)",
+        help="Maximum clicks and fills; reaching this limit is incomplete (1-100, default 15)",
     )
     p_crawl.add_argument(
         "--timeout",
@@ -1887,14 +1892,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_scan = subparsers.add_parser(
         "scan",
         aliases=["auto"],
-        help="Paste a URL: explore every screen, catch defects, and offer a sandboxed repair",
+        help="Explore a URL and offer repairs; use faultline gate for CI/deployment",
+        description=(
+            "Exploratory scan: exit 0 means no defect found or a successful sandbox repair, "
+            "even if exploration is incomplete. Use faultline gate for mandatory CI/deployment "
+            "gates; incomplete exploration returns exit 1."
+        ),
     )
     p_scan.add_argument("url", metavar="URL", help="Site to scan, e.g. http://127.0.0.1:3000")
     p_scan.add_argument(
         "--max-actions",
         type=_bounded_int(1, 100),
         default=25,
-        help="Clicks and fills before stopping clean (1-100, default 25)",
+        help="Maximum clicks and fills; reaching this limit is incomplete (1-100, default 25)",
     )
     p_scan.add_argument(
         "--timeout",
@@ -1919,6 +1929,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_gate = subparsers.add_parser(
         "gate",
         help="Pre-deployment gate for agents and CI: exit 0 safe to deploy, 1 blocked, 2 bad input",
+        description=(
+            "Mandatory CI/deployment gate: exit 0 requires clean, completed exploration. "
+            "Defects, errors, and incomplete exploration return exit 1; invalid input returns "
+            "exit 2. Use scan and crawl for exploratory work."
+        ),
     )
     p_gate.add_argument(
         "url", metavar="URL", help="Preview or staging URL, e.g. http://127.0.0.1:3000"
@@ -1927,7 +1942,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--max-actions",
         type=_bounded_int(1, 100),
         default=25,
-        help="Clicks and fills before passing clean (1-100, default 25)",
+        help="Maximum clicks and fills; reaching this limit blocks deployment (1-100, default 25)",
     )
     p_gate.add_argument(
         "--timeout",

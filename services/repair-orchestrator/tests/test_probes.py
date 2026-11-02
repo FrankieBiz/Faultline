@@ -18,6 +18,7 @@ from app.probes import (
     same_source,
     validate_target,
 )
+from app.repro import AssertionCheck, AssertStep, ReproSpec, RequestStep
 from app.snapshots import REPOSITORY_ROOT
 from shared.config import REGISTRY, Scenario
 
@@ -79,6 +80,51 @@ def seeded_store(request: httpx.Request) -> httpx.Response:
 def repository_scenario() -> Invariant:
     config = load_project_config(REPOSITORY_ROOT / "faultline.toml", REPOSITORY_ROOT)
     return next(item for item in config.invariants if item.id == "scenario.checkout_api")
+
+
+@pytest.mark.parametrize("method", ["POST", "PUT", "DELETE", "PATCH"])
+async def test_mutating_checks_warn_before_the_first_request(
+    method: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert "twice" in caplog.text
+        assert "not reset" in caplog.text
+        assert "disposable" in caplog.text
+        calls.append(request.method)
+        return httpx.Response(201)
+
+    await check(checkout(method=method, url="https://production.example/orders"), handler)
+    assert calls == [method, method]
+    assert len(caplog.records) == 1
+
+
+async def test_later_scenario_mutation_warns_before_any_request(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    spec = ReproSpec(
+        id="multi",
+        steps=[
+            RequestStep(id="home", method="GET", path="/"),
+            RequestStep(id="delete", method="DELETE", path="/orders/1"),
+            AssertStep(id="ok", source="delete", check=AssertionCheck(status=200)),
+        ],
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert "DELETE" in caplog.text
+        assert "not reset" in caplog.text
+        return httpx.Response(200)
+
+    await check(checkout(method="GET", repro=spec), handler)
+    assert len(caplog.records) == 1
+
+
+@pytest.mark.parametrize("method", ["GET", "HEAD", "OPTIONS"])
+async def test_read_only_checks_do_not_warn(method: str, caplog: pytest.LogCaptureFixture) -> None:
+    await check(checkout(method=method), lambda request: httpx.Response(201))
+    assert not caplog.records
 
 
 def test_repository_config_lists_the_project_scenario_and_rules() -> None:

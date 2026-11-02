@@ -11,6 +11,7 @@ pipeline reproduces the failure again in isolation before any model call (F1).
 """
 
 import json
+import logging
 import time
 import tomllib
 from collections.abc import AsyncGenerator, Callable, Mapping
@@ -57,6 +58,7 @@ SCENARIO_TIMEOUT_MS = 30_000
 PORT_PLACEHOLDER = "{port}"
 SCENARIO_PREFIX = "scenario."
 _LOOPBACK = {"127.0.0.1", "localhost", "::1"}
+logger = logging.getLogger(__name__)
 
 
 class ProbeError(ValueError):
@@ -524,6 +526,22 @@ async def run_check(
     url = validate_target(resolve_url(invariant.url, port))
     origin, path = split_target(url)
     spec = build_spec(invariant, path)
+    # Inspect the full spec: the first request shown by the invariant may be GET
+    # while a later step mutates state. Even loopback does not imply disposable.
+    mutating = sorted(
+        {
+            step.method
+            for step in spec.steps
+            if isinstance(step, RequestStep) and step.method in {"POST", "PUT", "DELETE", "PATCH"}
+        }
+    )
+    if mutating:
+        logger.warning(
+            "Live invariant sends state-changing %s requests up to twice. Server state is "
+            "not reset between sessions; use only disposable test environments, never "
+            "non-disposable or production data.",
+            ", ".join(mutating),
+        )
     sessions = _Sessions(origin, transport)
     result = await ReproEngine(sessions.open).reproduce(spec)
     by_id = {session.session_id: session for session in sessions.opened}

@@ -276,8 +276,10 @@ faultline test http://localhost:8000/healthz --method GET --status 200 --json
 ```
 
 The command sends the request in two fresh sessions, without a request body or
-redirect following. Both must match the expected status to pass. Non-GET requests
-also run twice and may change the target's state. Exit codes are **0** for pass,
+redirect following. Both must match the expected status to pass. State-changing
+requests (POST/PUT/PATCH/DELETE) warn before execution: they run up to twice with
+no server-state reset. Use disposable test environments for these requests.
+Exit codes are **0** for pass,
 **1** for failure (including flaky or unreachable), **2** for invalid input, and
 **130** for interruption. `--json` emits one result with the actual session count;
 transport errors can stop after the first session. This checks HTTP behavior and
@@ -340,7 +342,11 @@ interaction with `ok`), `failure` (null when clean), and `reproduction_trail`
 (numbered plain-language steps with selectors), plus `stop_reason`
 (`exhausted`, `max_actions`, or `timeout`) for a crawl that found nothing. Only
 `exhausted` means exploration finished; the gate and the Inspector treat the
-others as inconclusive. The Inspector's **Run Autonomous Exploration** button
+others as inconclusive. `scan` and `crawl` are exploratory: exit 0 can mean an
+incomplete run found no defect (or `scan` verified a sandbox repair). Both warn
+when a clean run is incomplete; JSON mode keeps the warning on stderr.
+Use `faultline gate` for mandatory CI/deployment gates: incomplete exploration
+returns exit 1. The Inspector's **Run Autonomous Exploration** button
 streams it live through `POST /api/faultline/crawl`, whose closing `done` event
 carries the same telemetry.
 

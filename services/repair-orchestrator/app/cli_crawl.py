@@ -25,6 +25,18 @@ if TYPE_CHECKING:
 _VERBS = {"click": "Clicking", "fill": "Filling", "select": "Selecting in", "check": "Checking"}
 _INPUT_ERRORS = {"invalid_url", "invalid_request"}
 MAX_BODY_CHARS = 600
+GATE_GUIDANCE = (
+    "Use faultline gate for mandatory CI/deployment gates; incomplete exploration returns exit 1."
+)
+
+
+def _incomplete_warning(report: dict[str, Any]) -> str | None:
+    if report.get("status") == "clean" and report.get("stop_reason") != "exhausted":
+        return (
+            f"Exploration incomplete (stopped: {report.get('stop_reason') or 'unknown'}). "
+            "Exploratory exit 0 means only that no defect was found. " + GATE_GUIDANCE
+        )
+    return None
 
 
 def describe_signal(signal: dict[str, Any]) -> str:
@@ -115,10 +127,11 @@ def render_report(report: dict[str, Any], c: Palette) -> list[str]:
             f"{c.green}{c.bold}No defect found.{c.reset} "
             f"Explored {report.get('elements_explored')} elements with "
             f"{report.get('actions_taken')} actions across "
-            f"{len(report.get('pages_visited', []))} pages (stopped: {report.get('stop_reason')})."
+            f"{len(report.get('pages_visited', []))} pages (stopped: {report.get('stop_reason')}).",
+            _incomplete_warning(report) or f"Exploratory result. {GATE_GUIDANCE}",
         ]
     if status == "error":
-        return [f"{c.red}Crawl could not complete:{c.reset} {report.get('error')}"]
+        return [f"{c.red}Crawl could not complete:{c.reset} {report.get('error')}", GATE_GUIDANCE]
 
     failure: dict[str, Any] = report.get("failure", {})
     lines = ["", f"{c.red}{c.bold}{describe_signal(failure)}{c.reset}"]
@@ -135,7 +148,11 @@ def render_report(report: dict[str, Any], c: Palette) -> list[str]:
 
 
 def crawl_command(args: argparse.Namespace, c: Palette) -> int:
-    """Exit 0 clean, 1 defect found or crawl failure, 2 invalid input, 130 interrupted."""
+    """Exploratory: exit 0 means no defect found, even if exploration is incomplete.
+
+    Exit 1 for a defect or crawl failure, 2 for bad input, 130 when interrupted.
+    CI/deployment must use gate, which fails closed on incomplete exploration.
+    """
     url = args.url.strip()
     if url and "://" not in url:
         url = "http://" + url
@@ -164,6 +181,8 @@ def crawl_command(args: argparse.Namespace, c: Palette) -> int:
         return 130
 
     if args.json:
+        if warning := _incomplete_warning(report):
+            print(warning, file=sys.stderr)
         print(json.dumps(report, ensure_ascii=True))
     else:
         for line in render_report(report, c):
@@ -400,8 +419,9 @@ def dispatch_repair(plan: RepairPlan, args: argparse.Namespace, port: int, c: Pa
 def scan_command(args: argparse.Namespace, c: Palette, *, port: int) -> int:
     """Crawl, explain any defect, and offer a sandboxed repair.
 
-    Exit 0 clean; 1 defect left unrepaired or crawl failure; 2 invalid input;
-    130 interrupted. A dispatched repair returns the ``listen`` exit code.
+    Exploratory exit 0 means no defect found (even if exploration is incomplete),
+    or a successful dispatched repair. Exit 1 for an unrepaired defect or crawl
+    failure; 2 invalid input; 130 interrupted. CI/deployment must use gate.
     """
     url = args.url.strip()
     if url and "://" not in url:
@@ -426,6 +446,8 @@ def scan_command(args: argparse.Namespace, c: Palette, *, port: int) -> int:
         return 130
 
     if args.json:
+        if warning := _incomplete_warning(report):
+            print(warning, file=sys.stderr)
         print(json.dumps({**report, **crawler_service.telemetry(report)}, ensure_ascii=True))
         return 0 if report.get("status") == "clean" else 1
     if report.get("status") != "failure":
@@ -468,6 +490,7 @@ def scan_command(args: argparse.Namespace, c: Palette, *, port: int) -> int:
         if not accepted:
             print(f"Repair skipped. Run {c.bold}./faultline run{c.reset} to repair it later.")
             return 1
+    print(GATE_GUIDANCE)
     return dispatch_repair(plan, args, port, c)
 
 

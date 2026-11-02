@@ -67,8 +67,13 @@ def validate_url(url: str) -> str:
     candidate = url.strip()
     if len(candidate) > MAX_URL_LENGTH:
         raise CrawlError("invalid_url", f"URL is longer than {MAX_URL_LENGTH} characters.")
-    parsed = urllib.parse.urlsplit(candidate)
-    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+    try:
+        parsed = urllib.parse.urlsplit(candidate)
+        hostname = parsed.hostname
+        _ = parsed.port  # Validate nonnumeric and out-of-range ports before launching the runner.
+    except ValueError as exc:
+        raise CrawlError("invalid_url", "URL is not a valid http:// or https:// URL.") from exc
+    if parsed.scheme not in ("http", "https") or not hostname:
         raise CrawlError("invalid_url", "URL must be an absolute http:// or https:// URL.")
     return candidate
 

@@ -2,12 +2,30 @@ name: FaultLine pre-flight gate
 # Drop-in deployment gate: explore a preview URL in headless Chromium and fail
 # the job (exit 1) when any click or form submission breaks the site.
 #
-# Point it at your preview: set the repository variable FAULTLINE_PREVIEW_URL
-# (Settings -> Secrets and variables -> Actions -> Variables), or replace the
+# Point it at your preview: pass PREVIEW_URL when dispatching/calling this workflow,
+# or set the PREVIEW_URL secret or repository variable FAULTLINE_PREVIEW_URL
+# (Settings -> Secrets and variables -> Actions), or replace the
 # "Start preview" step with your own server. Make deploy jobs `needs: gate`
 # and mark "FaultLine pre-flight gate / gate" as a required check so a
 # DEPLOYMENT_BLOCKED verdict stops the merge and the deploy.
 on:
+  workflow_dispatch:
+    inputs:
+      PREVIEW_URL:
+        description: 'Deployment preview URL (empty runs the fixture smoke test)'
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      PREVIEW_URL:
+        description: 'Deployment preview URL (empty runs the fixture smoke test)'
+        required: false
+        type: string
+        default: ''
+    secrets:
+      PREVIEW_URL:
+        description: 'Optional deployment preview URL'
+        required: false
   pull_request:
   push:
     branches: [main]
@@ -21,7 +39,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      PREVIEW_URL: ${{ vars.FAULTLINE_PREVIEW_URL }}
+      PREVIEW_URL: ${{ inputs.PREVIEW_URL || secrets.PREVIEW_URL || vars.FAULTLINE_PREVIEW_URL }}
       NO_COLOR: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
