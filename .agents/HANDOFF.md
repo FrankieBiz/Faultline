@@ -1,5 +1,12 @@
 # Agent handoff state
 
+## November 1: snippet shell quoting, commit-named links, LICENSE (claude-ui-shell-quoting-crawler)
+
+- Inspector gate snippets (`agentSnippets` in `web/inspector-ui/src/lib/agent-gate.ts`) pass the target URL through `shellQuote`, which mirrors Python's `shlex.quote`: safe URLs stay bare, anything else (`&`, `;`, `$`, spaces, quotes) is single-quoted with `'\''` escapes. `agent_remediation_prompt` text is deliberately unchanged because it must stay byte-identical to Python's `gate_result`.
+- `scoreClickable` now applies the COMMIT-label bound before the link branch, so an anchor or `data-href` card labeled "Pay", "Place order", or "Buy now" is skipped on external origins unless commit actions are allowed. Allowed or local origins still score such links by destination (30/40).
+- Added the canonical Apache 2.0 `LICENSE` at the repo root (sha256 `cfc7749b…`).
+- Verification: `npm run check` passed in `web/inspector-ui` and `tools/browser-runner` (127 runner unit tests). `FAULTLINE_TEST_PWSH=/tmp/faultline-pwsh-validation/pwsh make check` exited 0: 345 + 942 + 127 = **1,414 passed**, 2 native-Windows skips. `make browser` passed 43 Inspector + 2 storefront tests, including a new Inspector case that copies a quoted `?q=mug&sort=new` gate command. README and PROJECT_STATUS counts reflect these runs; the requested 1,392 figure did not match any verified run.
+
 ## November 1: backend audit fixes (codex-backend-audit-fixes)
 
 - `ProjectRuntime.execute` enforces its caller's millisecond budget across service/browser startup and reproduction with `asyncio.timeout`. Owned session cleanup remains shielded and awaited before timeout propagation. Regression tests cover cancellation during startup and active reproduction.

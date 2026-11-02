@@ -336,7 +336,18 @@ pull request and push to \`main\` and fails the job on exit 1. If that check is
 red on your PR, open the job summary. It holds the same reproduction trail and
 fix prompt; run the loop above locally against the same flow.`;
 
-export const agentSnippets = (url: string = DEFAULT_GATE_URL): AgentSnippet[] => [
+/**
+ * POSIX shell form of `value`, matching Python's `shlex.quote`: safe words pass
+ * through, anything else is single-quoted so `&`, `;`, `$`, or spaces in a
+ * pasted URL reach `faultline gate` as one argument.
+ */
+export const shellQuote = (value: string): string =>
+  /^[\w@%+=:,./-]+$/.test(value) ? value : `'${value.replace(/'/g, "'\\''")}'`;
+
+export const agentSnippets = (url: string = DEFAULT_GATE_URL): AgentSnippet[] => snippetsFor(shellQuote(url));
+
+/** Copy-ready snippets; `url` is already shell-quoted. */
+const snippetsFor = (url: string): AgentSnippet[] => [
   {
     id: "rules",
     tab: "Cursor / Claude Code",

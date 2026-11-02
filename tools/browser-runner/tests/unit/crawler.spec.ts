@@ -129,6 +129,21 @@ test.describe("crawler heuristics", () => {
     expect(scoreClickable(clickable({ text: "Add to cart" }), { origin: "https://shop.example.com", visited })).toBe(25);
   });
 
+  test("never follows commit-named links on an external origin unless allowed", () => {
+    const origin = "https://shop.example.com";
+    const visited = new Set<string>();
+    const pay = clickable({ tag: "a", text: "Pay", href: `${origin}/pay` });
+    const placeOrder = clickable({ tag: "a", text: "Place order", href: `${origin}/order/confirm` });
+    const card = clickable({ tag: "div", ariaLabel: "Buy now", href: `${origin}/buy?sku=1` });
+    for (const link of [pay, placeOrder, card]) {
+      expect(scoreClickable(link, { origin, visited }), link.text || link.ariaLabel).toBeNull();
+    }
+    // Allowed or local origins still judge the link by its destination.
+    expect(scoreClickable(pay, { origin, visited, allowCommit: true })).toBe(30);
+    expect(scoreClickable(clickable({ tag: "a", text: "Pay", href: "http://127.0.0.1:3000/pay" }), { origin: "http://127.0.0.1:3000", visited })).toBe(30);
+    expect(scoreClickable(clickable({ tag: "a", text: "Trail Mug", href: `${origin}/product/trail-mug` }), { origin, visited })).toBe(30);
+  });
+
   test("labels symbol-only controls by their accessible name", () => {
     expect(labelOf({ text: "+", ariaLabel: "Increase quantity", value: "", href: "" })).toBe("Increase quantity");
     expect(labelOf({ text: "Add to cart", ariaLabel: "Add to cart, Trail Mug", value: "", href: "" })).toBe("Add to cart");

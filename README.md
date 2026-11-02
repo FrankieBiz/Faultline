@@ -466,16 +466,16 @@ These results describe an authored corpus for one checkout route, not arbitrary 
 
 | Suite | Tests |
 | --- | ---: |
-| Backend, scripts, fixtures, and setup bootstrap (pytest) | 335 |
-| Repair orchestrator and CLI (pytest) | 914 |
-| Browser runner unit tests | 123 |
-| **Unit and integration total** (`make check`) | **1,372** |
+| Backend, scripts, fixtures, and setup bootstrap (pytest) | 345 |
+| Repair orchestrator and CLI (pytest) | 942 |
+| Browser runner unit tests | 127 |
+| **Unit and integration total** (`make check`) | **1,414** |
 | Inspector browser tests (Playwright) | 43 |
 | Storefront browser tests (Playwright) | 2 |
 | **Browser total** (`make browser`) | **45** |
-| **All automated tests** | **1,417** |
+| **All automated tests** | **1,459** |
 
-The 11 PowerShell bootstrap tests skip on machines without `pwsh`. `make check` also runs Ruff lint and format checks, strict mypy, fixture and corpus provenance, the storefront, runner, and Inspector builds, and both Python distribution builds. `make integration` exercises real isolated Chromium and cgroup enforcement, and `make evaluate` runs the corpus.
+The 11 PowerShell bootstrap tests skip on machines without `pwsh`, and 2 native Windows demo tests skip outside Windows. `make check` also runs Ruff lint and format checks, strict mypy, fixture and corpus provenance, the storefront, runner, and Inspector builds, and both Python distribution builds. `make integration` exercises real isolated Chromium and cgroup enforcement, and `make evaluate` runs the corpus.
 
 ---
 
