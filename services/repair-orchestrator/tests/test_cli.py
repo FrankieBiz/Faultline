@@ -287,17 +287,20 @@ assert "app.project_runtime" not in sys.modules
     assert result.returncode == 0, result.stderr
 
 
-def test_cli_status_command(capsys: pytest.CaptureFixture[str]) -> None:
+@pytest.mark.parametrize("enforcement", ["not_run", "passed"])
+def test_cli_status_command(capsys: pytest.CaptureFixture[str], enforcement: str) -> None:
     """Test faultline status queries readiness."""
     from app.isolated_runtime import IsolatedRuntime
 
     args = argparse.Namespace()
+    limits = IsolatedRuntime().resource_limits_status
+    limits["enforcement_preflight"] = enforcement
     mock_status = {
         "status": "ready",
         "runtime_ready": True,
         "quarantined": False,
         "model": {"model": "muse-spark-1.3", "provider": "meta"},
-        "resource_limits": IsolatedRuntime().resource_limits_status,
+        "resource_limits": limits,
     }
     with patch("app.cli._api_request", return_value=mock_status):
         ret = cmd_status(args)
@@ -306,7 +309,7 @@ def test_cli_status_command(capsys: pytest.CaptureFixture[str]) -> None:
     assert "FaultLine Orchestrator Status" in captured
     assert "muse-spark-1.3" in captured
     assert "Memory=512 MiB, Tasks=64, CPU=100% (1 CPU)" in captured
-    assert "Enforcement: not_run" in captured
+    assert f"Enforcement: {enforcement}" in captured
 
 
 @pytest.mark.parametrize("mode", ["disabled", "invalid"])

@@ -2,11 +2,14 @@
 
 import json
 from collections.abc import Callable
+from contextlib import closing
 from pathlib import Path
 
 import httpx
 import pytest
 
+from app.database import Database
+from app.evidence import EvidenceStore
 from app.probes import (
     MAX_RESPONSE_BYTES,
     CheckRecord,
@@ -588,3 +591,46 @@ async def test_port_placeholder_requires_a_port() -> None:
         await check(rule, seeded)
     record = await check(rule, seeded, port=8000)
     assert record.url == f"{STORE}/api/checkout" and record.repair is not None
+
+
+@pytest.mark.parametrize("cut", range(1, len("SYNTHETIC_SECRET_VALUE")))
+async def test_assertion_summaries_redact_before_clipping(tmp_path: Path, cut: int) -> None:
+    secret = "SYNTHETIC_SECRET_VALUE"
+    # Assertion values are JSON encoded, including the opening quote.
+    value = "x" * (239 - cut) + secret
+    with closing(Database(":memory:")) as database:
+        evidence = EvidenceStore(database, tmp_path, secrets=(secret,))
+        record = await run_check(
+            checkout(
+                method="GET",
+                has_body=False,
+                body=None,
+                expected_status=None,
+                assertions=[AssertionCheck(equals=value)],
+            ),
+            port=None,
+            live_store_url=STORE,
+            redact=evidence.redact,
+            scenarios={},
+            transport=httpx.MockTransport(lambda _: httpx.Response(200, json=value + "!")),
+        )
+    for session in record.sessions:
+        assertion = session.assertions[0]
+        assert assertion.expected == evidence.redact(json.dumps(value))[:240]
+        assert assertion.observed == evidence.redact(json.dumps(value + "!"))[:240]
+
+
+async def test_fingerprint_redacts_before_clipping(tmp_path: Path) -> None:
+    secret = "SYNTHETIC_SECRET_VALUE"
+    value = "x" * 502 + secret
+    with closing(Database(":memory:")) as database:
+        evidence = EvidenceStore(database, tmp_path, secrets=(secret,))
+        record = await run_check(
+            checkout(),
+            port=None,
+            live_store_url=STORE,
+            redact=evidence.redact,
+            scenarios={},
+            transport=httpx.MockTransport(lambda _: httpx.Response(500, json={"detail": value})),
+        )
+    assert all(session.fingerprint == evidence.redact(value)[:512] for session in record.sessions)

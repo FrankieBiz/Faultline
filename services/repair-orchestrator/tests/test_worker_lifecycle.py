@@ -5,15 +5,17 @@ import sqlite3
 from dataclasses import replace
 from unittest.mock import AsyncMock, Mock
 
+import httpx
 import pytest
 from conftest import Harness, submission
 
 from app.database import DatabaseError
 from app.evidence import ArtifactError
+from app.main import Settings, create_app
 from app.model_adapter import ModelError, ModelResponse, RepairContext
 from app.policy import TARGET_FILE
 from app.runtime import RuntimeArtifact, RuntimeUnavailable
-from app.worker import Budgets
+from app.worker import Budgets, RepairWorker
 from shared.contracts.models import (
     Artifact,
     CleanupStatus,
@@ -23,6 +25,63 @@ from shared.contracts.models import (
     JobState,
     TerminalOutcome,
 )
+
+
+@pytest.mark.parametrize("exit_kind", ["exception", "cancel", "return"])
+async def test_worker_task_death_blocks_readiness_and_admission(
+    harness: Harness,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    exit_kind: str,
+) -> None:
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def failed_loop(self: RepairWorker) -> None:
+        started.set()
+        await release.wait()
+        if exit_kind == "exception":
+            raise sqlite3.OperationalError("injected dispatcher failure")
+
+    monkeypatch.setattr(RepairWorker, "_loop", failed_loop)
+    application = create_app(
+        Settings(data_dir=harness.root, control_token="test-worker-token"),
+        database=harness.database,
+        adapter=harness.adapter,
+        runtime=harness.runtime,
+        snapshots=harness.snapshots,
+    )
+    headers = {"Authorization": "Bearer test-worker-token"}
+    async with application.router.lifespan_context(application):
+        worker = application.state.controller.worker
+        await started.wait()
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=application),
+            base_url="http://controller",
+            headers=headers,
+        ) as client:
+            assert (await client.get("/api/faultline/readiness")).json()["worker_ready"]
+            task = worker._task
+            assert task is not None
+            if exit_kind == "cancel":
+                task.cancel()
+            else:
+                release.set()
+            await asyncio.wait({task}, timeout=2)
+            # Let task completion callbacks run before checking durable quarantine.
+            await asyncio.sleep(0)
+            assert task.done()
+            readiness = (await client.get("/api/faultline/readiness")).json()
+            assert readiness["status"] == "blocked"
+            assert not readiness["worker_ready"]
+            response = await client.post(
+                "/api/faultline/jobs", json=submission().model_dump(mode="json")
+            )
+            assert response.status_code == 503
+            assert response.json()["error"]["code"] == "worker_unavailable"
+            assert not harness.database.unfinished_jobs()
+            assert harness.database.get_lease().quarantined
+            assert "Worker task terminated unexpectedly" in caplog.text
 
 
 @pytest.mark.parametrize("operation", ["unfinished_jobs", "claim_job", "finish_job"])

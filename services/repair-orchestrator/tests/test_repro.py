@@ -151,8 +151,8 @@ async def test_assertion_matchers(check: dict[str, Any], value: Any, passed: boo
     assert result.passed is passed
 
 
-@pytest.mark.parametrize("cancel", [False, True])
-def test_regex_is_bounded_responsive_and_reaped(cancel: bool) -> None:
+@pytest.mark.parametrize("exit_kind", ["matcher_timeout", "cancel", "step_timeout", "spec_timeout"])
+def test_regex_is_bounded_responsive_and_reaped(exit_kind: str) -> None:
     # Bound the whole probe externally: a regression must not hang the pytest loop.
     script = textwrap.dedent("""
         import asyncio
@@ -189,11 +189,16 @@ def test_regex_is_bounded_responsive_and_reaped(cancel: bool) -> None:
                 {"action": "assert", "id": "a", "source": "r",
                  "check": {"matches": "(a+)+$"}}
             ]})
+            if EXIT_KIND == "step_timeout":
+                spec.steps[1].timeout_ms = 100
+            elif EXIT_KIND == "spec_timeout":
+                spec.timeout_ms = 100
             with patch("asyncio.create_subprocess_exec", record):
+                started = asyncio.get_running_loop().time()
                 task = asyncio.create_task(ReproEngine(session).run(spec))
                 await asyncio.sleep(0.05)
                 assert not task.done(), "regex should still be running in its child"
-                if CANCEL:
+                if EXIT_KIND == "cancel":
                     task.cancel()
                     try:
                         await task
@@ -205,11 +210,12 @@ def test_regex_is_bounded_responsive_and_reaped(cancel: bool) -> None:
                     result = await asyncio.wait_for(task, 2)
                     assert result.error == "TimeoutError"
                     assert not result.failure_signature
+                assert asyncio.get_running_loop().time() - started < 1
             assert closed
             assert children and all(p.returncode is not None for p in children)
 
         asyncio.run(main())
-    """).replace("CANCEL", repr(cancel))
+    """).replace("EXIT_KIND", repr(exit_kind))
     result = subprocess.run(
         [sys.executable, "-c", script], capture_output=True, text=True, timeout=5
     )

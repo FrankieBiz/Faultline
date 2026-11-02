@@ -347,7 +347,7 @@ class HttpProbeSession:
                 if isinstance(item, dict):
                     item = item.get("message")
                 if isinstance(item, str) and item:
-                    return item[:512]
+                    return item
         return f"HTTP {exchange.status}"
 
 
@@ -487,22 +487,22 @@ def _session_result(
         session_id=run.session_id,
         status=exchange.status if exchange else None,
         duration_ms=exchange.duration_ms if exchange else None,
-        content_type=exchange.content_type[:120] if exchange else None,
+        content_type=redact(exchange.content_type)[:120] if exchange else None,
         excerpt=redacted[:EXCERPT_CHARACTERS] if redacted is not None else None,
         truncated=bool(
             exchange
             and redacted is not None
             and (exchange.truncated or len(redacted) > EXCERPT_CHARACTERS)
         ),
-        fingerprint=redact(run.fingerprint) if run.fingerprint else None,
+        fingerprint=redact(run.fingerprint)[:512] if run.fingerprint else None,
         error=run.error,
         assertions=[
             CheckedAssertion(
                 id=item.id,
                 label=labels.get(item.id, item.id),
                 passed=item.passed,
-                expected=redact(item.expected[:240]),
-                observed=redact(item.observed[:240]),
+                expected=redact(item.expected)[:240],
+                observed=redact(item.observed)[:240],
             )
             for item in run.assertions
         ],

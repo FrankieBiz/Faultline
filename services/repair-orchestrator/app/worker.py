@@ -160,6 +160,23 @@ class RepairWorker:
         self._stopping = False
         self._supervision_failed = False
         self._task = asyncio.create_task(self._loop(), name="faultline-serial-worker")
+        self._task.add_done_callback(self._task_done)
+
+    def _task_done(self, task: asyncio.Task[None]) -> None:
+        """Fail closed on dispatcher death, including unexpected cancellation/return."""
+        if self._stopping or task is not self._task:
+            return
+        self._supervision_failed = True
+        # Retrieve the exception now, so task failures are observed before shutdown.
+        error = None if task.cancelled() else task.exception()
+        logger.error(
+            "Worker task terminated unexpectedly: %s",
+            "cancelled" if task.cancelled() else type(error).__name__ if error else "returned",
+        )
+        try:
+            self.database.quarantine_runtime()
+        except Exception:
+            logger.exception("Worker supervision could not persist quarantine")
 
     @property
     def healthy(self) -> bool:
