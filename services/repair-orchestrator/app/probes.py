@@ -137,6 +137,7 @@ class Invariant(BaseModel):
     expected_status: Annotated[int, Field(ge=100, le=599)] | None = None
     has_body: bool = False
     body: JsonValue = None
+    headers: dict[str, str] = Field(default_factory=dict)
     assertions: list[AssertionCheck] = Field(default_factory=list, max_length=32)
     fingerprint: Annotated[str, Field(min_length=1, max_length=512)] | None = None
     created_at: str | None = None
@@ -288,11 +289,13 @@ class HttpProbeSession:
         if not isinstance(step, RequestStep):
             raise TypeError("live probes support request steps only")
         # The trusted runner's correlation header; servers that ignore it are unaffected.
-        headers = {"X-Faultline-Case-Id": self.session_id, "Accept": "application/json, */*"}
+        headers = httpx.Headers({"Accept": "application/json, */*"})
+        headers.update(step.headers)
+        headers["X-Faultline-Case-Id"] = self.session_id
         content: bytes | None = None
         if "body" in step.model_fields_set:
             content = json.dumps(step.body, allow_nan=False).encode()
-            headers["Content-Type"] = "application/json"
+            headers.setdefault("Content-Type", "application/json")
         started = time.perf_counter()
         async with self._client.stream(
             step.method,
@@ -379,10 +382,15 @@ def build_spec(invariant: Invariant, path: str) -> ReproSpec:
             path=path,
             timeout_ms=REQUEST_TIMEOUT_MS,
             body=invariant.body,
+            headers=invariant.headers,
         )
         if invariant.has_body
         else RequestStep(
-            id="request", method=invariant.method, path=path, timeout_ms=REQUEST_TIMEOUT_MS
+            id="request",
+            method=invariant.method,
+            path=path,
+            timeout_ms=REQUEST_TIMEOUT_MS,
+            headers=invariant.headers,
         )
     )
     steps: list[ReproStep] = [request]
@@ -693,6 +701,7 @@ def _rule(rule: dict[str, Any], project_url: str | None, base: Path) -> Invarian
         body=body,
         assertions=assertions,
         fingerprint=rule.get("fingerprint"),
+        headers=request.get("headers", {}) if "request" in rule else rule.get("headers", {}),
     )
 
 

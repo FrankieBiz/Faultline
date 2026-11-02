@@ -271,3 +271,93 @@ def test_specific_exception_handlers_remain_allowed(seeded_source: str) -> None:
     )
     # Policy admits it; the independent oracle is what rejects this wrong repair.
     assert PatchPolicy().validate(patch(seeded_source, specific), seeded_source).is_valid
+
+
+@pytest.mark.parametrize(
+    "handler,body",
+    [
+        ("except Exception as err:", "raise"),
+        ("except BaseException as err:", "raise err"),
+        ("except:", "raise"),
+        ("except (TypeError, ValueError) as exc:", "raise exc"),
+        ("except ValueError as exc:", "raise TypeError('invalid') from exc"),
+    ],
+)
+def test_exception_aliases_and_reraises_are_allowed(handler: str, body: str) -> None:
+    assert validate_ast(f"try:\n    value = 1\n{handler}\n    {body}\n") == (True, True, None)
+
+
+@pytest.mark.parametrize("alias", ["os", "eval", "__hidden"])
+def test_exception_alias_bindings_cannot_bypass_forbidden_names(alias: str) -> None:
+    syntax, safe, error = validate_ast(f"try:\n    pass\nexcept ValueError as {alias}:\n    pass\n")
+    assert syntax and not safe and error
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "if flag:\n        raise",
+        "return\nraise",
+        "try:\n    raise\nexcept:\n    pass",
+        "def nested():\n        raise",
+    ],
+)
+def test_nested_or_unreachable_raise_does_not_admit_catch_all(body: str) -> None:
+    source = "def checkout():\n    try:\n        pass\n    except Exception as err:\n"
+    source += "\n".join("        " + line for line in body.splitlines()) + "\n"
+    syntax, safe, error = validate_ast(source)
+    assert syntax and not safe and error
+
+
+@pytest.mark.parametrize(
+    "declaration,handler",
+    [
+        ("AnyError = Exception", "except AnyError:"),
+        ("First = BaseException\nSecond = First", "except Second as err:"),
+        ("Errors = (TypeError, Exception)", "except Errors:"),
+        ("Errors = Exception", "except (TypeError, Errors) as exc:"),
+        ("Errors: type = Exception", "except Errors:"),
+        ("First, Second = (ValueError, Exception)", "except Second:"),
+        ("Errors = Exception", "except* Errors as exc:"),
+    ],
+)
+def test_catch_all_type_aliases_cannot_suppress_failures(declaration: str, handler: str) -> None:
+    source = declaration + f"\ntry:\n    1 / 0\n{handler}\n    pass\n"
+    syntax, safe, error = validate_ast(source)
+    assert syntax and not safe and error and "Catch-all" in error
+
+
+@pytest.mark.parametrize(
+    "source",
+    ["return 1\n", "break\n", "continue\n", "await work()\n", "nonlocal missing\n"],
+)
+def test_compiler_level_syntax_errors_are_classified(source: str) -> None:
+    assert validate_ast(source) == (False, False, "Candidate contains invalid Python syntax")
+
+
+@pytest.mark.parametrize(
+    "declaration,handler,body",
+    [
+        ("AnyError = Exception", "except AnyError as err:", "raise err"),
+        ("Specific = ValueError", "except Specific as err:", "pass"),
+        ("Specific, Broad = (ValueError, Exception)", "except Specific as err:", "pass"),
+        ("Errors = (TypeError, ValueError)", "except Errors as exc:", "raise exc"),
+        ("", "except Exception as err:", "print('failed')\nraise"),
+        ("from fastapi import HTTPException as HttpError", "except HttpError as err:", "raise err"),
+    ],
+)
+def test_trusted_handler_aliases_and_diagnostic_reraises(
+    declaration: str,
+    handler: str,
+    body: str,
+) -> None:
+    source = declaration + f"\ntry:\n    1 / 0\n{handler}\n"
+    source += "\n".join("    " + line for line in body.splitlines()) + "\n"
+    assert validate_ast(source) == (True, True, None)
+
+
+@pytest.mark.parametrize("handler", ["factory()", "types[0]", "unknown", "first"])
+def test_unresolved_handler_types_fail_closed(handler: str) -> None:
+    source = f"first = second\nsecond = first\ntry:\n    pass\nexcept {handler}:\n    pass\n"
+    syntax, safe, error = validate_ast(source)
+    assert syntax and not safe and error

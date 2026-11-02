@@ -27,6 +27,65 @@ STORE = "http://127.0.0.1:8000"
 Handler = Callable[[httpx.Request], httpx.Response]
 
 
+@pytest.mark.parametrize("form", ["target", "request", "scenario"])
+@pytest.mark.parametrize("with_body", [False, True])
+async def test_declared_headers_reach_both_live_sessions(
+    tmp_path: Path,
+    form: str,
+    with_body: bool,
+) -> None:
+    from app.cli_check import validate_config
+
+    headers = (
+        '{ Authorization = "Bearer test-only", X-Custom-Header = "custom", '
+        'accept = "text/plain", content-type = "application/vnd.test+json", '
+        'x-faultline-case-id = "spoofed" }'
+    )
+    method = "POST" if with_body else "GET"
+    json_field = ', json = { value = "payload" }' if with_body else ""
+    body_field = ', body = { value = "payload" }' if with_body else ""
+    rule = {
+        "target": (
+            f'[[invariants.rule]]\nid = "headers"\ntarget = "{STORE}/"\n'
+            f'expected_status = 200\nmethod = "{method}"\nheaders = {headers}\n'
+            + ('json = { value = "payload" }\n' if with_body else "")
+        ),
+        "request": (
+            '[[invariants.rule]]\nid = "headers"\n'
+            f'request = {{ path = "/", method = "{method}", headers = {headers}{json_field} }}\n'
+            "assert = [{ status = 200 }]\n"
+        ),
+        "scenario": (
+            "[scenarios.headers]\nsteps = [\n"
+            f'{{ id = "get", action = "request", path = "/", method = "{method}", '
+            f"headers = {headers}{body_field} }},\n"
+            '{ id = "ok", action = "assert", source = "get", check = { status = 200 } }\n]\n'
+        ),
+    }[form]
+    config = tmp_path / "faultline.toml"
+    config.write_text(
+        'schema = 1\n[project]\nname = "headers"\nroot = "."\n'
+        f'dev_command = "node app.js"\nurl = "{STORE}"\n' + rule
+    )
+    (invariant,) = validate_config(config).live.invariants
+    sessions = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers["Authorization"] == "Bearer test-only"
+        assert request.headers["X-Custom-Header"] == "custom"
+        assert request.headers["Accept"] == "text/plain"
+        assert request.headers["Content-Type"] == "application/vnd.test+json"
+        assert request.headers["X-Faultline-Case-Id"] != "spoofed"
+        assert request.method == method
+        assert request.content == (b'{"value": "payload"}' if with_body else b"")
+        sessions.append(request.headers["X-Faultline-Case-Id"])
+        return httpx.Response(200)
+
+    result = await check(invariant, handler)
+    assert result.outcome == "no_failure"
+    assert len(sessions) == 2 and sessions[0] != sessions[1]
+
+
 def checkout(**changes: object) -> Invariant:
     values: dict[str, object] = {
         "id": "checkout.no_coupon",

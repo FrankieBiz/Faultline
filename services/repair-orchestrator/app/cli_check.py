@@ -85,6 +85,7 @@ class Request(ContractModel):
     path: ServicePath
     method: Literal["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"] = "GET"
     json_body: Any = Field(default=None, alias="json")
+    headers: dict[str, str] = Field(default_factory=dict)
 
 
 class Rule(ContractModel):
@@ -96,6 +97,7 @@ class Rule(ContractModel):
     method: Literal["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"] = "GET"
     expected_status: int | None = Field(default=None, ge=100, le=599)
     json_body: Any = Field(default=None, alias="json")
+    headers: dict[str, str] = Field(default_factory=dict)
     request: Request | None = None
     assertions: list[AssertionCheck] = Field(default_factory=list, alias="assert")
 
@@ -144,7 +146,13 @@ def validate_config(path: Path) -> CheckedConfig:
         raise ValueError(f"project.root does not exist: {root}")
     for rule in config.invariants.rule:
         if rule.request is not None:
-            if rule.model_fields_set & {"target", "method", "expected_status", "json_body"}:
+            if rule.model_fields_set & {
+                "target",
+                "method",
+                "expected_status",
+                "json_body",
+                "headers",
+            }:
                 raise ValueError("a rule cannot mix request/assert with target/expected_status")
             if not rule.assertions:
                 raise ValueError("request rules require assertions")

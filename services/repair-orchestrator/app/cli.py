@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from app.cli_init import detect_project_stack as detect_project_stack
+from app.cli_init import ensure_local_data_ignored
 from app.cli_init import generate_faultline_toml as generate_faultline_toml
 
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent.parent.parent
@@ -94,7 +95,7 @@ def _env_port(name: str, default: int) -> int:
 
 
 def _orchestrator_port(args: argparse.Namespace) -> int:
-    """The repair orchestrator's port: --port, then FAULTLINE_PORT, then 9000."""
+    """The orchestrator's port: --orchestrator-port/--port, FAULTLINE_PORT, or 9000."""
     port: int | None = getattr(args, "port", None)
     return port if port is not None else _env_port("FAULTLINE_PORT", DEFAULT_ORCHESTRATOR_PORT)
 
@@ -641,12 +642,20 @@ def cmd_init(args: argparse.Namespace) -> int:
     c = _palette(args)
     target_dir = Path.cwd()
     dest_file = target_dir / "faultline.toml"
+    print(
+        f"\n{c.bold}FaultLine Initializer: Analyzing repository at {target_dir}...{c.reset}",
+        flush=True,
+    )
+    try:
+        ensure_local_data_ignored(target_dir)
+    except (OSError, ValueError) as exc:
+        print(f"faultline init: {exc}", file=sys.stderr)
+        return 1
     if dest_file.exists() and not getattr(args, "force", False):
         print(f"{c.yellow}faultline.toml already exists at {dest_file}{c.reset}")
         print("Use --force to overwrite.")
         return 0
 
-    print(f"\n{c.bold}FaultLine Initializer: Analyzing repository at {target_dir}...{c.reset}")
     try:
         info = detect_project_stack(target_dir)
         toml_content = generate_faultline_toml(info)
@@ -663,10 +672,10 @@ def cmd_init(args: argparse.Namespace) -> int:
     dest_file.write_text(toml_content)
     print(f"\n{c.green}{c.bold}✓ Created {dest_file}{c.reset}")
     print("Next steps:")
-    print("  1. Review faultline.toml and add a [scenarios.NAME] target_file and repro.")
+    print("  1. Start your app and run: faultline check --port <port> (cross-platform).")
+    print("  2. Review faultline.toml and add a [scenarios.NAME] target_file and repro.")
     print("     Or run: faultline run --repro repro.json --target path/to/source")
-    print("  2. Run `faultline doctor` to verify sandbox containment.")
-    print("  3. Run `faultline status` to verify orchestrator connectivity.\n")
+    print("  3. Run `faultline doctor` to check sandbox prerequisites for Linux repair.\n")
     return 0
 
 
@@ -1518,19 +1527,45 @@ def _start_inspector(port: int, url: str, c: Palette) -> subprocess.Popen[bytes]
     return None
 
 
+def _inspector_port(args: argparse.Namespace) -> int:
+    port: int | None = getattr(args, "port", None)
+    return port if port is not None else _env_port("INSPECTOR_PORT", 4000)
+
+
+def cmd_inspect(args: argparse.Namespace) -> int:
+    """Print the active Inspector URL and optionally open it after a reachability check."""
+    url = f"http://127.0.0.1:{_inspector_port(args)}"
+    print(f"FaultLine Inspector: {url}")
+    found = _probe_inspector(url)
+    if found != "inspector":
+        if found == "down":
+            print("Inspector is unreachable. Start it with `faultline dashboard`.")
+        else:
+            print("This URL is serving something other than the FaultLine Inspector.")
+        return 1
+    if args.open:
+        try:
+            opened = webbrowser.open(url)
+        except webbrowser.Error:
+            opened = False
+        if not opened:
+            print("Could not launch a browser; open the URL above.")
+    return 0
+
+
 def cmd_dashboard(args: argparse.Namespace) -> int:
     """Open the local Inspector dashboard, starting it first when nothing serves it."""
     c = _palette(args)
-    url = f"http://127.0.0.1:{args.port}"
+    port = _inspector_port(args)
+    url = f"http://127.0.0.1:{port}"
     found = _probe_inspector(url)
     if found == "other":
         print(
-            f"{c.red}Port {args.port} is serving something other than "
-            f"the FaultLine Inspector.{c.reset}"
+            f"{c.red}Port {port} is serving something other than the FaultLine Inspector.{c.reset}"
         )
         print("Choose another port with `faultline dashboard --port N`.")
         return 1
-    if found == "down" and _start_inspector(args.port, url, c) is None:
+    if found == "down" and _start_inspector(port, url, c) is None:
         return 1
 
     print(f"\n{c.bold}FaultLine Inspector{c.reset}  {c.cyan}{url}{c.reset}")
@@ -1847,14 +1882,20 @@ def build_parser() -> argparse.ArgumentParser:
 
     def orchestrator_port_flag(command: argparse.ArgumentParser) -> None:
         command.add_argument(
+            "-p",
             "--port",
+            "--orchestrator-port",
             type=_port_arg,
-            help=f"Orchestrator port (default $FAULTLINE_PORT or {DEFAULT_ORCHESTRATOR_PORT})",
+            help=(
+                "Repair orchestrator API port "
+                f"(default $FAULTLINE_PORT or {DEFAULT_ORCHESTRATOR_PORT})"
+            ),
         )
 
     def store_port_flag(command: argparse.ArgumentParser) -> None:
         command.add_argument(
             "--api-port",
+            "--target-port",
             type=_port_arg,
             help=f"BuggyShop API port (default $BUGGYSHOP_API_PORT or {DEFAULT_STORE_API_PORT})",
         )
@@ -2002,7 +2043,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_check = subparsers.add_parser("check", help="Gate on a running project's HTTP invariants")
     p_check.add_argument("--config", default="faultline.toml")
-    p_check.add_argument("--port", type=int, help="Live service port to substitute for {port}")
+    p_check.add_argument(
+        "-p",
+        "--port",
+        "--target-port",
+        type=int,
+        help="Target application port to substitute for {port} in invariant URLs",
+    )
     p_check.add_argument(
         "--repair",
         action="store_true",
@@ -2107,11 +2154,34 @@ def build_parser() -> argparse.ArgumentParser:
     output_flags(p_listen, plain=False)
     p_listen.set_defaults(func=cmd_listen)
 
+    p_inspect = subparsers.add_parser("inspect", help="Show the active Inspector web UI URL")
+    p_inspect.add_argument(
+        "-p",
+        "--port",
+        "--inspector-port",
+        type=_port_arg,
+        help="Inspector web UI port (default $INSPECTOR_PORT or 4000)",
+    )
+    p_inspect.add_argument(
+        "--open",
+        "--browser",
+        action="store_true",
+        help="Open the Inspector URL in a browser",
+    )
+    output_flags(p_inspect)
+    p_inspect.set_defaults(func=cmd_inspect)
+
     # dashboard
     p_dash = subparsers.add_parser(
         "dashboard", help="Open the local Inspector dashboard, starting it if needed"
     )
-    p_dash.add_argument("--port", type=int, default=4000, help="Inspector port (default 4000)")
+    p_dash.add_argument(
+        "-p",
+        "--port",
+        "--inspector-port",
+        type=_port_arg,
+        help="Inspector web UI port (default $INSPECTOR_PORT or 4000)",
+    )
     p_dash.add_argument(
         "--no-open", action="store_true", help="Print the URL without opening a browser"
     )

@@ -5,6 +5,7 @@ only through the restricted runtime boundary; this module never imports it.
 """
 
 import ast
+import builtins
 import hashlib
 import re
 from dataclasses import dataclass
@@ -254,22 +255,101 @@ def recount_unified_diff(diff: str, source: str) -> str:
 
 
 _CATCH_ALL = frozenset({"Exception", "BaseException"})
+_EXCEPTION_NAMES = frozenset(
+    name
+    for name, value in vars(builtins).items()
+    if isinstance(value, type) and issubclass(value, BaseException)
+)
 
 
-def _catches_everything(handler_type: ast.expr | None) -> bool:
-    """A bare ``except`` or one naming Exception/BaseException suppresses any failure."""
+def _exception_aliases(tree: ast.AST) -> dict[str, list[ast.expr]]:
+    """Collect possible bindings conservatively across scopes and reassignments."""
+    aliases: dict[str, list[ast.expr]] = {}
+
+    def bind(target: ast.expr, value: ast.expr) -> None:
+        if isinstance(target, ast.Name):
+            aliases.setdefault(target.id, []).append(value)
+        elif isinstance(target, (ast.Tuple, ast.List)):
+            if isinstance(value, (ast.Tuple, ast.List)) and len(target.elts) == len(value.elts):
+                for left, right in zip(target.elts, value.elts, strict=True):
+                    bind(left, right)
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                bind(target, node.value)
+        elif isinstance(node, (ast.AnnAssign, ast.NamedExpr)) and node.value is not None:
+            bind(node.target, node.value)
+    return aliases
+
+
+def _catches_everything(
+    handler_type: ast.expr | None,
+    aliases: dict[str, list[ast.expr]],
+    imported_exceptions: set[str],
+    resolving: frozenset[str] = frozenset(),
+    memo: dict[str, bool | None] | None = None,
+) -> bool | None:
+    """Resolve trusted exception names/tuples; None means an unproven handler type."""
+    if memo is None:
+        memo = {}
     if handler_type is None:
         return True
-    candidates = handler_type.elts if isinstance(handler_type, ast.Tuple) else [handler_type]
-    return any(isinstance(item, ast.Name) and item.id in _CATCH_ALL for item in candidates)
+    if isinstance(handler_type, ast.Tuple):
+        values = [
+            _catches_everything(item, aliases, imported_exceptions, resolving, memo)
+            for item in handler_type.elts
+        ]
+        return True if True in values else (None if None in values else False)
+    if not isinstance(handler_type, ast.Name) or handler_type.id in resolving:
+        return None
+    name = handler_type.id
+    if name in memo:
+        return memo[name]
+    if name in aliases:
+        values = [
+            _catches_everything(value, aliases, imported_exceptions, resolving | {name}, memo)
+            for value in aliases[name]
+        ]
+        memo[name] = True if True in values else (None if None in values else False)
+        return memo[name]
+    if name in _CATCH_ALL:
+        return True
+    if name in _EXCEPTION_NAMES or name in imported_exceptions:
+        return False
+    return None
+
+
+def _reraises(handler: ast.ExceptHandler) -> bool:
+    """Admit straight-line diagnostics followed by an explicit re-raise only.
+
+    Finding a Raise anywhere in the handler is insufficient: it may be nested,
+    conditional, or unreachable after a return. Keep this exception conservative.
+    """
+    if not all(isinstance(node, (ast.Expr, ast.Pass)) for node in handler.body[:-1]):
+        return False
+    last = handler.body[-1]
+    return isinstance(last, ast.Raise) and (
+        last.exc is None or isinstance(last.exc, ast.Name) and last.exc.id == handler.name
+    )
 
 
 def validate_ast(source: str) -> tuple[bool, bool, str | None]:
     """Parse without executing and reject forbidden capabilities and aliases."""
     try:
         tree = ast.parse(source, filename=TARGET_FILE)
+        # Compilation checks context (e.g. return outside a function) without execution.
+        compile(tree, TARGET_FILE, "exec", dont_inherit=True)
     except (SyntaxError, ValueError, RecursionError):
         return False, False, "Candidate contains invalid Python syntax"
+    aliases = _exception_aliases(tree)
+    imported_exceptions = {
+        alias.asname or alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module == "fastapi"
+        for alias in node.names
+        if alias.name == "HTTPException"
+    }
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             # Modules expose transitive capabilities, such as typing.sys.modules.
@@ -285,8 +365,19 @@ def validate_ast(source: str) -> tuple[bool, bool, str | None]:
         elif isinstance(node, ast.Attribute):
             if node.attr in _DANGEROUS_ATTRIBUTES or node.attr.startswith("__"):
                 return True, False, "Forbidden dynamic or operating-system attribute"
-        elif isinstance(node, ast.ExceptHandler) and _catches_everything(node.type):
-            return True, False, "Catch-all exception handlers are forbidden; handle the failure"
+        elif isinstance(node, ast.ExceptHandler):
+            # ExceptHandler.name is a string, so the ast.Name gate never visits it.
+            if node.name and (node.name in _DANGEROUS_NAMES or node.name.startswith("__")):
+                return True, False, "Forbidden dynamic execution or operating-system capability"
+            catches_all = _catches_everything(node.type, aliases, imported_exceptions)
+            if catches_all is None:
+                return (
+                    True,
+                    False,
+                    "Exception handlers must name trusted exception types or aliases",
+                )
+            if catches_all and not _reraises(node):
+                return True, False, "Catch-all exception handlers are forbidden; handle the failure"
         elif isinstance(node, ast.MatchClass):
             if any(
                 name.startswith("__") or name in _DANGEROUS_ATTRIBUTES for name in node.kwd_attrs

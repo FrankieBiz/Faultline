@@ -2890,3 +2890,137 @@ def test_demo_socket_ports_tolerates_missing_procfs_files(monkeypatch: pytest.Mo
     monkeypatch.setattr(Path, "read_text", fake_read_text)
     ports = cli_demo._socket_ports()
     assert ports == {"socket:[99999]": 8000}
+
+
+@pytest.mark.parametrize("flag", [None, "--open", "--browser"])
+def test_inspect_prints_url_and_optionally_opens_browser(
+    flag: str | None, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("INSPECTOR_PORT", "4123")
+    args = build_parser().parse_args(["inspect", *([flag] if flag else [])])
+    with (
+        patch("app.cli._probe_inspector", return_value="inspector") as probe,
+        patch("app.cli.webbrowser.open", return_value=True) as browser,
+    ):
+        assert args.func(args) == 0
+        probe.assert_called_once_with("http://127.0.0.1:4123")
+        if flag:
+            browser.assert_called_once_with("http://127.0.0.1:4123")
+        else:
+            browser.assert_not_called()
+    assert "http://127.0.0.1:4123" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("state", ["down", "other"])
+def test_inspect_reports_unavailable_service(
+    state: str, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("INSPECTOR_PORT", raising=False)
+    args = build_parser().parse_args(["inspect", "--open"])
+    with (
+        patch("app.cli._probe_inspector", return_value=state),
+        patch("app.cli.webbrowser.open") as browser,
+    ):
+        assert args.func(args) == 1
+        browser.assert_not_called()
+    assert "http://127.0.0.1:4000" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("command", ["doctor", "status", "jobs", "diff", "apply", "listen"])
+@pytest.mark.parametrize("flag", ["-p", "--port", "--orchestrator-port"])
+def test_explicit_orchestrator_port_aliases(command: str, flag: str) -> None:
+    assert build_parser().parse_args([command, flag, "9123"]).port == 9123
+
+
+@pytest.mark.parametrize("flag", ["-p", "--port", "--target-port"])
+def test_explicit_target_port_aliases(flag: str) -> None:
+    assert build_parser().parse_args(["check", flag, "8123"]).port == 8123
+
+
+@pytest.mark.parametrize(
+    "initial", [None, "node_modules/", ".faultline/\n", "*.log\n!.faultline/\n"]
+)
+@pytest.mark.parametrize("nested", [False, True])
+def test_init_ignores_local_databases_in_git_repositories(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    initial: str | None,
+    nested: bool,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    project = tmp_path / "service" if nested else tmp_path
+    project.mkdir(exist_ok=True)
+    (project / "package.json").write_text('{"scripts":{"start":"node app.js"}}')
+    ignore = project / ".gitignore"
+    if initial is not None:
+        ignore.write_text(initial)
+    monkeypatch.chdir(project)
+    assert cmd_init(argparse.Namespace(force=False)) == 0
+    first = ignore.read_text()
+    assert cmd_init(argparse.Namespace(force=False)) == 0
+    assert ignore.read_text() == first
+    assert first.startswith(initial or "")
+    result = subprocess.run(
+        ["git", "check-ignore", ".faultline/runs/faultline.db"],
+        cwd=project,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0
+    assert "faultline check --port <port>" in capsys.readouterr().out
+
+
+def test_init_outside_git_does_not_create_gitignore(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "package.json").write_text('{"scripts":{"start":"node app.js"}}')
+    monkeypatch.chdir(tmp_path)
+    assert cmd_init(argparse.Namespace(force=False)) == 0
+    assert not (tmp_path / ".gitignore").exists()
+
+
+def test_init_flushes_header_before_project_diagnostics(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    with patch("app.cli.sys.stdout", wraps=sys.stdout) as stdout:
+
+        def fail_detection(root: Path) -> dict[str, Any]:
+            stdout.flush.assert_called()
+            assert "FaultLine Initializer" in "".join(
+                call.args[0] for call in stdout.write.call_args_list
+            )
+            raise ValueError("invalid project metadata")
+
+        with patch("app.cli.detect_project_stack", side_effect=fail_detection):
+            assert cmd_init(argparse.Namespace(force=False)) == 1
+
+
+def test_init_protects_existing_config_and_rejects_gitignore_symlinks(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / "faultline.toml"
+    config.write_text("keep existing config")
+    assert cmd_init(argparse.Namespace(force=False)) == 0
+    assert (tmp_path / ".gitignore").read_text() == ".faultline/\n"
+    (tmp_path / ".gitignore").unlink()
+    external = tmp_path / "external-ignore"
+    external.write_text("keep external file")
+    (tmp_path / ".gitignore").symlink_to(external)
+    assert cmd_init(argparse.Namespace(force=False)) == 1
+    assert external.read_text() == "keep external file"
+    assert config.read_text() == "keep existing config"
+
+
+@pytest.mark.parametrize("flag", ["-p", "--port", "--inspector-port"])
+def test_inspect_port_overrides_environment(flag: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("INSPECTOR_PORT", "4123")
+    args = build_parser().parse_args(["inspect", flag, "4223"])
+    with patch("app.cli._probe_inspector", return_value="inspector") as probe:
+        assert args.func(args) == 0
+    probe.assert_called_once_with("http://127.0.0.1:4223")

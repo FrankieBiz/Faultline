@@ -4,9 +4,39 @@ import ast
 import json
 import re
 import shlex
+import subprocess
 import tomllib
 from pathlib import Path
 from typing import Any
+
+
+def ensure_local_data_ignored(root: Path) -> None:
+    """Ignore local run artifacts in Git checkouts, including nested projects/worktrees."""
+    try:
+        repository = subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except FileNotFoundError:
+        return
+    if repository.returncode != 0 or repository.stdout.strip() != "true":
+        return
+    ignore = root / ".gitignore"
+    if ignore.is_symlink():
+        raise ValueError("Refusing to modify a symlinked .gitignore; ignore .faultline/ manually")
+    content = ignore.read_text(encoding="utf-8") if ignore.exists() else ""
+    ignored = subprocess.run(
+        ["git", "check-ignore", "--no-index", "--quiet", ".faultline/runs/faultline.db"],
+        cwd=root,
+        check=False,
+    )
+    if ".faultline/" in content.splitlines() and ignored.returncode == 0:
+        return
+    separator = "\n" if content and not content.endswith("\n") else ""
+    ignore.write_text(content + separator + ".faultline/\n", encoding="utf-8")
 
 
 def _python_entry(root: Path) -> tuple[str, str, str] | None:
