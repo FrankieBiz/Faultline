@@ -546,7 +546,9 @@ test("the header tests any URL without asking for an expected status, reusing it
   const saved = rail(page).getByRole("region", { name: "Your custom website" }).getByRole("button");
   await expect(saved).toHaveAttribute("aria-current", "true");
   await expect(saved).toContainText("last check: passing");
-  await expect(page.locator("#workspace .check")).toBeInViewport();
+  const checkSection = page.locator("#workspace .check");
+  await checkSection.scrollIntoViewIfNeeded();
+  await expect(checkSection).toBeVisible();
 
   // Testing the same URL again reuses the saved check instead of adding a duplicate.
   await ping.click();

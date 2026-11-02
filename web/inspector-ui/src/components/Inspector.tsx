@@ -36,8 +36,14 @@ const json = (body: unknown): RequestInit => ({
 });
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 // Bring a fresh live check result into view without jumping when it is already visible.
-const revealCheck = () => requestAnimationFrame(() => document.querySelector("#workspace .check")?.scrollIntoView({ block: "nearest" }));
-const revealHud = () => requestAnimationFrame(() => document.querySelector(".hud")?.scrollIntoView({ block: "nearest" }));
+const revealCheck = () => {
+  const el = document.querySelector("#workspace .check");
+  if (el) el.scrollIntoView({ block: "nearest", behavior: "auto" });
+};
+const revealHud = () => {
+  const el = document.querySelector(".hud");
+  if (el) el.scrollIntoView({ block: "nearest", behavior: "auto" });
+};
 /** What stands in for the crawler when its endpoint is not answering: a real HTTP check, named for the HUD. */
 type CrawlFallback = { title: string; run: () => Promise<CheckRecord | null> };
 // The controller requires a UUID. randomUUID exists only in secure contexts (not plain http on a LAN IP),
