@@ -5,13 +5,18 @@ import { pathToFileURL } from 'node:url';
 const { chromium } = await import(pathToFileURL(process.argv[2]).href);
 const origin = process.argv[3];
 const output = process.argv[4];
-const browser = await chromium.launch({
+const launchOptions = {
   headless: true,
-  // The headless shell does not apply Chrome's WebRTC preference switch.
-  channel: 'chromium',
   chromiumSandbox: true,
   args: ['--disable-webrtc', '--webrtc-ip-handling-policy=disable_non_proxied_udp'],
-});
+};
+let browser;
+try {
+  // Prefer full Chromium: the headless shell may ignore WebRTC preferences.
+  browser = await chromium.launch({ ...launchOptions, channel: 'chromium' });
+} catch {
+  browser = await chromium.launch(launchOptions);
+}
 process.once("SIGTERM", async () => { await browser.close(); process.exit(143); });
 if (origin === '--preflight') {
   await browser.close();
