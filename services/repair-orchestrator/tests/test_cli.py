@@ -289,13 +289,15 @@ assert "app.project_runtime" not in sys.modules
 
 def test_cli_status_command(capsys: pytest.CaptureFixture[str]) -> None:
     """Test faultline status queries readiness."""
+    from app.isolated_runtime import IsolatedRuntime
+
     args = argparse.Namespace()
     mock_status = {
         "status": "ready",
         "runtime_ready": True,
         "quarantined": False,
         "model": {"model": "muse-spark-1.3", "provider": "meta"},
-        "resource_limits": {"memory_bytes": 536870912, "cpu_quota_us": 100000},
+        "resource_limits": IsolatedRuntime().resource_limits_status,
     }
     with patch("app.cli._api_request", return_value=mock_status):
         ret = cmd_status(args)
@@ -303,6 +305,31 @@ def test_cli_status_command(capsys: pytest.CaptureFixture[str]) -> None:
     captured = capsys.readouterr().out
     assert "FaultLine Orchestrator Status" in captured
     assert "muse-spark-1.3" in captured
+    assert "Memory=512 MiB, Tasks=64, CPU=100% (1 CPU)" in captured
+    assert "Enforcement: not_run" in captured
+
+
+@pytest.mark.parametrize("mode", ["disabled", "invalid"])
+def test_cli_status_does_not_invent_unavailable_limits(
+    mode: str, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app import cli
+    from app.isolated_runtime import IsolatedRuntime
+
+    runtime = IsolatedRuntime()
+    runtime.aggregate_mode = mode
+    monkeypatch.setattr(
+        cli,
+        "_api_request",
+        lambda *args, **kwargs: {
+            "resource_limits": runtime.resource_limits_status,
+        },
+    )
+    assert cli.cmd_status(argparse.Namespace()) == 0
+    output = capsys.readouterr().out
+    assert "Sandbox Limits:" in output
+    assert "Memory=" not in output
+    assert "Enforcement:" in output
 
 
 def test_cli_jobs_command(capsys: pytest.CaptureFixture[str]) -> None:
@@ -416,8 +443,13 @@ def test_apply_and_revert_helpers() -> None:
 
 @pytest.mark.parametrize("via_database", [True, False])
 @pytest.mark.parametrize("unsafe", [True, False])
+@pytest.mark.parametrize("conflict", ["none", "missing_hash", "changed_base", "during_validation"])
 def test_apply_patch_rechecks_policy_before_writing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, via_database: bool, unsafe: bool
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    via_database: bool,
+    unsafe: bool,
+    conflict: str,
 ) -> None:
     from app import cli
 
@@ -427,6 +459,23 @@ def test_apply_patch_rechecks_policy_before_writing(
         candidate += '\nopen("/tmp/should-never-be-written", "w")\n'
     target = tmp_path / "checkout.py"
     target.write_text(source)
+    from hashlib import sha256
+
+    from app import policy
+
+    base_hash = sha256(source.encode()).hexdigest() if conflict != "missing_hash" else None
+    edited = source.replace("unit_price_cents", "human_price_cents")
+    if conflict == "changed_base":
+        target.write_text(edited)
+    if conflict == "during_validation":
+        validate = policy.validate_patch
+
+        def edit(*args: Any, **kwargs: Any) -> Any:
+            result = validate(*args, **kwargs)
+            target.write_text(edited)
+            return result
+
+        monkeypatch.setattr(policy, "validate_patch", edit)
     monkeypatch.setattr(cli, "TARGET_FILE", target)
     monkeypatch.setattr(cli, "DATA_DIR", tmp_path / "data")
     path = "apps/buggyshop-backend/app/routes/checkout.py"
@@ -442,20 +491,37 @@ def test_apply_patch_rechecks_policy_before_writing(
     if via_database:
         database = MagicMock()
         database.get_job.return_value = MagicMock(state="succeeded", outcome="verified")
-        database.list_attempts.return_value = [MagicMock(outcome="verified", parsed_diff=diff)]
+        database.list_attempts.return_value = [
+            MagicMock(
+                outcome="verified", parsed_diff=diff, validation_result={"base_sha256": base_hash}
+            )
+        ]
     else:
         monkeypatch.setattr(
             cli,
             "_api_request",
             lambda *args, **kwargs: {
                 "job": {"state": "succeeded", "outcome": "verified"},
-                "attempts": [{"outcome": "verified", "parsed_diff": diff}],
+                "attempts": [
+                    {
+                        "outcome": "verified",
+                        "parsed_diff": diff,
+                        "validation_result": {"base_sha256": base_hash},
+                    }
+                ],
             },
         )
     result = apply_patch_for_job("verified-job", database=database)
-    assert result["success"] is not unsafe
-    assert target.read_text() == (source if unsafe else candidate)
-    if unsafe:
+    assert result["success"] is (not unsafe and conflict == "none")
+    if conflict in {"changed_base", "during_validation"}:
+        assert target.read_text() == edited
+    else:
+        assert target.read_text() == (candidate if result["success"] else source)
+    if conflict in {"missing_hash", "changed_base"} or (
+        conflict == "during_validation" and not unsafe
+    ):
+        assert result["error_code"] == "base_hash_mismatch"
+    elif unsafe:
         assert result["error_code"] == "patch_policy_rejected"
 
 

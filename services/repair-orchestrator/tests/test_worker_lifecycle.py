@@ -1,6 +1,7 @@
 """Hero loop, rejection paths, cancellation, deadlines, and crash recovery."""
 
 import asyncio
+import sqlite3
 from dataclasses import replace
 from unittest.mock import AsyncMock, Mock
 
@@ -22,6 +23,63 @@ from shared.contracts.models import (
     JobState,
     TerminalOutcome,
 )
+
+
+@pytest.mark.parametrize("operation", ["unfinished_jobs", "claim_job", "finish_job"])
+async def test_worker_supervision_quarantines_persistence_faults(
+    harness: Harness,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    operation: str,
+) -> None:
+    await harness.worker.start()
+    original = getattr(harness.database, operation)
+    fault = Mock(side_effect=sqlite3.OperationalError("injected persistence failure"))
+    job = harness.database.create_job(submission())
+    monkeypatch.setattr(harness.database, operation, fault)
+    harness.worker.notify()
+    try:
+        async with asyncio.timeout(5):
+            while not fault.called:
+                await asyncio.sleep(0.01)
+            await asyncio.sleep(0.05)
+        assert harness.worker._task is not None and not harness.worker._task.done()
+        assert not harness.worker.healthy
+        assert harness.database.get_lease().quarantined
+        assert "Worker supervision" in caplog.text
+        with pytest.raises(DatabaseError, match="cleanup_required"):
+            harness.database.create_job(submission())
+        monkeypatch.setattr(harness.database, operation, original)
+        await harness.worker.reset()
+        assert harness.worker.healthy
+        assert not harness.database.get_lease().quarantined
+        assert harness.database.get_job(job.id).outcome == TerminalOutcome.INTERRUPTED
+        # Recovery must restart dispatch, rather than merely change readiness.
+        next_job = harness.database.create_job(submission())
+        harness.worker.notify()
+        async with asyncio.timeout(5):
+            while harness.database.get_job(next_job.id).outcome is None:
+                await asyncio.sleep(0.01)
+        assert harness.database.get_job(next_job.id).outcome == TerminalOutcome.VERIFIED
+    finally:
+        await harness.worker.stop()
+
+
+async def test_worker_keeps_memory_quarantine_when_database_is_unwritable(
+    harness: Harness,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await harness.worker.start()
+    monkeypatch.setattr(harness.database, "unfinished_jobs", Mock(side_effect=OSError("disk")))
+    monkeypatch.setattr(harness.database, "quarantine_runtime", Mock(side_effect=OSError("disk")))
+    harness.worker.notify()
+    try:
+        async with asyncio.timeout(2):
+            while harness.worker.healthy:
+                await asyncio.sleep(0.01)
+        assert harness.worker._task is not None and not harness.worker._task.done()
+    finally:
+        await harness.worker.stop()
 
 
 async def test_full_simulated_hero_loop_exercises_actual_exported_api(harness: Harness) -> None:

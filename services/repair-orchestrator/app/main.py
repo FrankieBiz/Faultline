@@ -366,7 +366,7 @@ def create_app(
         probe = control.worker.probe
         status = (
             "blocked"
-            if lease.quarantined or not runtime_ready
+            if lease.quarantined or not runtime_ready or not control.worker.healthy
             else ("ready" if probe and probe.available else "detect_only")
         )
         return {
@@ -386,6 +386,7 @@ def create_app(
                 }
             ),
             "runtime_ready": runtime_ready,
+            "worker_ready": control.worker.healthy,
             "quarantined": lease.quarantined,
             "model": asdict(probe) if probe else None,
             "probe_time": control.worker.probe_time,
@@ -393,7 +394,13 @@ def create_app(
             "reason": "cleanup_required"
             if lease.quarantined
             else (
-                (runtime_reason or "isolated_runtime_unavailable") if not runtime_ready else None
+                "worker_unavailable"
+                if not control.worker.healthy
+                else (
+                    (runtime_reason or "isolated_runtime_unavailable")
+                    if not runtime_ready
+                    else None
+                )
             ),
         }
 
@@ -484,6 +491,8 @@ def create_app(
         existing = control.database.find_idempotent(body)
         if existing is not None:
             return _accepted(existing)
+        if not control.worker.healthy:
+            raise DatabaseError("worker_unavailable", 503)
         lease = control.database.get_lease()
         if lease.quarantined:
             raise DatabaseError("cleanup_required", 503, lease.job_id)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import http.client
 import json
 import os
@@ -385,11 +386,9 @@ def cmd_status(args: argparse.Namespace) -> int:
 
     limits = res.get("resource_limits") or {}
     if limits:
-        mem_mib = limits.get("memory_bytes", 0) // (1024 * 1024)
-        cpu_q = limits.get("cpu_quota_us", 0)
-        cpu_p = limits.get("cpu_period_us", 100000)
-        pids = limits.get("pids_max")
-        print(f"  Sandbox Limits:  Memory={mem_mib} MiB, Tasks={pids}, CPU={cpu_q}/{cpu_p}")
+        from app.cli_check import format_resource_limits
+
+        print(f"  Sandbox Limits:  {format_resource_limits(limits)}")
 
     return 0
 
@@ -488,6 +487,7 @@ def apply_patch_for_job(
 ) -> dict[str, Any]:
     """Apply a verified candidate patch from a job to the live codebase."""
     diff = ""
+    base_hash = None
     if database is not None:
         job = database.get_job(job_id)
         if job.state != "succeeded" or job.outcome != "verified":
@@ -507,6 +507,7 @@ def apply_patch_for_job(
             (a for a in attempts if getattr(a, "outcome", None) == "verified"),
             attempts[-1],
         )
+        base_hash = (getattr(verified_attempt, "validation_result", None) or {}).get("base_sha256")
         diff = getattr(verified_attempt, "parsed_diff", "") or ""
         if not diff and getattr(verified_attempt, "raw_patch", None):
             raw = verified_attempt.raw_patch
@@ -539,6 +540,7 @@ def apply_patch_for_job(
             ),
             attempts[-1],
         )
+        base_hash = (verified_attempt.get("validation_result") or {}).get("base_sha256")
         diff = verified_attempt.get("parsed_diff") or ""
         if not diff and "raw_patch" in verified_attempt:
             raw = verified_attempt["raw_patch"]
@@ -566,17 +568,25 @@ def apply_patch_for_job(
             "message": f"Target missing: {TARGET_FILE}",
         }
 
-    original_source = TARGET_FILE.read_text()
+    original_bytes = TARGET_FILE.read_bytes()
+    if not isinstance(base_hash, str) or hashlib.sha256(original_bytes).hexdigest() != base_hash:
+        return {
+            "success": False,
+            "error_code": "base_hash_mismatch",
+            "message": "Source no longer matches the verified repair base (or its hash is missing)",
+        }
+    original_source = original_bytes.decode("utf-8")
     backup_dir = DATA_DIR / "backups"
     backup_dir.mkdir(parents=True, exist_ok=True)
     backup_file = backup_dir / "checkout.py.bak"
     backup_file.write_text(original_source)
 
+    write_started = False
     try:
         from app.policy import parse_unified_diff
         from app.policy import validate_patch as validate_patch_policy
 
-        validation = validate_patch_policy(diff, original_source)
+        validation = validate_patch_policy(diff, original_source, base_sha256=base_hash)
         if not validation.is_valid:
             return {
                 "success": False,
@@ -585,6 +595,16 @@ def apply_patch_for_job(
             }
         parsed = parse_unified_diff(diff, original_source)
         candidate_source = parsed.patched_source
+        # Recheck after policy evaluation: an editor may have saved meanwhile.
+        # This detects observed conflicts; arbitrary editors do not share a lock,
+        # so a final read/write race remains outside this delivery boundary.
+        if hashlib.sha256(TARGET_FILE.read_bytes()).hexdigest() != base_hash:
+            return {
+                "success": False,
+                "error_code": "base_hash_mismatch",
+                "message": "Source changed during patch validation; refusing to overwrite edits",
+            }
+        write_started = True
         TARGET_FILE.write_text(candidate_source)
         return {
             "success": True,
@@ -594,7 +614,7 @@ def apply_patch_for_job(
             "backup": str(backup_file),
         }
     except Exception as exc:
-        if backup_file.exists():
+        if write_started and backup_file.exists():
             TARGET_FILE.write_text(backup_file.read_text())
         return {"success": False, "error_code": "patch_apply_failed", "message": str(exc)}
 

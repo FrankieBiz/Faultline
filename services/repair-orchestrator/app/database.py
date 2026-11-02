@@ -232,6 +232,13 @@ class Database:
         with self._lock:
             return self._lease()
 
+    def quarantine_runtime(self) -> None:
+        """Preserve ownership after an ambiguous worker fault until reconciliation."""
+        with self._transaction():
+            self._save_lease(
+                self._lease().model_copy(update={"quarantined": True, "updated_at": utcnow()})
+            )
+
     def _save_lease(self, lease: RuntimeLease) -> None:
         self._connection.execute(
             "UPDATE runtime_leases SET job_id = ?, owner_id = ?, payload = ? WHERE singleton = 1",

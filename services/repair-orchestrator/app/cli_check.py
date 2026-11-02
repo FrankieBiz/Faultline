@@ -49,6 +49,21 @@ class Sandbox(ContractModel):
     limits: Limits = Field(default_factory=Limits)
 
 
+def format_resource_limits(status: dict[str, Any]) -> str:
+    """Render configured aggregate limits separately from enforcement evidence."""
+    configured = status.get("configured")
+    if configured:
+        memory = configured["memory_max_bytes"] / (1024 * 1024)
+        cpu = configured["cpu_quota_percent"]
+        description = (
+            f"Memory={memory:g} MiB, Tasks={configured['tasks_max']}, "
+            f"CPU={cpu}% ({cpu / 100:g} CPU)"
+        )
+    else:
+        description = "disabled" if status.get("mode") == "disabled" else "unavailable"
+    return f"{description}; Enforcement: {status.get('enforcement_preflight', 'unavailable')}"
+
+
 class Model(ContractModel):
     provider: Literal["meta"] = "meta"
     model: str = Field(default="muse-spark-1.3", min_length=1)

@@ -17,7 +17,7 @@ import pytest
 from app.cli import build_parser, cmd_run
 from app.database import Database, DatabaseError
 from app.evidence import EvidenceStore
-from app.isolated_runtime import ManagedProcess
+from app.isolated_runtime import IsolatedRuntime, ManagedProcess
 from app.model_adapter import (
     MetaRepairAdapter,
     ModelError,
@@ -50,6 +50,39 @@ http.createServer((req, res) => {
   res.end(JSON.stringify({sum: 2}));
 }).listen(Number(process.argv[2]), '127.0.0.1');
 """
+
+
+@pytest.mark.parametrize("location", ["root", "outside", "sibling", "inside", "approved"])
+def test_interpreter_mount_prefix_is_contained(
+    project: tuple[Path, ProjectRun],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    location: str,
+) -> None:
+    root, run = project
+    runtime = ProjectRuntime(root, run)
+    monkeypatch.setattr(IsolatedRuntime, "_sandbox", lambda *args, **kwargs: ["--remount-ro"])
+    approved = tmp_path / "trusted-python"
+    runtime.python = approved
+    prefix = {
+        "root": root,
+        "outside": tmp_path / "private",
+        "sibling": tmp_path / "repo-other",
+        "inside": root / ".venv",
+        "approved": approved,
+    }[location]
+    (prefix / "bin").mkdir(parents=True, exist_ok=True)
+    (prefix / "lib").mkdir()
+    (prefix / "bin/python3").write_text("synthetic interpreter")
+    venv_bin = root / ".venv/bin"
+    venv_bin.mkdir(parents=True, exist_ok=True)
+    (venv_bin / "python").symlink_to(prefix / "bin/python3")
+    if location in {"root", "outside", "sibling"}:
+        with pytest.raises(RuntimeUnavailable, match="interpreter_distribution_not_approved"):
+            runtime._sandbox(tmp_path / "snapshot")
+    else:
+        argv = runtime._sandbox(tmp_path / "snapshot")
+        assert ["--ro-bind", str(prefix), str(prefix)] == argv[-4:-1]
 
 
 def spec(name: str = "addition") -> dict[str, Any]:

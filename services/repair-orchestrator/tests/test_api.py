@@ -152,6 +152,29 @@ def test_readiness_explicitly_labels_deterministic_mode(client: TestClient) -> N
     assert client.get("/api/faultline/scenarios", headers=HEADERS).status_code == 200
 
 
+@pytest.mark.parametrize("failed", [False, True])
+def test_worker_failure_blocks_readiness_and_admission(client: TestClient, failed: bool) -> None:
+    worker = cast(FastAPI, client.app).state.controller.worker
+
+    async def fault() -> None:
+        if failed:
+            worker._supervision_failed = True
+        else:
+            await worker.stop()
+
+    assert client.portal is not None
+    client.portal.call(fault)
+    readiness = client.get("/api/faultline/readiness", headers=HEADERS).json()
+    assert readiness["status"] == "blocked"
+    assert readiness["worker_ready"] is False
+    assert readiness["reason"] == "worker_unavailable"
+    response = client.post(
+        "/api/faultline/jobs", json=submission().model_dump(mode="json"), headers=HEADERS
+    )
+    assert response.status_code == 503
+    assert "worker_unavailable" in response.text
+
+
 def test_readiness_advertises_only_configured_seeded_repair_origins(client: TestClient) -> None:
     response = client.get("/api/faultline/readiness", headers=HEADERS).json()
     assert response["repair_origins"] == ["http://127.0.0.1:3000", "http://127.0.0.1:8000"]

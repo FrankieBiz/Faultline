@@ -14,6 +14,7 @@ adapts an already provisioned page; it does not establish sandbox containment.
 import asyncio
 import json
 import re
+import sys
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
@@ -261,7 +262,38 @@ def _equal(left: object, right: object) -> bool:
     return left is not _MISSING and right is not _MISSING and _encoded(left) == _encoded(right)
 
 
-def evaluate_assertion(step: AssertStep, measurement: Measurement) -> AssertionResult:
+async def _regex_search(pattern: str, text: str) -> bool:
+    """Keep backtracking outside the controller; kill and reap on every exit.
+
+    A thread cannot interrupt Python's regex engine. A disposable interpreter
+    preserves its syntax while bounding matching to 250 ms, including input I/O.
+    Timeout is an infrastructure error, never a reproducible invariant failure.
+    """
+    process = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-I",
+        "-c",
+        "import json,re,sys; p,t=json.load(sys.stdin); print(int(re.search(p,t) is not None))",
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    try:
+        async with asyncio.timeout(0.25):
+            stdout, _ = await process.communicate(json.dumps([pattern, text]).encode())
+        if process.returncode != 0 or stdout not in {b"0\n", b"1\n"}:
+            raise RuntimeError("regex_evaluation_failed")
+        return stdout == b"1\n"
+    finally:
+        if process.returncode is None:
+            try:
+                process.kill()
+            except ProcessLookupError:
+                pass
+        await process.wait()
+
+
+async def evaluate_assertion(step: AssertStep, measurement: Measurement) -> AssertionResult:
     check = step.check
     observed = _lookup(measurement.value, check.path)
     expected: object
@@ -279,7 +311,7 @@ def evaluate_assertion(step: AssertStep, measurement: Measurement) -> AssertionR
         passed = observed == expected
     elif check.matches is not None:
         expected = check.matches
-        passed = isinstance(observed, str) and re.search(check.matches, observed) is not None
+        passed = isinstance(observed, str) and await _regex_search(check.matches, observed)
     else:
         expected = check.type
         types: dict[str, tuple[type, ...]] = {
@@ -351,7 +383,7 @@ class ReproEngine:
                                 source = run.captures[step.source]
                                 if not isinstance(source, Measurement):
                                     raise TypeError("assertions require a measured value")
-                                run.assertions.append(evaluate_assertion(step, source))
+                                run.assertions.append(await evaluate_assertion(step, source))
                             else:
                                 value = await session.perform(step)
                                 if isinstance(step, (RequestStep, CaptureStep)):

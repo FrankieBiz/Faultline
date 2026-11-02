@@ -138,6 +138,7 @@ class RepairWorker:
         self._task: asyncio.Task[None] | None = None
         self._job_lock = asyncio.Lock()
         self._stopping = False
+        self._supervision_failed = False
         self.probe: ProbeResult | None = None
         self.probe_time: str | None = None
 
@@ -156,7 +157,19 @@ class RepairWorker:
         else:
             self.probe = await self.adapter.probe()
         self.probe_time = utcnow().isoformat()
+        self._stopping = False
+        self._supervision_failed = False
         self._task = asyncio.create_task(self._loop(), name="faultline-serial-worker")
+
+    @property
+    def healthy(self) -> bool:
+        """Admission requires both a live dispatcher and confirmed persistent state."""
+        return (
+            self._task is not None
+            and not self._task.done()
+            and not self._stopping
+            and not self._supervision_failed
+        )
 
     async def stop(self) -> None:
         """Cancel active work and wait for bounded resource cleanup."""
@@ -167,6 +180,8 @@ class RepairWorker:
                 await self._task
             except asyncio.CancelledError:
                 pass
+            except Exception:
+                logger.exception("Worker shutdown encountered a trusted operation failure")
             self._task = None
 
     def notify(self) -> None:
@@ -184,10 +199,23 @@ class RepairWorker:
     async def _loop(self) -> None:
         while not self._stopping:
             self._wake.clear()
-            queued = self.database.unfinished_jobs()
-            for job in queued:
-                if job.state.value == "queued":
-                    await self.run_job(job.id)
+            if not self._supervision_failed:
+                try:
+                    queued = self.database.unfinished_jobs()
+                    for job in queued:
+                        if job.state.value == "queued":
+                            await self.run_job(job.id)
+                except Exception:
+                    # Even a scan/claim failure may follow an ambiguous commit.
+                    # Never retry candidate side effects. Keep this task alive,
+                    # block admission, and require explicit reset or restart.
+                    self._supervision_failed = True
+                    logger.exception("Worker supervision quarantined an unexpected failure")
+                    try:
+                        self.database.quarantine_runtime()
+                    except Exception:
+                        # Disk failure must not defeat the in-memory interlock.
+                        logger.exception("Worker supervision could not persist quarantine")
             if self._stopping:
                 break
             # Polling also notices submissions admitted by another connection.
@@ -916,6 +944,8 @@ class RepairWorker:
 
     async def reset(self) -> None:
         """Reserve idle maintenance and clear quarantine only after confirmed cleanup."""
+        if self._supervision_failed:
+            await self.reconcile()
         lease = self.database.begin_reset()
         if lease.owner_id is None:
             raise RuntimeError("Reset reservation has no owner")
@@ -932,3 +962,5 @@ class RepairWorker:
                 clean = True
         finally:
             self.database.finish_reset(lease.owner_id, clean=clean)
+        self._supervision_failed = False
+        self.notify()

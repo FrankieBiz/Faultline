@@ -1,6 +1,9 @@
 """ReproSpec contract, browser adapter, and F1 gate tests; no host app execution."""
 
 import asyncio
+import subprocess
+import sys
+import textwrap
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -142,10 +145,75 @@ def test_invalid_assertion_contract(check: dict[str, Any]) -> None:
         ({"type": "string"}, "ok", True),
     ],
 )
-def test_assertion_matchers(check: dict[str, Any], value: Any, passed: bool) -> None:
+async def test_assertion_matchers(check: dict[str, Any], value: Any, passed: bool) -> None:
     step = AssertStep(id="a", source="r", check=AssertionCheck.model_validate(check))
-    result = evaluate_assertion(step, Measurement(value))
+    result = await evaluate_assertion(step, Measurement(value))
     assert result.passed is passed
+
+
+@pytest.mark.parametrize("cancel", [False, True])
+def test_regex_is_bounded_responsive_and_reaped(cancel: bool) -> None:
+    # Bound the whole probe externally: a regression must not hang the pytest loop.
+    script = textwrap.dedent("""
+        import asyncio
+        from contextlib import asynccontextmanager
+        from unittest.mock import patch
+        from app.repro import ReproEngine, ReproSpec, Measurement
+
+        children = []
+        spawn = asyncio.create_subprocess_exec
+        async def record(*args, **kwargs):
+            child = await spawn(*args, **kwargs)
+            children.append(child)
+            return child
+
+        class Session:
+            session_id = "regex"
+            async def perform(self, step):
+                return Measurement("a" * 100 + "!")
+            async def fingerprint(self):
+                return None
+
+        closed = False
+        @asynccontextmanager
+        async def session():
+            global closed
+            try:
+                yield Session()
+            finally:
+                closed = True
+
+        async def main():
+            spec = ReproSpec.model_validate({"id": "regex", "steps": [
+                {"action": "request", "id": "r", "path": "/"},
+                {"action": "assert", "id": "a", "source": "r",
+                 "check": {"matches": "(a+)+$"}}
+            ]})
+            with patch("asyncio.create_subprocess_exec", record):
+                task = asyncio.create_task(ReproEngine(session).run(spec))
+                await asyncio.sleep(0.05)
+                assert not task.done(), "regex should still be running in its child"
+                if CANCEL:
+                    task.cancel()
+                    try:
+                        await task
+                    except asyncio.CancelledError:
+                        pass
+                    else:
+                        raise AssertionError("cancellation was swallowed")
+                else:
+                    result = await asyncio.wait_for(task, 2)
+                    assert result.error == "TimeoutError"
+                    assert not result.failure_signature
+            assert closed
+            assert children and all(p.returncode is not None for p in children)
+
+        asyncio.run(main())
+    """).replace("CANCEL", repr(cancel))
+    result = subprocess.run(
+        [sys.executable, "-c", script], capture_output=True, text=True, timeout=5
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_json_round_trip_preserves_explicit_null_and_default_actions() -> None:

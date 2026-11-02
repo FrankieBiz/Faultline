@@ -137,6 +137,15 @@ class ProjectRuntime(IsolatedRuntime):
         interpreter = self.project_root / ".venv/bin/python"
         if interpreter.exists():
             prefix = interpreter.resolve().parent.parent
+            root = self.project_root.resolve()
+            # Only a strict project descendant or the controller's own Python
+            # distribution may supply a mount. In particular, never bind the
+            # original project root: that would bypass snapshot exclusions.
+            if not (
+                (prefix != root and prefix.is_relative_to(root))
+                or (prefix != root and prefix == self.python.resolve())
+            ):
+                raise RuntimeUnavailable("interpreter_distribution_not_approved")
             if (prefix / "bin").is_dir() and (prefix / "lib").is_dir():
                 args += ["--ro-bind", str(prefix), str(prefix)]
         position = base.index("--remount-ro")
