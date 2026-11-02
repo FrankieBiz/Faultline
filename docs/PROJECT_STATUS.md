@@ -1,6 +1,6 @@
 # FaultLine project status
 
-Updated November 1, 2026 (America/New_York). See [QUALITY_REVIEW.md](QUALITY_REVIEW.md) and [EVALUATION_REPORT_MULTI_MODEL.md](EVALUATION_REPORT_MULTI_MODEL.md) for evidence-based reviews.
+Updated November 1, 2026 (America/New_York). See [QUALITY_REVIEW.md](QUALITY_REVIEW.md) and [EVALUATION_REPORT_MULTI_MODEL.md](audits/EVALUATION_REPORT_MULTI_MODEL.md) for evidence-based reviews.
 
 ## Product and scope
 
@@ -35,7 +35,7 @@ Recorded Meta Model API evidence:
 - October 28, 2026 [retained-replay review](evidence/2026-10-28-meta-replay-review.md) verified a step-by-step controller-recorded `muse-spark-1.3` repair (13.0 s end to end, 44/44 assertions passed).
 
 Independent Multi-Model Evaluation Panel (November 1, 2026):
-- Multi-model evaluation conducted across DeepSeek-V4.1 (Judge & SRE personas), Llama 3.2 (Systems Auditor), Claude Opus 5.5 (UX & Product Judge), and Codex GPT-6.1 (Systems & Security Architect), documented in [EVALUATION_REPORT_MULTI_MODEL.md](EVALUATION_REPORT_MULTI_MODEL.md). Its scores are self-assessments by models we prompted, not an external judging score, so none is quoted here.
+- Multi-model evaluation conducted across DeepSeek-V4.1 (Judge & SRE personas), Llama 3.2 (Systems Auditor), Claude Opus 5.5 (UX & Product Judge), and Codex GPT-6.1 (Systems & Security Architect), documented in [EVALUATION_REPORT_MULTI_MODEL.md](audits/EVALUATION_REPORT_MULTI_MODEL.md). Its scores are self-assessments by models we prompted, not an external judging score, so none is quoted here.
 
 ## Access and remaining work
 

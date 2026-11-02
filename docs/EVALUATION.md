@@ -1,6 +1,6 @@
 # FaultLine evaluation
 
-Updated October 28, 2026. This page describes how FaultLine is evaluated beyond its single demo defect, and reports the recorded results. It answers two questions from the [score assessment](HACKATHON_SCORE_ASSESSMENT.md):
+Updated October 28, 2026. This page describes how FaultLine is evaluated beyond its single demo defect, and reports the recorded results. It answers two questions from the [score assessment](audits/HACKATHON_SCORE_ASSESSMENT.md):
 
 1. Do the gates distinguish correct repairs from repairs that only make the reported error disappear?
 2. Can a configured model repair defects it was not told about, under the same gates and feedback loop?

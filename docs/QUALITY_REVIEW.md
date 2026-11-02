@@ -48,7 +48,7 @@ An overlapping startup build invalidated one browser run and three runtime-readi
 
 ## Follow-up review and remediation — October 28, 2026
 
-This pass acted on every gap in the [score assessment](HACKATHON_SCORE_ASSESSMENT.md) that engineering could address. Two separate internal reviews (a correctness review of the full diff and an AI-assisted adversarial containment review with real probes) checked the new work. Their findings were fixed before the final gates below. External review is still outstanding.
+This pass acted on every gap in the [score assessment](audits/HACKATHON_SCORE_ASSESSMENT.md) that engineering could address. Two separate internal reviews (a correctness review of the full diff and an AI-assisted adversarial containment review with real probes) checked the new work. Their findings were fixed before the final gates below. External review is still outstanding.
 
 | Severity | Observed problem | Remediation and evidence |
 | --- | --- | --- |
@@ -79,7 +79,7 @@ The [replay provenance review](evidence/2026-10-28-meta-replay-review.md) checke
 
 ## Harsh provisional judging assessment
 
-The [standalone score assessment](HACKATHON_SCORE_ASSESSMENT.md) explains each awarded score, the missing evidence, and what would justify reassessment.
+The [standalone score assessment](audits/HACKATHON_SCORE_ASSESSMENT.md) explains each awarded score, the missing evidence, and what would justify reassessment.
 
 These are my evidence-limited estimates, not official results. The rubric weights are preserved from the provided webinar material; the official pages were rechecked October 27, 2026 ([Meta](https://dev.meta.ai/events/global-hackathon), [Cerebral Valley](https://events.cerebralvalley.ai/e/meta-ai-developer-hackathon)).
 

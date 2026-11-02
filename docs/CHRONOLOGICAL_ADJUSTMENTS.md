@@ -1,6 +1,6 @@
 # Chronological adjustments
 
-Updated October 28, 2026. This is a dated record of what changed after the [score assessment](HACKATHON_SCORE_ASSESSMENT.md) and what each change actually does. Claims here are limited to what the repository and recorded evidence show.
+Updated October 28, 2026. This is a dated record of what changed after the [score assessment](audits/HACKATHON_SCORE_ASSESSMENT.md) and what each change actually does. Claims here are limited to what the repository and recorded evidence show.
 
 The only score on record is the October 27 provisional assessment of commit `925507a`: **55/100**. No reassessment has been performed. An earlier revision of this file reported 70/100 and 93/100. Those figures were self-assigned, and the 70 was attributed to a commit whose author had declined to score it. They have been removed.
 

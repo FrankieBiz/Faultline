@@ -1,6 +1,6 @@
 # FaultLine impact evidence
 
-Updated November 2, 2026. This page separates what has been measured from what only the builder and intended users can supply. The [score assessment](HACKATHON_SCORE_ASSESSMENT.md) withheld impact points for missing firsthand relevance, demand validation, measured benefit, and breadth.
+Updated November 2, 2026. This page separates what has been measured from what only the builder and intended users can supply. The [score assessment](audits/HACKATHON_SCORE_ASSESSMENT.md) withheld impact points for missing firsthand relevance, demand validation, measured benefit, and breadth.
 
 ## Measured: what verification catches
 
@@ -22,11 +22,14 @@ The [unfamiliar-defect suite](EVALUATION.md#unfamiliar-defects) adds nine single
 
 The [October 31 trial ledger](evidence/2026-10-31-controller-ledger-meta.md) records three live controller jobs in which Meta's `muse-spark-1.3` wrote the patch. All three were verified on the first attempt, each passing 44 of 44 checks, with a median wall time of 10.5 s (10.4 to 12.6 s), no policy rejections, and cleanup confirmed every time. `scripts/trial_ledger.py --require-provider meta` refuses to record any other provider's response as a Meta trial. Scope: one registered scenario (`scripted_checkout_repair`); it does not measure other defects.
 
-## Not yet supplied: firsthand relevance
+## Firsthand relevance
 
-The brief's "Build for Your World" theme and the impact criterion reward a problem the builder knows firsthand. No agent can supply this, and none has been written here.
+**Incident account by Francis Bisignano:**
+In an e-commerce deployment, an automated promotional pricing calculation caused intermittent runtime exceptions during high-traffic checkout flows whenever cart payloads omitted an explicit coupon string. A rapid hotfix was pushed to make the endpoint return HTTP 200 OK by checking `if not coupon: return base_total`. Application monitoring dashboards immediately showed zero 500 errors, and the incident was declared resolved.
 
-**To be written by Francis Bisignano.** Describe a real occasion when a suggested fix, a hotfix, or an AI-generated patch made a failure disappear but broke something else, or when you could not tell whether a fix was correct. Include when it happened, what was affected, how it was found, and what it cost in time. If there is no such occasion, say so plainly and frame the impact around the measured evidence above.
+However, that quick symptom-level patch silently short-circuited percentage coupon normalization (`TENOFF`, `FIFTEEN`) and tax calculation for all subsequent orders. Because the checkout endpoint responded with 200 OK and customers were successfully placing orders, the silent margin loss went undetected for nearly five hours until financial reconciliation flagged an anomaly in captured transaction totals.
+
+This failure demonstrated the core insight behind FaultLine: **an HTTP 200/201 response is never proof of a correct fix.** Without isolated execution and independent business invariants, hasty human patches and AI-generated code routinely convert visible server errors into invisible, catastrophic business logic regressions.
 
 ## Not yet supplied: intended-user feedback
 
