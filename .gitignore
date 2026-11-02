@@ -24,5 +24,9 @@ replays/
 # Local project repair evidence; export deliberately before publication.
 .faultline/runs/
 
-# Claude Code internal scratch & agents
+# Claude Code & internal agent scratch
 .claude/
+AGENTS.md
+GEMINI.md
+.agents/HANDOFF.md
+

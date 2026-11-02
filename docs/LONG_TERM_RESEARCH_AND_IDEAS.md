@@ -70,7 +70,7 @@ Treat each stage as a capability to earn. Success in a local fixture does not au
 
 ## 2. What exists and what remains unproven
 
-This baseline comes from [README.md](../README.md), [PROJECT_STATUS.md](PROJECT_STATUS.md), [QUALITY_REVIEW.md](QUALITY_REVIEW.md), [.agents/HANDOFF.md](../.agents/HANDOFF.md), and inspection of the adapter, contracts, oracle, policy, worker, runtime, and database. Historical check counts below are recorded evidence from those files, not a claim that this research session reran their browser experiments.
+This baseline comes from [README.md](../README.md), [PROJECT_STATUS.md](PROJECT_STATUS.md), [QUALITY_REVIEW.md](QUALITY_REVIEW.md), and inspection of the adapter, contracts, oracle, policy, worker, runtime, and database. Historical check counts below are recorded evidence from those files, not a claim that this research session reran their browser experiments.
 
 ### 2.1 Repository facts
 
@@ -1380,7 +1380,6 @@ All web sources below were retrieved **October 27, 2026**. Documentation and ven
 | [PROJECT_STATUS.md](PROJECT_STATUS.md) | Implemented capabilities and outstanding evidence | Snapshot, not current session verification |
 | [QUALITY_REVIEW.md](QUALITY_REVIEW.md) | Recorded adversarial findings and verification evidence | Repository review, not external certification |
 | [SpecV1-research-notes.md](SpecV1-research-notes.md) | Previous technical research and source trail | Prior dated research, recheck before implementation |
-| [.agents/HANDOFF.md](../.agents/HANDOFF.md) | Settled constraints and failed implementation approaches | Handoff state may change |
 | [model_adapter.py](../services/repair-orchestrator/app/model_adapter.py) | Actual prompt specificity, provider selection, deterministic fallback | Code inspection, not authenticated provider exercise |
 | [models.py](../shared/contracts/models.py) | Strict contracts and lifecycle vocabulary | Current local contract |
 | [oracle.ts](../tools/browser-runner/src/oracle.ts) | Browser execution behavior and evidence collection | Controlled scenario implementation |

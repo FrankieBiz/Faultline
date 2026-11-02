@@ -1,8 +1,46 @@
 # FaultLine: Sandbox-Verified Repair and a Pre-Flight Gate for Web Applications
 
-**A real browser finds the failure. A Meta model proposes a patch. Independently authored business checks decide whether it works, while a kernel sandbox confines the candidate.**
+[![Meta Global AI Hackathon](https://img.shields.io/badge/Meta_Global_AI_Hackathon-2026-0668E1?style=flat-square&logo=meta&logoColor=white)](https://dev.meta.ai/events/global-hackathon)
+[![Live Showcase](https://img.shields.io/badge/Live_Showcase-frankiebiz.github.io%2FFaultline-success?style=flat-square&logo=githubpages&logoColor=white)](https://frankiebiz.github.io/Faultline/)
+[![Automated Tests](https://img.shields.io/badge/tests-1%2C530%20passing-brightgreen?style=flat-square)](https://github.com/FrankieBiz/Faultline/actions)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.13-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
+[![Node.js](https://img.shields.io/badge/node-24%2B-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org/)
+[![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey?style=flat-square)]()
 
-**Judges: start at the [FaultLine judge page](https://frankiebiz.github.io/Faultline/).** It needs no install and works in any desktop or mobile browser: play the recorded Meta repair, plant a bug yourself, and try to fool the gates.
+**A real browser finds the failure. Meta's `muse-spark-1.3` proposes a patch. Independently authored business checks decide whether it works, while an isolated Linux kernel sandbox (Bubblewrap + cgroup v2) confines the candidate.**
+
+> 🧭 **Judges Start Here:** Open the [**FaultLine Judge Showcase**](https://frankiebiz.github.io/Faultline/). It needs **zero installation** and works in any desktop or mobile browser: play the recorded Meta repair, plant a bug yourself, and try to fool the gates. Follow [the 3-minute tour](#the-3-minute-judging-tour).
+
+---
+
+## 📑 Table of Contents
+
+- [🧭 Quick Guide for Hackathon Judges](#-quick-guide-for-hackathon-judges)
+  - [The Four Surfaces](#the-four-surfaces)
+  - [The 3-Minute Judging Tour](#the-3-minute-judging-tour)
+- [🚨 The 2 AM Checkout Failure (Problem Statement)](#the-2-am-checkout-failure)
+  - [Why a Local Developer Tool, Not a Cloud SaaS Wrapper](#why-a-local-developer-tool-not-a-cloud-saas-wrapper)
+- [🌐 What Judges Can Do on the Hosted Page](#what-judges-can-do-on-the-hosted-page)
+- [⚡ Installation and Quickstart](#installation-and-quickstart)
+  - [Zero Install](#-zero-install)
+  - [macOS](#-macos)
+  - [Windows](#-windows)
+  - [Linux (Fedora or Ubuntu)](#-linux-fedora-or-ubuntu)
+- [🛠️ Using FaultLine](#using-faultline)
+  - [System Health (`faultline doctor`)](#check-system-health)
+  - [Demo Stack (`faultline demo`)](#launch-the-demo-stack)
+  - [Quick HTTP Verification (`faultline test`)](#test-any-url)
+  - [Autonomous Site Scan (`faultline scan`)](#scan-a-site)
+  - [Pre-Flight Agent Gate (`faultline gate`)](#pre-flight-agent-gate)
+  - [Project HTTP Invariants (`faultline check`)](#gate-a-project-on-its-http-invariants)
+  - [Web Inspector Studio](#web-inspector-studio-localhost4000)
+- [🔬 Architecture: The 6-Step Verification Engine](#how-it-works-the-6-step-verification-engine)
+- [📊 Evidence and Evaluation](#evidence-and-evaluation)
+  - [Live Meta Trial Series (3 of 3 Verified)](#live-meta-trial-series-3-of-3-verified)
+  - [10-Defect Evaluation Corpus](#10-defect-evaluation-corpus)
+  - [Automated Test Scorecard (1,530 tests)](#test-scorecard)
+- [🗺️ Repository Map & Submission Dossier](#repository-map)
 
 ---
 
