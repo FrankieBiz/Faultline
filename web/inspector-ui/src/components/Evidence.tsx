@@ -103,7 +103,7 @@ export function Pipeline(props: { detail: JobDetail; events: JobEvent[]; verific
         return `${prefix(verifiedNumber)}${list.length - failed} of ${list.length} checks passed in the isolated runtime${failed ? `; ${failed} failed` : ""}.`;
       })(),
     } : null,
-    job.cleanup_status === "succeeded" ? { state: "done", tone: "idle", text: `Cleanup confirmed · ${artifacts.length} artifacts recorded with SHA-256 checksums.` }
+    job.cleanup_status === "succeeded" ? { state: "done", tone: "idle", text: `Cleanup confirmed · ${artifacts.length} ${artifacts.length === 1 ? "artifact" : "artifacts"} recorded with SHA-256 checksums.` }
       : job.cleanup_status === "failed" ? { state: "failed", tone: "bad", text: "Cleanup could not be confirmed, so new runs are held until a reset." }
       : null,
   ];
@@ -397,7 +397,7 @@ export function Artifacts(props: { artifacts: Artifact[]; executions: Execution[
         ))}
       </p>}
       <details>
-        <summary>All artifacts · {artifacts.length} files</summary>
+        <summary>All artifacts · {artifacts.length} {artifacts.length === 1 ? "file" : "files"}</summary>
         <ul className="rows">
         {artifacts.map((a) => (
           <li key={a.id}>

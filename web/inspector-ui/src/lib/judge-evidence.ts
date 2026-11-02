@@ -15,9 +15,9 @@ export const docUrl = (path: string) => `${REPO}/${path}`;
 export const ORACLE_CHECKS: { id: string; group: "accept" | "reject" | "read" }[] = [
   ...["missing_coupon", "null_coupon", "empty_coupon", "whitespace_coupon", "tenoff", "fifteen", "normalized_coupon",
     "mixed_cart", "mixed_cart_coupon", "quantity_ten"].map((id) => ({ id: `regression.${id}`, group: "accept" as const })),
-  ...["empty_cart", "duplicate_product", "unknown_product", "quantity_zero", "quantity_eleven", "quantity_negative",
-    "quantity_fraction", "quantity_string", "quantity_boolean", "quantity_null", "quantity_missing", "unknown_coupon",
-    "invalid_coupon_type", "client_price", "unknown_fields"].map((id) => ({ id: `regression.${id}`, group: "reject" as const })),
+  ...["empty_cart", "duplicate_product", "unknown_product", "unknown_coupon", "invalid_coupon_type", "client_price",
+    "unknown_fields", "quantity_missing", "quantity_zero", "quantity_eleven", "quantity_negative", "quantity_fraction",
+    "quantity_string", "quantity_boolean", "quantity_null"].map((id) => ({ id: `regression.${id}`, group: "reject" as const })),
   ...["unknown_order", "unknown_product_readback"].map((id) => ({ id: `regression.${id}`, group: "read" as const })),
 ];
 
@@ -28,7 +28,7 @@ export interface HoldoutDefect {
   id: string;
   title: string;
   defectClass: string;
-  /** The business rule the defect breaks, in the contract's words. */
+  /** The business rule the defect breaks, paraphrasing the repair contract. */
   contract: string;
   /** The defect against the healthy source: removed lines start with "-", added with "+". */
   change: string[];
@@ -130,7 +130,7 @@ export const GAUNTLET: { id: string; title: string; kind: PatchKind; symptom: bo
 ];
 
 export const RUBRIC: { name: string; weight: number; evidence: string; doc: { label: string; path: string } }[] = [
-  { name: "Impact", weight: 30, evidence: "A firsthand checkout incident where a 200 OK hid five hours of margin loss, and a measured gauntlet showing a symptom check accepts 5 of 6 wrong repairs.",
+  { name: "Impact", weight: 30, evidence: "A firsthand checkout incident where a 200 OK hid nearly five hours of margin loss, and a measured gauntlet showing a symptom check accepts 5 of 6 wrong repairs.",
     doc: { label: "Impact evidence", path: "docs/IMPACT_EVIDENCE.md" } },
   { name: "Use of Meta AI tooling", weight: 25, evidence: "muse-spark-1.3 writes the patch from the business contract and failure evidence, never the bug's name, then independent gates decide it.",
     doc: { label: "Meta trial ledger", path: "docs/evidence/2026-10-31-controller-ledger-meta.md" } },
