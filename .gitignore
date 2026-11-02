@@ -23,3 +23,6 @@ replays/
 
 # Local project repair evidence; export deliberately before publication.
 .faultline/runs/
+
+# Claude Code internal scratch & agents
+.claude/
