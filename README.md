@@ -439,7 +439,7 @@ Static AST inspection and Git worktrees are policy and source-management tools; 
 
 ### Pre-Flight Agent Gate
 
-`faultline gate http://127.0.0.1:3000 --json` turns the crawler into a deployment gate that coding agents (Claude, Codex, Cursor, Devin) and pipelines can obey: exit 1 is `DEPLOYMENT_BLOCKED` with the reproduction trail and an `agent_remediation_prompt` the agent can act on, and also covers a crawl that ran out of actions or time before it finished (`error.code: "incomplete_crawl"`, `failure: null`). Exit 0 is `SAFE_TO_DEPLOY` only when the crawl finished exploring (`stop_reason: "exhausted"`) with no defect. That is a bounded smoke signal for the flows the crawler reached, not proof of business correctness; keep declared checks (`faultline check`) for prices, totals, and orders. [`docs/PREFLIGHT_GATE.md`](docs/PREFLIGHT_GATE.md) covers the contract, the agent skill ([`.agents/skills/faultline-gate`](.agents/skills/faultline-gate/SKILL.md)), the drop-in [`.github/workflows/faultline-gate.yml`](.github/workflows/faultline-gate.yml) that writes the verdict to the job summary, and the optional [`.githooks/pre-push`](.githooks/pre-push) hook. The Inspector's Pre-Flight Gate panel runs the same check from the browser and shows the same verdict and fix prompt, with the agent rule, workflow, and skill ready to copy. The [judge page](https://frankiebiz.github.io/Faultline/#gate) replays two verdicts recorded before `stop_reason` was reported; the clean one is captioned as historical.
+`faultline gate http://127.0.0.1:3000 --json` turns the crawler into a deployment gate that coding agents (Claude, Codex, Cursor, Devin) and pipelines can obey: exit 1 is `DEPLOYMENT_BLOCKED` with the reproduction trail and an `agent_remediation_prompt` the agent can act on, and also covers a crawl that ran out of actions, time, or screens before it finished, or that skipped commit controls it may not click on a non-local preview (`error.code: "incomplete_crawl"`, `failure: null`). Exit 0 is `SAFE_TO_DEPLOY` only when the crawl finished exploring (`stop_reason: "exhausted"`) with no defect. That is a bounded smoke signal for the flows the crawler reached, not proof of business correctness; keep declared checks (`faultline check`) for prices, totals, and orders. [`docs/PREFLIGHT_GATE.md`](docs/PREFLIGHT_GATE.md) covers the contract, the agent skill ([`.agents/skills/faultline-gate`](.agents/skills/faultline-gate/SKILL.md)), the drop-in [`.github/workflows/faultline-gate.yml`](.github/workflows/faultline-gate.yml) that writes the verdict to the job summary, and the optional [`.githooks/pre-push`](.githooks/pre-push) hook. The Inspector's Pre-Flight Gate panel runs the same check from the browser and shows the same verdict and fix prompt, with the agent rule, workflow, and skill ready to copy. The [judge page](https://frankiebiz.github.io/Faultline/#gate) replays two verdicts recorded before `stop_reason` was reported; the clean one is captioned as historical.
 
 ---
 
@@ -473,13 +473,13 @@ These results describe an authored corpus for one checkout route, not arbitrary 
 | Suite | Tests |
 | --- | ---: |
 | Backend, scripts, fixtures, and setup bootstrap (pytest) | 345 |
-| Repair orchestrator and CLI (pytest) | 942 |
-| Browser runner unit tests | 127 |
-| **Unit and integration total** (`make check`) | **1,414** |
+| Repair orchestrator and CLI (pytest) | 1,008 |
+| Browser runner unit tests | 132 |
+| **Unit and integration total** (`make check`) | **1,485** |
 | Inspector browser tests (Playwright) | 43 |
 | Storefront browser tests (Playwright) | 2 |
 | **Browser total** (`make browser`) | **45** |
-| **All automated tests** | **1,459** |
+| **All automated tests** | **1,530** |
 
 The 11 PowerShell bootstrap tests skip on machines without `pwsh`, and 2 native Windows demo tests skip outside Windows. `make check` also runs Ruff lint and format checks, strict mypy, fixture and corpus provenance, the storefront, runner, and Inspector builds, and both Python distribution builds. `make integration` exercises real isolated Chromium and cgroup enforcement, and `make evaluate` runs the corpus.
 

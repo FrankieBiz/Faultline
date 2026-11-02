@@ -73,9 +73,11 @@ Fix the server-side exception handling for POST /api/checkout so it no longer re
 - **It fails closed.** A server that does not answer, a page that will not load, or a
   missing browser runner gives `DEPLOYMENT_BLOCKED` with `error` set, never a
   pass. Only raw `status: "clean"` with `stop_reason: "exhausted"` exits 0.
-  Reaching `max_actions`, timing out, or missing a completion reason is
+  Reaching `max_actions`, timing out, hitting the 30-screen limit with linked
+  screens unvisited (`screen_limit`), skipping commit controls on a non-local
+  origin (`skipped_commit_controls`), or missing a completion reason is
   inconclusive: exit 1, `error.code: "incomplete_crawl"`, and `failure: null`.
-  Increase the action/time budgets and retry; unresolved exploration stays blocked.
+  The fix prompt names the next step for each reason; unresolved exploration stays blocked.
   A completed clean crawl finds no defects in explored flows; it does not establish
   business completeness or replace independent assertions and normal project CI.
 - **Read-only.** The gate never patches code. Repair stays behind
@@ -106,7 +108,7 @@ and `--timeout` seconds (1-300, default 90) bound the crawl.
   "summary": "Defect intercepted: HTTP 500 on POST /api/checkout after 3 actions across 2 screens.",
   "elements_explored": 20,
   "actions_taken": 3,
-  "stop_reason": "exhausted" | "max_actions" | "timeout" | "..." | null,
+  "stop_reason": "exhausted" | "max_actions" | "timeout" | "screen_limit" | "skipped_commit_controls" | "..." | null,
   "screens_visited": [{"url": "...", "path": "/checkout", "title": "Checkout", "elements": 11, "forms": 1}],
   "failure": {"kind": "http_error", "method": "POST", "endpoint": "/api/checkout", "status": 500, "...": "..."} | null,
   "reproduction_trail": ["1. Open http://127.0.0.1:3000/", "..."],
@@ -199,6 +201,16 @@ If the server is not running, the hook warns and lets the push through. Set
   verdict means "no defect in the explored flows", not "no defects anywhere".
   `elements_explored` and `screens_visited` show exactly what was covered.
 - Flows behind authentication or with destructive controls are not exercised.
+- On a non-local origin (anything but localhost, loopback, or a private network
+  address) the crawler never clicks submit controls, buttons in POST forms, or
+  commit-named controls (Place order, Pay, Book, Donate, Subscribe, ...), and
+  never fills POST forms. A crawl that skipped any of them ends
+  `skipped_commit_controls`, which blocks, so a hosted preview cannot pass.
+  To exercise checkout and other commit flows, gate a disposable local preview,
+  or pass `--allow-commit-actions` against a preview with test data and payment
+  sandboxes.
+  The name match is a denylist: a script-driven control outside any form with
+  an unrecognized label can still be clicked on a hosted preview.
 - Markdown and JSON output include a clipped excerpt (up to 600 characters) of
   the failing response body. A job summary is visible to anyone who can read
   the repository, so gate preview environments that do not return secrets in

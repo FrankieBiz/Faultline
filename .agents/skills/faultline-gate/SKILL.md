@@ -15,7 +15,8 @@ It returns one verdict: `SAFE_TO_DEPLOY` (exit 0) or `DEPLOYMENT_BLOCKED`
 (exit 1).
 
 The gate passes only when the crawl found nothing **and** finished exploring
-(`stop_reason: "exhausted"`). A crawl that ran out of actions or time, or did
+(`stop_reason: "exhausted"`). A crawl that ran out of actions, time, or
+screens, skipped commit controls it may not click on a non-local origin, or did
 not say why it stopped, is inconclusive and blocks. Even a pass is a bounded
 smoke signal for the flows the crawler reached. It does not check business
 rules such as prices or totals; keep the project's own tests and assertions.
@@ -57,7 +58,7 @@ that does not change the app). Say that you skipped it and why.
 | --- | --- | --- | --- |
 | `0` | `SAFE_TO_DEPLOY` | Exploration finished and every explored flow was clean. | Proceed. Mention the gate result (elements and screens explored) in your summary or PR body. |
 | `1` | `DEPLOYMENT_BLOCKED` with `failure` set | FaultLine intercepted a defect. | Enter the self-healing loop below. Do **not** commit as done, open the PR, or deploy. |
-| `1` | `DEPLOYMENT_BLOCKED` with `error.code: "incomplete_crawl"` and `failure: null` | Inconclusive: no defect in what was explored, but the crawl stopped at `stop_reason` (`max_actions`, `timeout`, or none) before exploring everything. | Re-run with higher `--max-actions` and `--timeout` within their limits. If it still cannot finish, report the unfinished flows to the user. This is not a pass. |
+| `1` | `DEPLOYMENT_BLOCKED` with `error.code: "incomplete_crawl"` and `failure: null` | Inconclusive: no defect in what was explored, but the crawl stopped at `stop_reason` (`max_actions`, `timeout`, `screen_limit`, `skipped_commit_controls`, or none) before exploring everything. | Follow `agent_remediation_prompt`: raise `--max-actions` and `--timeout` for a budget stop, gate smaller entry points separately for `screen_limit`, or, only on a disposable preview, re-run with `--allow-commit-actions` for `skipped_commit_controls`. If it still cannot finish, report the unfinished flows to the user. This is not a pass. |
 | `1` | `DEPLOYMENT_BLOCKED` with another `error` and `failure: null` | The gate could not explore the site (server down, page would not load, browser runner not built). | Fix the environment named in `error.message`, then re-run. This is not a pass. |
 | `2` | `DEPLOYMENT_BLOCKED` | Invalid arguments or URL. | Correct the command (absolute `http://` or `https://` URL) and re-run. |
 
@@ -72,7 +73,7 @@ that does not change the app). Say that you skipped it and why.
   "summary": "Defect intercepted: HTTP 500 on POST /api/checkout after 3 actions across 2 screens.",
   "elements_explored": 20,
   "actions_taken": 3,
-  "stop_reason": null,               // "exhausted" | "max_actions" | "timeout" | null; only "exhausted" passes
+  "stop_reason": null,               // "exhausted" | "max_actions" | "timeout" | "screen_limit" | "skipped_commit_controls" | null; only "exhausted" passes
   "screens_visited": [{"url": "...", "path": "/checkout", "title": "Checkout", "elements": 11, "forms": 1}],
   "failure": {                       // null when the gate passed or could not run
     "kind": "http_error" | "request_failed" | "page_error" | "console_error",

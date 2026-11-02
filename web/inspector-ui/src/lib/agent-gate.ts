@@ -102,18 +102,27 @@ export function remediationPrompt(telemetry: CrawlTelemetry, failure: CrawlFailu
   return lines.join("\n");
 }
 
-/** `stop_reason` as `crawler_service.telemetry` passes it on: a string, or null. */
-export const stopReasonOf = (telemetry: CrawlTelemetry | null | undefined): string | null =>
-  typeof telemetry?.stop_reason === "string" ? telemetry.stop_reason : null;
+/**
+ * `stop_reason` as `gate_result` reads it: a string, or null. An "exhausted" crawl that skipped
+ * commit controls did not explore them, so it reads as "skipped_commit_controls".
+ */
+export const stopReasonOf = (telemetry: CrawlTelemetry | null | undefined): string | null => {
+  const reason = typeof telemetry?.stop_reason === "string" ? telemetry.stop_reason : null;
+  return reason === "exhausted" && (telemetry?.commit_controls_skipped ?? 0) > 0 ? "skipped_commit_controls" : reason;
+};
 
-/** Whether a crawl may pass the gate: it found nothing and finished exploring (`stop_reason` "exhausted"). */
+/**
+ * Whether a crawl may pass the gate: it found nothing and finished exploring (`stop_reason`
+ * "exhausted"). Every other reason, including "screen_limit" and "skipped_commit_controls", blocks.
+ */
 export const crawlCompleted = (telemetry: CrawlTelemetry | null | undefined) =>
   telemetry?.status === "clean" && stopReasonOf(telemetry) === "exhausted";
 
 /**
  * The verdict for a crawl, in the documented JSON contract. A clean crawl passes only when it
- * finished exploring; one stopped by its action budget or deadline (or that does not say why it
- * stopped) is inconclusive and blocks, with no failure and an `incomplete_crawl` error.
+ * finished exploring; one stopped by its action budget, deadline, or screen cap, one that skipped
+ * commit controls, or one that does not say why it stopped is inconclusive and blocks, with no
+ * failure and an `incomplete_crawl` error.
  */
 export function gateResult(telemetry: CrawlTelemetry, url: string): GateResult {
   const screens = telemetry.screens_visited ?? [];
@@ -133,7 +142,7 @@ export function gateResult(telemetry: CrawlTelemetry, url: string): GateResult {
     const message = `Exploration stopped with ${stopReason || "no completion reason"} after ${plural(actions, "action")}; completion was not established.`;
     error = { code: "incomplete_crawl", message };
     summary = `Gate inconclusive: ${message}`;
-    prompt = incompletePrompt(message, target);
+    prompt = incompletePrompt(message, target, stopReason);
   } else if (failure) {
     summary = `Defect intercepted: ${describeSignal(failure)} after ${plural(actions, "action")} across ${plural(screens.length, "screen")}.`;
     prompt = remediationPrompt({ ...telemetry, reproduction_trail: trail }, failure, target);
@@ -160,8 +169,17 @@ export function gateResult(telemetry: CrawlTelemetry, url: string): GateResult {
   };
 }
 
-const incompletePrompt = (message: string, url: string) =>
-  `The FaultLine gate is inconclusive for ${url}: ${message} Increase --max-actions and --timeout within their supported limits, then re-run \`faultline gate ${url} --json\`. If exploration still cannot finish, investigate the unfinished flows and retain independent business checks. Do not deploy until the gate exits 0.`;
+/** `_error_prompt` in cli_crawl.py for `incomplete_crawl`, which words its advice by stop_reason. */
+function incompletePrompt(message: string, url: string, stopReason: string | null): string {
+  const lead = `The FaultLine gate is inconclusive for ${url}: ${message}`;
+  if (stopReason === "screen_limit") {
+    return `${lead} The crawler reached its screen cap with flows still unvisited. Gate smaller preview entry points separately and verify that every unfinished flow is covered. Increasing --max-actions or --timeout alone will not raise the screen cap. Re-run \`faultline gate ${url} --json\` for each entry point. Do not deploy until the gate exits 0.`;
+  }
+  if (stopReason === "skipped_commit_controls") {
+    return `${lead} Checkout, payment, or other commit controls were skipped and remain unverified. Use a disposable preview with test data and payment sandboxes, then explicitly opt in with \`faultline gate ${url} --allow-commit-actions --json\`. Do not deploy until the gate exits 0.`;
+  }
+  return `${lead} Increase --max-actions and --timeout within their supported limits, then re-run \`faultline gate ${url} --json\`. If exploration still cannot finish, investigate the unfinished flows and retain independent business checks. Do not deploy until the gate exits 0.`;
+}
 
 const gateErrorPrompt = (message: string, url: string) =>
   `The FaultLine gate could not explore ${url} (crawl_error): ${message} Make sure the preview server is running and the browser runner is built, then re-run \`faultline gate ${url} --json\`. Do not deploy until the gate exits 0.`;
@@ -213,7 +231,8 @@ It returns one verdict: \`SAFE_TO_DEPLOY\` (exit 0) or \`DEPLOYMENT_BLOCKED\`
 (exit 1).
 
 The gate passes only when the crawl found nothing **and** finished exploring
-(\`stop_reason: "exhausted"\`). A crawl that ran out of actions or time, or did
+(\`stop_reason: "exhausted"\`). A crawl that ran out of actions, time, or
+screens, skipped commit controls it may not click on a non-local origin, or did
 not say why it stopped, is inconclusive and blocks. Even a pass is a bounded
 smoke signal for the flows the crawler reached. It does not check business
 rules such as prices or totals; keep the project's own tests and assertions.
@@ -255,7 +274,7 @@ that does not change the app). Say that you skipped it and why.
 | --- | --- | --- | --- |
 | \`0\` | \`SAFE_TO_DEPLOY\` | Exploration finished and every explored flow was clean. | Proceed. Mention the gate result (elements and screens explored) in your summary or PR body. |
 | \`1\` | \`DEPLOYMENT_BLOCKED\` with \`failure\` set | FaultLine intercepted a defect. | Enter the self-healing loop below. Do **not** commit as done, open the PR, or deploy. |
-| \`1\` | \`DEPLOYMENT_BLOCKED\` with \`error.code: "incomplete_crawl"\` and \`failure: null\` | Inconclusive: no defect in what was explored, but the crawl stopped at \`stop_reason\` (\`max_actions\`, \`timeout\`, or none) before exploring everything. | Re-run with higher \`--max-actions\` and \`--timeout\` within their limits. If it still cannot finish, report the unfinished flows to the user. This is not a pass. |
+| \`1\` | \`DEPLOYMENT_BLOCKED\` with \`error.code: "incomplete_crawl"\` and \`failure: null\` | Inconclusive: no defect in what was explored, but the crawl stopped at \`stop_reason\` (\`max_actions\`, \`timeout\`, \`screen_limit\`, \`skipped_commit_controls\`, or none) before exploring everything. | Follow \`agent_remediation_prompt\`: raise \`--max-actions\` and \`--timeout\` for a budget stop, gate smaller entry points separately for \`screen_limit\`, or, only on a disposable preview, re-run with \`--allow-commit-actions\` for \`skipped_commit_controls\`. If it still cannot finish, report the unfinished flows to the user. This is not a pass. |
 | \`1\` | \`DEPLOYMENT_BLOCKED\` with another \`error\` and \`failure: null\` | The gate could not explore the site (server down, page would not load, browser runner not built). | Fix the environment named in \`error.message\`, then re-run. This is not a pass. |
 | \`2\` | \`DEPLOYMENT_BLOCKED\` | Invalid arguments or URL. | Correct the command (absolute \`http://\` or \`https://\` URL) and re-run. |
 
@@ -270,7 +289,7 @@ that does not change the app). Say that you skipped it and why.
   "summary": "Defect intercepted: HTTP 500 on POST /api/checkout after 3 actions across 2 screens.",
   "elements_explored": 20,
   "actions_taken": 3,
-  "stop_reason": null,               // "exhausted" | "max_actions" | "timeout" | null; only "exhausted" passes
+  "stop_reason": null,               // "exhausted" | "max_actions" | "timeout" | "screen_limit" | "skipped_commit_controls" | null; only "exhausted" passes
   "screens_visited": [{"url": "...", "path": "/checkout", "title": "Checkout", "elements": 11, "forms": 1}],
   "failure": {                       // null when the gate passed or could not run
     "kind": "http_error" | "request_failed" | "page_error" | "console_error",

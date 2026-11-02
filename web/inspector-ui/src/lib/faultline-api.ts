@@ -294,10 +294,14 @@ export interface CrawlTelemetry {
   duration_ms?: number | null;
   /**
    * Why the crawler stopped a crawl that found nothing: "exhausted" (no untried control or
-   * unvisited screen left), "max_actions", or "timeout". Null for a failure, an error, or an
-   * engine that predates it. Only "exhausted" lets the gate pass.
+   * unvisited screen left), "max_actions", "timeout", "screen_limit" (screens left unvisited at
+   * the screen cap), or "skipped_commit_controls" (commit controls left unclicked on a non-local
+   * origin). Null for a failure, an error, or an engine that predates it. Only "exhausted" lets
+   * the gate pass.
    */
   stop_reason?: string | null;
+  /** Commit controls the crawler left unclicked because commit actions were not allowed. */
+  commit_controls_skipped?: number;
   error?: string | null;
 }
 

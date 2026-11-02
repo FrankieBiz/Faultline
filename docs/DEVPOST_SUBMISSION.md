@@ -31,9 +31,9 @@ Three live trials on one scenario are a small sample, not a reliability rate, an
 
 ## Inspiration
 
-As autonomous coding agents (Claude Code, Cursor, Codex) increasingly generate and deploy code independently, we encountered a dangerous and recurring failure pattern: when an agent is tasked with fixing a bug or shipping a feature, it frequently "solves" the issue by making the error symptom vanish—such as returning an HTTP 200 or 201 with empty or mock data—while silently breaking underlying business contracts. Standard test suites stay green, the pull request merges, and customer checkouts fail in production.
+A symptom check is not a repair check. We authored six plausible but wrong repairs for one seeded checkout defect. A "does the request now return 201" check accepted five of the six. FaultLine's 27 business checks rejected all six and accepted both correct repairs ([evaluation](https://github.com/FrankieBiz/Faultline/blob/main/docs/EVALUATION.md#what-verification-catches)). That is a measured property of an authored corpus, not a production defect rate. No firsthand incident has been written yet ([IMPACT_EVIDENCE.md](IMPACT_EVIDENCE.md)), so this section rests on that measurement alone.
 
-We built FaultLine to serve as an autonomous immune system for web applications: a headless browser that crawls running web previews, intercepts unhandled regressions before deployment, provides deterministic reproduction trails directly to coding agents, prompts Meta's Llama models for schema-bound diffs under strict containment, and verifies candidate code against independent business oracles inside a kernel-isolated sandbox.
+Coding agents (Claude Code, Cursor, Codex) now write and ship fixes, and the same gap applies to them: a patch can make the 500 vanish while it breaks pricing, validation, or order storage, and the tests still pass. We built FaultLine around that gap. A headless browser crawls a running preview and stops at the first unhandled failure with a reproduction trail. Meta's `muse-spark-1.3` proposes a schema-bound source patch. Independently authored browser and business checks then decide whether the candidate is correct, while a kernel-limited sandbox confines it.
 
 ## The problem
 
@@ -50,7 +50,7 @@ FaultLine makes that repair claim inspectable. The checkout defect is deliberate
 5. **Retry with findings:** if a gate rejects the first proposal, the model receives the failing checks with expected and observed values, or the exact policy error, for one more attempt.
 6. **Record:** screenshots, traces, logs, reports, and a checksummed evidence bundle that `tools/verify_bundle.py` re-checks offline. The digest is a checksum, not a signature. A verified candidate is not a production deployment. In the local Inspector, "Apply" writes a verified fix only to the bundled demo store; project repairs stay in the sandbox.
 
-Separately, `faultline gate URL --json` runs the deterministic Playwright crawler (heuristics, not a model) against a running preview and returns one verdict for coding agents and CI. Exit 1 blocks a defect, with a reproduction trail and a fix prompt, and also blocks a crawl that ran out of actions or time before it finished. Exit 0 means exploration finished with no defect in the flows the crawler reached. It is a bounded smoke signal, not proof of business correctness or complete coverage.
+Separately, `faultline gate URL --json` runs the deterministic Playwright crawler (heuristics, not a model) against a running preview and returns one verdict for coding agents and CI. Exit 1 blocks a defect, with a reproduction trail and a fix prompt, and also blocks a crawl that ran out of actions, time, or screens before it finished, or that skipped commit controls it may not click on a hosted preview. Exit 0 means exploration finished with no defect in the flows the crawler reached. It is a bounded smoke signal, not proof of business correctness or complete coverage.
 
 ## How Meta's model is used
 

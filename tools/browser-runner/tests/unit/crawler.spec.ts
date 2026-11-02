@@ -8,9 +8,11 @@ import {
   displayPath,
   formatCrawlEvent,
   formatReproductionTrail,
+  isCommitControl,
   isFailureResponse,
   isLocalHost,
   labelOf,
+  MAX_SCREENS,
   normalizeUrl,
   primarySignal,
   runAutonomousCrawler,
@@ -40,6 +42,7 @@ function clickable(overrides: Partial<ClickableInfo>): ClickableInfo {
     visible: true,
     inChrome: false,
     submit: false,
+    postForm: false,
     ...overrides,
   };
 }
@@ -65,6 +68,7 @@ function field(overrides: Partial<FieldInfo>): FieldInfo {
     firstOption: "",
     formHasNoRequired: false,
     groupChecked: false,
+    postForm: false,
     ...overrides,
   };
 }
@@ -142,6 +146,46 @@ test.describe("crawler heuristics", () => {
     expect(scoreClickable(pay, { origin, visited, allowCommit: true })).toBe(30);
     expect(scoreClickable(clickable({ tag: "a", text: "Pay", href: "http://127.0.0.1:3000/pay" }), { origin: "http://127.0.0.1:3000", visited })).toBe(30);
     expect(scoreClickable(clickable({ tag: "a", text: "Trail Mug", href: `${origin}/product/trail-mug` }), { origin, visited })).toBe(30);
+  });
+
+  test("refuses the wider commit vocabulary on an external origin", () => {
+    const origin = "https://shop.example.com";
+    const visited = new Set<string>();
+    for (const text of ["Place your order", "Order now", "Book", "Book now", "Reserve a table", "Donate", "Subscribe", "Transfer funds", "Publish", "Post comment"]) {
+      expect(scoreClickable(clickable({ text }), { origin, visited }), text).toBeNull();
+      expect(scoreClickable(clickable({ text }), { origin, visited, allowCommit: true }), text).toBe(50);
+    }
+    // Whole words only: a "Books" category or "Blog posts" link is ordinary content.
+    expect(scoreClickable(clickable({ tag: "a", text: "Books", href: `${origin}/books` }), { origin, visited })).toBe(30);
+    expect(scoreClickable(clickable({ tag: "a", text: "Blog posts", href: `${origin}/blog` }), { origin, visited })).toBe(30);
+  });
+
+  test("never clicks submit controls or POST-form buttons on an external origin", () => {
+    const origin = "https://shop.example.com";
+    const visited = new Set<string>();
+    // A bare <input type=submit> has no name for the commit labels to match.
+    const bareSubmit = clickable({ tag: "input", type: "submit", submit: true });
+    const unlabeledSubmit = clickable({ text: "Go", type: "submit", submit: true });
+    const postButton = clickable({ text: "Continue", type: "button", postForm: true });
+    const postRoleButton = clickable({ tag: "div", role: "button", text: "Next", postForm: true });
+    for (const control of [bareSubmit, unlabeledSubmit, postButton, postRoleButton]) {
+      expect(isCommitControl(control), JSON.stringify(control)).toBe(true);
+      expect(scoreClickable(control, { origin, visited }), JSON.stringify(control)).toBeNull();
+      expect(scoreClickable(control, { origin, visited, allowCommit: true }), JSON.stringify(control)).not.toBeNull();
+      expect(scoreClickable(control, { origin: "http://127.0.0.1:3000", visited }), JSON.stringify(control)).not.toBeNull();
+    }
+    // Plain buttons and links, even inside a POST form, are not submit controls.
+    expect(isCommitControl(clickable({ text: "Add to cart" }))).toBe(false);
+    expect(isCommitControl(clickable({ tag: "a", text: "Terms", href: `${origin}/terms`, postForm: true }))).toBe(false);
+  });
+
+  test("leaves POST-form fields empty unless commit actions are allowed", () => {
+    const comment = field({ tag: "textarea", type: "textarea", name: "comment", required: true, postForm: true });
+    expect(shouldFill(comment, false)).toBe(false);
+    expect(shouldFill(comment, true)).toBe(true);
+    expect(shouldFill(comment)).toBe(true);
+    // A GET form (search, filters) is still filled.
+    expect(shouldFill(field({ name: "q", required: true }), false)).toBe(true);
   });
 
   test("labels symbol-only controls by their accessible name", () => {
@@ -311,6 +355,11 @@ class FixtureShop {
     const json = (status: number, value: unknown) => {
       response.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(value));
     };
+    const product = /^\/p\/(\d+)$/.exec(url.pathname);
+    if (request.method === "GET" && product) {
+      const n = Number(product[1]);
+      return html(200, `<title>Product ${n}</title><p>Product ${n}</p>${n === 35 ? "<script>throw new Error('product 35 is broken')</script>" : ""}`);
+    }
     switch (`${request.method} ${url.pathname}`) {
       case "GET /":
         return html(200, this.page("Home", `<h1>Shop</h1><a href="/product/widget">Widget</a>`));
@@ -390,6 +439,24 @@ class FixtureShop {
              });
            </script>`,
         );
+      case "GET /shelf":
+        return html(200, `<title>Shelf</title><a href="/catalog">Catalog</a>`);
+      case "GET /catalog":
+        return html(200, `<title>Catalog</title>${Array.from({ length: 40 }, (_, i) => `<a href="/p/${i + 1}">Product ${i + 1}</a>`).join(" ")}`);
+      case "GET /community":
+        return html(
+          200,
+          `<title>Community</title><main>
+             <form method="post" action="/comments"><label for="comment">Comment</label><textarea id="comment" name="comment" required></textarea><input type="submit"></form>
+             <button onclick="fetch('/orders',{method:'POST'})">Order now</button>
+             <button onclick="fetch('/donate',{method:'POST'})">Donate</button>
+           </main><footer><a href="/hub/about">About us</a></footer>`,
+        );
+      case "POST /comments":
+        return html(200, `<title>Thanks</title><p>Comment posted: ${body}</p>`);
+      case "POST /orders":
+      case "POST /donate":
+        return json(200, { ok: true });
       case "POST /api/order":
         this.orders.push(JSON.parse(body || "{}") as Record<string, string>);
         return json(500, { detail: "KeyError: 'speed'" });
@@ -489,6 +556,8 @@ test.describe("runAutonomousCrawler in Chromium", () => {
       expect(report.breadcrumbs.map(({ label }) => label)).not.toContain("Place order");
       expect(shop.hits).toContain("GET /checkout");
       expect(shop.hits).not.toContain("POST /api/checkout");
+      // Skipping Place order means exploration did not finish, so the gate cannot pass it.
+      expect(report).toMatchObject({ stop_reason: "skipped_commit_controls", commit_controls_skipped: 1 });
 
       shop.hits.length = 0;
       const allowed = await runAutonomousCrawler({ url, browser: external, allowCommitActions: true });
@@ -497,6 +566,37 @@ test.describe("runAutonomousCrawler in Chromium", () => {
     } finally {
       await external.close();
     }
+  });
+
+  test("sends no POST from an external origin and reports the skipped commit controls", async () => {
+    const external = await chromium.launch({ headless: true, args: ["--host-resolver-rules=MAP shop.example.com 127.0.0.1"] });
+    try {
+      const url = `${shop.origin.replace("127.0.0.1", "shop.example.com")}/community`;
+      const report = await runAutonomousCrawler({ url, browser: external });
+      expect(shop.hits.filter((hit) => hit.startsWith("POST "))).toEqual([]);
+      expect(report.breadcrumbs.map(({ label }) => label)).not.toContain("Comment");
+      // The rest of the site is still explored.
+      expect(shop.hits).toContain("GET /hub/about");
+      // The bare submit, Order now, and Donate.
+      expect(report).toMatchObject({ status: "clean", stop_reason: "skipped_commit_controls", commit_controls_skipped: 3 });
+    } finally {
+      await external.close();
+    }
+
+    // The same page on a disposable origin is explored completely.
+    shop.hits.length = 0;
+    const local = await runAutonomousCrawler({ url: `${shop.origin}/community`, browser });
+    expect(local).toMatchObject({ status: "clean", stop_reason: "exhausted", commit_controls_skipped: 0 });
+    expect(shop.hits).toEqual(expect.arrayContaining(["POST /comments", "POST /orders", "POST /donate"]));
+  });
+
+  test("reports screen_limit, not exhausted, when the screen cap leaves linked screens unvisited", async () => {
+    test.setTimeout(90_000);
+    const report = await runAutonomousCrawler({ url: `${shop.origin}/shelf`, browser, timeoutMs: 80_000 });
+    expect(report).toMatchObject({ status: "clean", stop_reason: "screen_limit" });
+    expect(report.screens_visited).toHaveLength(MAX_SCREENS);
+    // The broken product page was never reached, so the crawl must not read as complete.
+    expect(report.pages_visited).not.toContain(`${shop.origin}/p/35`);
   });
 
   test("clicks script-driven product cards through to the checkout failure", async () => {

@@ -26,7 +26,7 @@ Updated November 1, 2026 (America/New_York). See [QUALITY_REVIEW.md](QUALITY_REV
 - Safe setup/start/reconciliation/rehearsal scripts and GitHub verification workflow.
 
 Current recorded verification (November 1, 2026):
-- `make check` passed with 345 backend/script tests, 942 orchestrator/CLI tests, and 127 runner unit tests (**1,414 tests total**; 2 native Windows demo tests skipped on Linux), plus Ruff lint and format checks, strict mypy across 94 source files (0 errors), Next.js frontend builds, and fixture and corpus provenance.
+- `make check` passed with 345 backend/script tests, 1,008 orchestrator/CLI tests, and 132 runner unit tests (**1,485 tests total**; 2 native Windows demo tests skipped on Linux), plus Ruff lint and format checks, strict mypy across 94 source files (0 errors), Next.js frontend builds, and fixture and corpus provenance.
 - `make browser` passed with 43 Inspector and 2 storefront browser tests (**45 browser tests total**).
 - 14 required Linux isolation tests under `FAULTLINE_REQUIRE_ISOLATED_TESTS=1` passed.
 
@@ -35,7 +35,7 @@ Recorded Meta Model API evidence:
 - October 28, 2026 [retained-replay review](evidence/2026-10-28-meta-replay-review.md) verified a step-by-step controller-recorded `muse-spark-1.3` repair (13.0 s end to end, 44/44 assertions passed).
 
 Independent Multi-Model Evaluation Panel (November 1, 2026):
-- Multi-model evaluation conducted across DeepSeek-V4.1 (Judge & SRE personas), Llama 3.2 (Systems Auditor), Claude Opus 5.5 (UX & Product Judge), and Codex GPT-6.1 (Systems & Security Architect), documented in [EVALUATION_REPORT_MULTI_MODEL.md](EVALUATION_REPORT_MULTI_MODEL.md). Consensus score: **77.6 / 100** (with near-term trajectory of 80+).
+- Multi-model evaluation conducted across DeepSeek-V4.1 (Judge & SRE personas), Llama 3.2 (Systems Auditor), Claude Opus 5.5 (UX & Product Judge), and Codex GPT-6.1 (Systems & Security Architect), documented in [EVALUATION_REPORT_MULTI_MODEL.md](EVALUATION_REPORT_MULTI_MODEL.md). Its scores are self-assessments by models we prompted, not an external judging score, so none is quoted here.
 
 ## Access and remaining work
 

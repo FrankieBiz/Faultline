@@ -6,13 +6,18 @@
  * with realistic sample values, and clicks through same-origin controls in a
  * shopping-funnel order (content links and product cards, add-to-cart,
  * checkout, commit buttons), skipping destructive controls such as Remove or
- * Log out. Commit buttons (Place order, Pay, Submit) are clicked only on
- * disposable origins (localhost, loopback, or a private network address)
- * unless `allowCommitActions` is set, so a crawl of a real site cannot place
- * an order or submit a payment. When a screen has nothing left to try, it moves on to the most
+ * Log out. Commit controls are clicked only on disposable origins (localhost,
+ * loopback, or a private network address) unless `allowCommitActions` is set.
+ * Elsewhere the crawler never clicks a submit control or a button in a POST
+ * form, never fills a POST form, and never clicks a control named like a
+ * commit (Place order, Pay, Book, Donate, Subscribe, Publish, ...). Those
+ * labels are a denylist, so a script-driven control with an unrecognized
+ * name can still fire; a crawl that skipped any commit control ends with
+ * `skipped_commit_controls` rather than `exhausted`, so the gate does not
+ * pass it. When a screen has nothing left to try, it moves on to the most
  * promising same-origin screen it has seen linked but not yet visited (cart
- * and checkout first). After every action it waits for the page to settle and
- * checks for:
+ * and checkout first), up to {@link MAX_SCREENS} screens. After every action
+ * it waits for the page to settle and checks for:
  *
  * - HTTP 5xx responses, and 400/422 from fetch/XHR or documents;
  * - uncaught page errors (including unhandled promise rejections);
@@ -22,8 +27,8 @@
  * The first action that triggers any of these halts the crawl with a report
  * naming the failure, the breadcrumb trail that reproduces it, and the same
  * trail as numbered plain-language steps (`reproduction_trail`). Otherwise
- * the crawl stops cleanly after `maxActions`, the time budget, or when no
- * unexplored control is left.
+ * the crawl stops cleanly after `maxActions`, the time budget, the screen
+ * limit, or when no unexplored control is left.
  */
 
 import { performance } from "node:perf_hooks";
@@ -35,7 +40,7 @@ export const MAX_CRAWL_ACTIONS = 100;
 export const DEFAULT_CRAWL_TIMEOUT_MS = 60_000;
 export const MAX_CRAWL_TIMEOUT_MS = 300_000;
 /** Screens the crawler will jump to from its frontier; bounds sprawling sites. */
-const MAX_SCREENS = 30;
+export const MAX_SCREENS = 30;
 /** Bound on one click or fill. */
 const ACTION_TIMEOUT_MS = 3_000;
 /** The page counts as settled once no request has been in flight for this long. */
@@ -98,7 +103,13 @@ export interface CrawlFailure extends CrawlSignal {
   related: CrawlSignal[];
 }
 
-export type StopReason = "max_actions" | "timeout" | "exhausted";
+/**
+ * Why a clean crawl stopped. Only `exhausted` means every reachable control
+ * and linked screen was explored: `screen_limit` left linked screens unvisited
+ * at {@link MAX_SCREENS}, and `skipped_commit_controls` left commit controls
+ * unclicked on a non-disposable origin.
+ */
+export type StopReason = "max_actions" | "timeout" | "exhausted" | "screen_limit" | "skipped_commit_controls";
 
 /** One distinct screen (URL) the crawler explored. */
 export interface ScreenVisit {
@@ -123,6 +134,8 @@ interface CrawlSummary {
   pages_visited: string[];
   /** Every screen scanned, in the order first reached. */
   screens_visited: ScreenVisit[];
+  /** Distinct commit controls left unclicked because commit actions were not allowed. */
+  commit_controls_skipped: number;
   duration_ms: number;
 }
 
@@ -214,6 +227,8 @@ export interface ClickableInfo {
   /** Inside header, nav, or footer: global chrome explored after content. */
   inChrome: boolean;
   submit: boolean;
+  /** Inside a form whose method is POST. */
+  postForm: boolean;
 }
 
 /** What the page reports about one form field. */
@@ -240,10 +255,13 @@ export interface FieldInfo {
   formHasNoRequired: boolean;
   /** For radios, whether any radio in the same group is already checked. */
   groupChecked: boolean;
+  /** Belongs to a form whose method is POST. */
+  postForm: boolean;
 }
 
 const DESTRUCTIVE = /\b(log ?out|sign ?out|delete|remove|clear|cancel|reset|unsubscribe|deactivate|empty cart)\b/i;
-const COMMIT = /\b(place order|pay|purchase|complete|confirm|submit|buy now|finish|sign up|register|create account|send|save)\b/i;
+const COMMIT =
+  /\b(place (your )?order|order now|pay|purchase|complete|confirm|submit|buy now|book( now)?|reserve|donate|subscribe|transfer|publish|post|finish|sign up|register|create account|send|save)\b/i;
 const CHECKOUT = /\b(check ?out|proceed|continue|next)\b/i;
 const ADD = /\b(add to (cart|bag|basket)|add)\b/i;
 const CART_PATH = /\/(checkout|cart|basket|bag)\b/i;
@@ -306,9 +324,9 @@ export function labelOf(info: Pick<ClickableInfo, "text" | "ariaLabel" | "value"
  * checkout steps, which beat unexplored content links (a product page), which
  * beat add-to-cart, which beats other buttons. Header, nav, and footer
  * elements are demoted so page content is explored before global chrome.
- * Commit-named controls, links included, are never clicked unless
- * `allowCommit` is true, which defaults to whether `origin` is disposable
- * (see {@link isLocalHost}).
+ * Commit controls (see {@link isCommitControl}), links included, are never
+ * clicked unless `allowCommit` is true, which defaults to whether `origin` is
+ * disposable (see {@link isLocalHost}).
  */
 export function scoreClickable(
   info: ClickableInfo,
@@ -319,7 +337,7 @@ export function scoreClickable(
   if (DESTRUCTIVE.test(name)) return null;
   // Checked before the link branch so a link labeled "Pay" is held to the same bound as a button.
   const commit = COMMIT.test(name);
-  if (commit && !(context.allowCommit ?? isLocalHost(new URL(context.origin).hostname))) return null;
+  if (isCommitControl(info) && !(context.allowCommit ?? isLocalHost(new URL(context.origin).hostname))) return null;
 
   let score: number;
   // Anchors and `data-href` cards navigate; judge them by their destination.
@@ -347,6 +365,17 @@ export function scoreClickable(
     score = info.submit ? 20 : 10;
   }
   return info.inChrome ? score - 35 : score;
+}
+
+/**
+ * Whether clicking the element can commit something on the server: a submit
+ * control (`type=submit`, or a button that submits its form), a button in a
+ * POST form, or a control named like a commit (Place order, Pay, Book, ...).
+ */
+export function isCommitControl(info: Pick<ClickableInfo, "tag" | "type" | "role" | "text" | "ariaLabel" | "value" | "submit" | "postForm">): boolean {
+  if (info.submit || info.type === "submit") return true;
+  if (info.postForm && (info.tag === "button" || info.tag === "input" || info.role === "button")) return true;
+  return COMMIT.test(`${info.text} ${info.ariaLabel} ${info.value}`.replace(/\s+/g, " ").trim());
 }
 
 /** Values for standard `autocomplete` tokens, which name a field exactly. */
@@ -468,9 +497,13 @@ export function sampleValueFor(field: Pick<FieldInfo, "tag" | "type" | "id" | "n
 
 const UNFILLABLE_TYPES = new Set(["hidden", "submit", "button", "reset", "image", "file"]);
 
-/** Whether the crawler should fill this field before clicking on. */
-export function shouldFill(field: FieldInfo): boolean {
+/**
+ * Whether the crawler should fill this field before clicking on. Fields of a
+ * POST form stay empty unless `allowCommit` is true (see {@link scoreClickable}).
+ */
+export function shouldFill(field: FieldInfo, allowCommit = true): boolean {
   if (field.disabled || field.readOnly || !field.visible) return false;
+  if (field.postForm && !allowCommit) return false;
   if (UNFILLABLE_TYPES.has(field.type)) return false;
   if (field.type === "checkbox") return field.required && !field.checked;
   // One choice per required radio group: the first radio of an unanswered group.
@@ -719,6 +752,7 @@ async function discover(page: Page): Promise<Discovery> {
         submit:
           (tag === "button" && (button.type === "submit") && button.form !== null) ||
           (tag === "input" && input.type === "submit"),
+        postForm: (el.closest("form")?.method ?? "").toLowerCase() === "post",
       };
     }),
   );
@@ -758,6 +792,7 @@ async function discover(page: Page): Promise<Discovery> {
         firstOption,
         formHasNoRequired: (form ?? document).querySelector("[required]") === null,
         groupChecked: radio ? group.some((other) => other.checked) : false,
+        postForm: (form?.method ?? "").toLowerCase() === "post",
       };
     }),
   );
@@ -858,6 +893,8 @@ export async function runAutonomousCrawler(options: CrawlOptions): Promise<Crawl
   const screens = new Map<string, ScreenVisit>();
   /** Same-origin screens linked from explored ones, by best link score. */
   const frontier = new Map<string, number>();
+  /** Commit controls the guard kept the crawler from clicking, by identity. */
+  const skippedCommits = new Set<string>();
   let actionsTaken = 0;
 
   const summary = (): CrawlSummary => ({
@@ -867,6 +904,7 @@ export async function runAutonomousCrawler(options: CrawlOptions): Promise<Crawl
     actions_taken: actionsTaken,
     pages_visited: [...visited],
     screens_visited: [...screens.values()],
+    commit_controls_skipped: skippedCommits.size,
     duration_ms: Math.round(performance.now() - startedAt),
   });
   const finish = (body: ReportBody): CrawlReport => {
@@ -985,7 +1023,7 @@ export async function runAutonomousCrawler(options: CrawlOptions): Promise<Crawl
           });
         }
 
-        const field = fields.find((candidate) => shouldFill(candidate) && !tried.has(`${pageUrl}|field|${candidate.index}|${fieldLabel(candidate)}`));
+        const field = fields.find((candidate) => shouldFill(candidate, allowCommit) && !tried.has(`${pageUrl}|field|${candidate.index}|${fieldLabel(candidate)}`));
         if (field) {
           const key = `${pageUrl}|field|${field.index}|${fieldLabel(field)}`;
           tried.add(key);
@@ -1016,8 +1054,12 @@ export async function runAutonomousCrawler(options: CrawlOptions): Promise<Crawl
           continue;
         }
 
-        const ranked = clickables
-          .map((info) => ({ info, key: identity(info), score: scoreClickable(info, { origin: start.origin, visited, allowCommit }) }))
+        const scored = clickables.map((info) => ({ info, key: identity(info), score: scoreClickable(info, { origin: start.origin, visited, allowCommit }) }));
+        for (const { info, key, score } of scored) {
+          // Explorable but for the commit guard: exploration cannot be called complete.
+          if (score === null && !allowCommit && scoreClickable(info, { origin: start.origin, visited, allowCommit: true }) !== null) skippedCommits.add(key);
+        }
+        const ranked = scored
           .filter((entry): entry is { info: ClickableInfo; key: string; score: number } => entry.score !== null && !tried.has(entry.key))
           .sort((a, b) => b.score - a.score || a.info.index - b.info.index);
         const next = ranked[0];
@@ -1033,7 +1075,9 @@ export async function runAutonomousCrawler(options: CrawlOptions): Promise<Crawl
             continue;
           }
           if (returnedHome || pageUrl === normalizeUrl(start.toString())) {
-            return finish({ status: "clean", ...summary(), stop_reason: "exhausted" });
+            // A remaining jump means the screen limit, not exploration, ended the crawl.
+            const stop_reason: StopReason = jump ? "screen_limit" : skippedCommits.size > 0 ? "skipped_commit_controls" : "exhausted";
+            return finish({ status: "clean", ...summary(), stop_reason });
           }
           // Nothing left here; look for unexplored controls from the start page.
           returnedHome = true;

@@ -77,7 +77,12 @@ const pathOf = (url: string) => {
   }
 };
 
-const STOPPED_BY: Record<string, string> = { max_actions: "its action budget", timeout: "its time limit" };
+const STOPPED_BY: Record<string, string> = {
+  max_actions: "its action budget",
+  timeout: "its time limit",
+  screen_limit: "its screen limit",
+  skipped_commit_controls: "commit controls it may not click on this origin",
+};
 
 /** Why a crawl that found nothing is still not a clean result. */
 function incompleteNote(telemetry: CrawlTelemetry | null): string {
