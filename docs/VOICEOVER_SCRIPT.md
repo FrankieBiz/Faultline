@@ -20,7 +20,7 @@ Every figure spoken below comes from a committed record. Re-check this table bef
 | "44 independent checks, 27 of them business rules, on the first attempt" | Same job: one attempt; verification report = 16 checkout + 1 confirmation + 27 regression assertions, all passed. The checks run outside the sandbox, against the sandboxed build. |
 | "512 megabytes of RAM, 64 tasks, and one CPU" | cgroup v2 limits read back from the kernel ([submission](DEVPOST_SUBMISSION.md), [Inspector audit](audits/INSPECTOR_PERFECTION_AUDIT.md#confirmed-correct-no-change)) |
 | "accepts five of six plausible wrong repairs … reject all six" | Authored gauntlet ([evaluation](EVALUATION.md#what-verification-catches)); deterministic fallback and DeepSeek runs, not Meta |
-| "All 2,057 project tests pass" | Commit `8518f73`, November 3, 2026: `make check` 1,926 (1,464 orchestrator/CLI, 328 backend/root, 134 runner unit), `make browser` 54 (52 Inspector, 2 storefront), and `make integration` 77 isolated tests with skips disallowed. Strict mypy reports zero errors across 105 source files ([submission](DEVPOST_SUBMISSION.md#evidence-at-a-glance)). Say "project tests", not "CI": hosted Verify is not yet green. |
+| "All 2,115 project tests pass" | Commit `e6428ef`, November 3, 2026: `make check` 1,984 (1,510 orchestrator/CLI, 340 backend/root, 134 runner unit), `make browser` 54 (52 Inspector, 2 storefront), and `make integration` 77 isolated tests with skips disallowed. Strict mypy reports zero errors across 105 source files ([submission](DEVPOST_SUBMISSION.md#evidence-at-a-glance)). |
 | "Apply Verified Fix writes it to the demo store only; live checkout now returns HTTP 201" | Pre-film verification record of November 1, 2026: apply left the store `patched` and the live checkout returned 201; revert returned the store to `seeded` ([record](evidence/2026-11-01-prefilm-verification.json)). Apply delivers only the bundled demo store's fix. Project runs never change the user's source. |
 | "On ten unfamiliar holdout defects … eighteen of twenty runs … rejected both wrong patches" | Holdout suite, two trials with DeepSeek `deepseek-v4-pro`, **not Meta** ([evaluation](EVALUATION.md#unfamiliar-defects), [record](evidence/2026-10-28-evaluation-deepseek-v4-pro.json)). Always say "non-Meta model"; Meta has not been run on the holdout. |
 | "a live pulse marks the candidate being verified … the event log auto-scrolls" | Inspector badge "Sandbox verification in progress · Candidate N of up to M" and the event log's "Following live output" lock, added in `1f27e8c` (November 3, 2026). **The November 1 footage predates them:** re-record the Inspector segment on `1f27e8c` or later and update its caption date before using this line. |
@@ -73,7 +73,7 @@ The Inspector segment is a local deterministic-fallback run, not a Meta trial, a
 - **Voiceover Narration (speak from 1:28 to 2:05):**
   > "In our local developer studio, a live pulse marks the candidate being verified, and the event log auto-scrolls to follow every stage. The candidate executes inside Linux Bubblewrap namespaces under aggregate cgroup v2 limits—512 megabytes of RAM, 64 tasks, and one CPU, verified from the kernel with adversarial OOM-kill probes.
   >
-  > The sandbox confines the candidate; independent business oracles decide if it's correct. 44 assertions verify the fix, an offline checksummed evidence bundle is generated, and all 2,057 project tests pass."
+  > The sandbox confines the candidate; independent business oracles decide if it's correct. 44 assertions verify the fix, an offline checksummed evidence bundle is generated, and all 2,115 project tests pass."
 
 ---
 
@@ -142,7 +142,7 @@ The Inspector segment is a local deterministic-fallback run, not a Meta trial, a
 - **Voiceover Narration (speak from 1:03 to 1:40):**
   > "In our local developer studio, a live pulse marks the candidate being verified, and the event log auto-scrolls to follow every stage. The candidate executes inside Linux Bubblewrap namespaces under aggregate cgroup v2 limits—512 megabytes of RAM, 64 tasks, and one CPU, verified from the kernel with adversarial OOM-kill probes.
   >
-  > The sandbox confines the candidate; independent business oracles decide if it's correct. 44 assertions verify the fix, an offline checksummed evidence bundle is generated, and all 2,057 project tests pass."
+  > The sandbox confines the candidate; independent business oracles decide if it's correct. 44 assertions verify the fix, an offline checksummed evidence bundle is generated, and all 2,115 project tests pass."
 
 ---
 
