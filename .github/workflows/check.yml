@@ -29,6 +29,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y bubblewrap
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 2>/dev/null || true
+          sudo apparmor_parser -R /etc/apparmor.d/bwrap 2>/dev/null || true
+          sudo aa-complain /usr/bin/bwrap 2>/dev/null || true
           test -f /sys/fs/cgroup/cgroup.controllers
           command -v systemd-run
       - run: npm --prefix apps/buggyshop-frontend ci

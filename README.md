@@ -2,7 +2,7 @@
 
 [![Meta Global AI Hackathon](https://img.shields.io/badge/Meta_Global_AI_Hackathon-2026-0668E1?style=flat-square&logo=meta&logoColor=white)](https://dev.meta.ai/events/global-hackathon)
 [![Live Showcase](https://img.shields.io/badge/Live_Showcase-frankiebiz.github.io%2FFaultline-success?style=flat-square&logo=githubpages&logoColor=white)](https://frankiebiz.github.io/Faultline/)
-[![Automated Tests](https://img.shields.io/badge/tests-1%2C938%20passing-brightgreen?style=flat-square)](https://github.com/FrankieBiz/Faultline/actions)
+[![Automated Tests](https://img.shields.io/badge/tests-1%2C984%20passing-brightgreen?style=flat-square)](https://github.com/FrankieBiz/Faultline/actions)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.13-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![Node.js](https://img.shields.io/badge/node-24%2B-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org/)
