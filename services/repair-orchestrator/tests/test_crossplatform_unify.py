@@ -14,6 +14,7 @@ reason codes and messages each platform reports, so the suite runs on every host
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import shutil
 import socket
@@ -24,6 +25,7 @@ from typing import Any
 from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
 
+import httpx
 import pytest
 
 import app.portable as portable
@@ -284,3 +286,139 @@ async def test_adapter_failures_collapse_into_a_single_reason_envelope(
     windows.pwsh = None
     with pytest.raises(RuntimeUnavailable, match="powershell_unavailable"):
         windows._sandbox(tmp_path)
+
+
+# -- BoundedTCPTransport connect/disconnect teardown ----------------------------
+
+
+@pytest.mark.asyncio
+async def test_bounded_tcp_transport_rapid_connect_disconnect() -> None:
+    """Many short-lived transports connect, exchange one response, and close cleanly."""
+
+    async def handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        try:
+            await reader.readuntil(b"\r\n\r\n")
+            body = b'{"status": "ok"}'
+            writer.write(
+                b"HTTP/1.1 200 OK\r\n"
+                b"Content-Type: application/json\r\n"
+                b"Content-Length: " + str(len(body)).encode() + b"\r\n"
+                b"Connection: close\r\n\r\n" + body
+            )
+            await writer.drain()
+        finally:
+            writer.close()
+            await writer.wait_closed()
+
+    server = await asyncio.start_server(handler, "127.0.0.1", 0)
+    port = int(server.sockets[0].getsockname()[1])
+    try:
+        for _ in range(25):
+            transport = BoundedTCPTransport(str(port))
+            response = await transport.handle_async_request(
+                httpx.Request("GET", f"http://127.0.0.1:{port}/healthz")
+            )
+            assert response.status_code == 200
+            assert response.json() == {"status": "ok"}
+            await transport.aclose()
+            await transport.aclose()  # idempotent teardown
+    finally:
+        server.close()
+        await server.wait_closed()
+
+
+@pytest.mark.asyncio
+async def test_bounded_tcp_transport_teardown_after_connection_refused() -> None:
+    """A socket error still leaves the transport closable, idempotently."""
+    probe = socket.socket()
+    probe.bind(("127.0.0.1", 0))
+    port = int(probe.getsockname()[1])
+    probe.close()  # nothing listens here, so the dial is refused immediately
+
+    transport = BoundedTCPTransport(str(port))
+    with pytest.raises(httpx.HTTPError):
+        await transport.handle_async_request(httpx.Request("GET", f"http://127.0.0.1:{port}/"))
+    await transport.aclose()
+    await transport.aclose()
+
+
+@pytest.mark.asyncio
+async def test_bounded_tcp_transport_teardown_after_cancellation() -> None:
+    """Cancelling a request still permits clean, idempotent transport teardown."""
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def hang(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        try:
+            await reader.read(1024)
+            started.set()
+            await release.wait()
+        finally:
+            writer.close()
+            try:
+                await writer.wait_closed()
+            except OSError:
+                pass
+
+    server = await asyncio.start_server(hang, "127.0.0.1", 0)
+    port = int(server.sockets[0].getsockname()[1])
+    transport = BoundedTCPTransport(str(port))
+    request = httpx.Request("GET", f"http://127.0.0.1:{port}/")
+    task = asyncio.create_task(transport.handle_async_request(request))
+    try:
+        await asyncio.wait_for(started.wait(), timeout=5)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        await transport.aclose()
+        await transport.aclose()
+    finally:
+        release.set()
+        server.close()
+        await server.wait_closed()
+
+
+# -- platform detection fallback ------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("platform", "expected"),
+    [
+        ("", "linux"),
+        ("cygwin", "linux"),
+        ("msys", "linux"),
+        ("win64", "windows"),
+        ("win-arm64", "windows"),
+        ("freebsd", "linux"),
+        ("sunos", "linux"),
+        ("aix", "linux"),
+        ("emscripten", "linux"),
+        ("linux2", "linux"),
+    ],
+)
+def test_detect_host_falls_back_cleanly_on_unexpected_platform(
+    monkeypatch: pytest.MonkeyPatch, platform: str, expected: str
+) -> None:
+    """Unknown ``sys.platform`` values degrade to a valid host tag, never a crash."""
+    monkeypatch.setattr(sys, "platform", platform)
+    assert portable.detect_host() in {"linux", "darwin", "windows"}
+    assert portable.detect_host() == expected
+
+
+def test_classify_host_prefers_nt_name_over_posix_platform() -> None:
+    """The interpreter's ``os.name`` wins, so a POSIX-named Windows host is caught."""
+    assert portable.classify_host("cygwin", "nt") == "windows"
+    assert portable.classify_host("msys", "nt") == "windows"
+    assert portable.classify_host("linux", "posix") == "linux"
+    assert portable.classify_host("", "") == "linux"
+
+
+def test_platform_capabilities_survive_an_unexpected_platform(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Capability reporting never raises for an unrecognized platform string."""
+    monkeypatch.setattr(sys, "platform", "freebsd")
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+    capabilities = portable.platform_capabilities()
+    assert capabilities.host == "linux"
+    assert capabilities.missing == ("bwrap", "docker")

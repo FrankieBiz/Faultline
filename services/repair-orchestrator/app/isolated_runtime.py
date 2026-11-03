@@ -289,11 +289,23 @@ def probe_verdict(
     return None if memory_enforced and tasks_enforced else "aggregate_limits_not_enforced"
 
 
+def _validated_backend_port(port: str) -> int:
+    """Reject a malformed or out-of-range loopback port before any dial occurs."""
+    try:
+        value = int(port)
+    except (TypeError, ValueError):
+        raise RuntimeUnavailable("backend_port_invalid") from None
+    if not 1 <= value <= 65535:
+        raise RuntimeUnavailable("backend_port_invalid")
+    return value
+
+
 class BoundedBackendTransport(httpx.AsyncBaseTransport):
     """Bound every untrusted backend response before HTTPX buffers or decodes it."""
 
     def __init__(self, inner: httpx.AsyncBaseTransport) -> None:
         self.inner = inner
+        self._closed = False
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         async with asyncio.timeout(3):
@@ -318,9 +330,15 @@ class BoundedBackendTransport(httpx.AsyncBaseTransport):
                 request=request,
             )
         finally:
+            # A read error, size rejection, or cancellation still closes the
+            # underlying stream so the pooled connection is released, not leaked.
             await response.aclose()
 
     async def aclose(self) -> None:
+        """Idempotently release the wrapped transport after error or cancellation."""
+        if self._closed:
+            return
+        self._closed = True
         await self.inner.aclose()
 
 
@@ -328,6 +346,8 @@ class BoundedUDSTransport(BoundedBackendTransport):
     """Bounded transport over a Unix domain socket (abstract or filesystem path)."""
 
     def __init__(self, uds: str) -> None:
+        if not uds:
+            raise RuntimeUnavailable("backend_transport_invalid")
         super().__init__(httpx.AsyncHTTPTransport(uds=uds))
 
 
@@ -335,8 +355,8 @@ class BoundedTCPTransport(BoundedBackendTransport):
     """Bounded transport over loopback TCP, used where no Unix socket exists."""
 
     def __init__(self, port: str) -> None:
+        self.port = _validated_backend_port(port)
         super().__init__(httpx.AsyncHTTPTransport())
-        self.port = int(port)
 
 
 @dataclass

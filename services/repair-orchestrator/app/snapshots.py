@@ -11,14 +11,20 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from app.policy import TARGET_FILE, PatchPolicy, PatchPolicyError
+from app.portable import normalize_relpath
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 BACKEND_APP = "apps/buggyshop-backend/app/"
 
 
 def contained_path(root: Path, relative: str) -> Path:
-    """Resolve an ordinary contained path without following symlink components."""
-    path = Path(relative)
+    """Resolve an ordinary contained path without following symlink components.
+
+    ``relative`` is normalized to forward slashes first, so a Windows-style
+    separator, drive letter, or UNC prefix is rejected identically on every host
+    instead of being treated as a literal filename on POSIX.
+    """
+    path = Path(normalize_relpath(relative))
     if path.is_absolute() or ".." in path.parts or not path.parts:
         raise ValueError("Path must be a nonempty contained relative path")
     candidate = root

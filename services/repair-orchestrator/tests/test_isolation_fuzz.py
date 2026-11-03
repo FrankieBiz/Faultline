@@ -27,13 +27,17 @@ from pydantic import ValidationError
 import app.portable as portable
 from app.isolated_runtime import (
     AggregateLimits,
+    BoundedTCPTransport,
+    BoundedUDSTransport,
     IsolatedRuntime,
     ManagedProcess,
     verify_cgroup_values,
 )
 from app.isolation.darwin import sandbox_profile
 from app.isolation.windows import windows_job_script
+from app.portable import normalize_relpath
 from app.runtime import CandidateRejected, RuntimeUnavailable
+from app.snapshots import contained_path
 from shared.contracts.models import ResourceLimits
 
 GENERATION = "0b9c8d7e-6f5a-4b3c-9d2e-1f0a9b8c7d6e"
@@ -528,3 +532,149 @@ def test_resource_limits_honest_modes_reject_missing_floor() -> None:
         }
         with pytest.raises(ValidationError):
             ResourceLimits.model_validate_json(json.dumps(record))
+
+
+# -- cross-platform path normalization -----------------------------------------
+
+
+def test_normalize_relpath_converts_backslashes_to_forward() -> None:
+    """A Windows-spelled manifest or patch path collapses to forward slashes."""
+    assert normalize_relpath("apps/buggyshop-backend/app/routes/checkout.py") == (
+        "apps/buggyshop-backend/app/routes/checkout.py"
+    )
+    assert normalize_relpath(r"apps\buggyshop-backend\app\routes\checkout.py") == (
+        "apps/buggyshop-backend/app/routes/checkout.py"
+    )
+    assert normalize_relpath(r"a\b/c") == "a/b/c"
+    assert normalize_relpath("./a/./b") == "a/b"
+    assert normalize_relpath("a//b") == "a/b"
+
+
+@pytest.mark.parametrize(
+    "relative",
+    [
+        "",
+        ".",
+        "..",
+        "../escape",
+        "a/../../etc/passwd",
+        "..\\..\\etc\\passwd",
+        "/etc/passwd",
+        "C:\\Windows\\System32",
+        "C:relative",
+        "\\\\server\\share\\file",
+        "a\x00b",
+    ],
+)
+def test_normalize_relpath_rejects_absolute_parent_and_nul(relative: str) -> None:
+    """Absolute, drive-letter, UNC, parent-traversing, and NUL paths fail closed."""
+    with pytest.raises(ValueError):
+        normalize_relpath(relative)
+
+
+def test_normalize_relpath_fuzz_never_emits_a_separator_or_escape() -> None:
+    """Every hostile spelling either fails closed or yields forward slashes only."""
+    hostile = [
+        "a\\b",
+        "a/b",
+        "a\\b/c",
+        "./x",
+        "x/./y",
+        "..\\..",
+        "C:\\x",
+        "C:x",
+        "/x",
+        "//x",
+        "x\\",
+        "\\x",
+        "a..b",
+        "..a",
+        "a..",
+        "x/..",
+        "x/../..",
+        "dir/subdir/file.py",
+        "apps\\buggyshop-backend\\app\\routes\\checkout.py",
+    ]
+    for value in hostile:
+        try:
+            result = normalize_relpath(value)
+        except ValueError:
+            continue
+        assert "\\" not in result
+        assert not result.startswith("/")
+        assert ".." not in result.split("/")
+        assert result != ""
+
+
+# -- malformed manifest / snapshot entries --------------------------------------
+
+
+def test_contained_path_normalizes_a_windows_manifest_entry(tmp_path: Path) -> None:
+    """A backslash-separated manifest entry resolves identically on every host."""
+    (tmp_path / "apps").mkdir()
+    (tmp_path / "apps" / "checkout.py").write_text("x = 1\n")
+    resolved = contained_path(tmp_path, "apps\\checkout.py")
+    assert resolved == tmp_path / "apps" / "checkout.py"
+    assert resolved.is_file()
+
+
+@pytest.mark.parametrize(
+    "relative",
+    [
+        "../escape",
+        "..\\escape",
+        "C:\\Windows\\System32",
+        "\\\\server\\share",
+        "/etc/passwd",
+        "a\x00b",
+        "a/../../b",
+    ],
+)
+def test_contained_path_rejects_malformed_manifest_entries(tmp_path: Path, relative: str) -> None:
+    """An escaping or Windows-absolute manifest entry never escapes its root."""
+    with pytest.raises(ValueError):
+        contained_path(tmp_path, relative)
+
+
+def test_artifacts_reject_an_escaping_manifest_relative_path(tmp_path: Path) -> None:
+    """A browser evidence manifest cannot smuggle a path outside its directory."""
+    runtime = IsolatedRuntime(tmp_path)
+    (tmp_path / "artifacts.json").write_text(
+        json.dumps(
+            {
+                "execution_id": "exec-1",
+                "artifacts": [
+                    {
+                        "role": "failure_screenshot",
+                        "relative_path": "..\\..\\secrets.txt",
+                        "size_bytes": 1,
+                        "sha256": "00" * 32,
+                        "content_type": "image/png",
+                    }
+                ],
+            }
+        )
+    )
+    with pytest.raises((ValueError, RuntimeUnavailable)):
+        runtime._artifacts(tmp_path, "exec-1")
+
+
+# -- bounded transport address validation ---------------------------------------
+
+
+@pytest.mark.parametrize("port", ["", "abc", "0", "-1", "65536", "1.5", "80abc"])
+def test_bounded_tcp_transport_rejects_malformed_ports(port: str) -> None:
+    """A non-integer or out-of-range loopback port fails before any dial."""
+    with pytest.raises(RuntimeUnavailable, match="backend_port_invalid"):
+        BoundedTCPTransport(port)
+
+
+def test_bounded_tcp_transport_accepts_valid_ports() -> None:
+    assert BoundedTCPTransport("1").port == 1
+    assert BoundedTCPTransport("65535").port == 65535
+    assert BoundedTCPTransport("8000").port == 8000
+
+
+def test_bounded_uds_transport_rejects_an_empty_socket_address() -> None:
+    with pytest.raises(RuntimeUnavailable, match="backend_transport_invalid"):
+        BoundedUDSTransport("")

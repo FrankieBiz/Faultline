@@ -18,6 +18,7 @@ its own containment before readiness.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import socket
 import sys
@@ -31,6 +32,49 @@ IS_MACOS = sys.platform == "darwin"
 IS_LINUX = sys.platform.startswith("linux")
 
 Host = Literal["linux", "darwin", "windows"]
+
+_DRIVE = re.compile(r"^[A-Za-z]:")
+
+
+def normalize_relpath(relative: str) -> str:
+    """Return the canonical forward-slash spelling of a contained relative path.
+
+    Manifests, candidate patches, and evidence artifacts may arrive from a
+    Windows host with ``\\`` separators, a drive-letter prefix, or a UNC share.
+    This converts ``\\`` to ``/`` and rejects anything absolute, empty,
+    parent-traversing, or NUL-bearing, so every stored path is a single
+    host-independent forward-slash spelling. The caller still owns the
+    filesystem containment check against its own root.
+    """
+    if not isinstance(relative, str) or not relative:
+        raise ValueError("Path must be a nonempty contained relative path")
+    if "\x00" in relative:
+        raise ValueError("Path contains a NUL byte")
+    normalized = relative.replace("\\", "/")
+    if normalized.startswith("/") or _DRIVE.match(normalized) is not None:
+        raise ValueError("Path must be a nonempty contained relative path")
+    parts = [part for part in normalized.split("/") if part not in ("", ".")]
+    if any(part == ".." for part in parts):
+        raise ValueError("Path must be a nonempty contained relative path")
+    if not parts:
+        raise ValueError("Path must be a nonempty contained relative path")
+    return "/".join(parts)
+
+
+def classify_host(platform: str, name: str) -> Host:
+    """Map an interpreter's platform/name pair to a canonical host tag.
+
+    Pure and re-callable so the live ``detect_host`` can feed it reassigned
+    values. Any unrecognized platform — ``cygwin``, ``msys``, ``freebsd``, an
+    empty string, or a future variant — falls back to ``linux``, whose adapter
+    fails closed with a specific reason code instead of claiming a native
+    boundary it cannot prove.
+    """
+    if name == "nt" or platform.startswith("win"):
+        return "windows"
+    if platform == "darwin":
+        return "darwin"
+    return "linux"
 
 
 def current_host() -> Host:
@@ -127,11 +171,7 @@ def detect_host() -> Host:
     ``IS_MACOS``. The CLI and tests call this instead, so a reassigned
     ``sys.platform`` (or a simulated host) is honored.
     """
-    if os.name == "nt" or sys.platform == "win32":
-        return "windows"
-    if sys.platform == "darwin":
-        return "darwin"
-    return "linux"
+    return classify_host(sys.platform, os.name)
 
 
 def _which(name: str) -> str | None:
