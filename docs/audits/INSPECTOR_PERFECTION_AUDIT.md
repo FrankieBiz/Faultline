@@ -89,10 +89,54 @@ The comment at `judge-evidence.ts:31` used to say contracts are "in the contract
 
 | Sev | Item | Why it was left |
 |---|---|---|
-| P2 | `docs/DEVPOST_SUBMISSION.md:23` and `:34` repeat two of the fixed overstatements ("refuses any non-Meta response", "five hours"). | This is submission copy that may already be on Devpost; the owner should change both places together. |
-| P3 | `docs/VOICEOVER_SCRIPT.md` links its video files as `file:///home/frankbiz/.../barnacle/...`. The links are dead for anyone else. | They are local-only artifacts; link the published cut or drop the links. |
+| ~~P2~~ | ~~`docs/DEVPOST_SUBMISSION.md:23` and `:34` repeat two of the fixed overstatements.~~ | **Resolved** in the [second-stage pass](#second-stage-pass-2026-11-03). Re-paste the changed sections into Devpost if it already has the old copy. |
+| ~~P3~~ | ~~`docs/VOICEOVER_SCRIPT.md` links its video files as `file:///home/frankbiz/.../barnacle/...`.~~ | **Resolved** in the [second-stage pass](#second-stage-pass-2026-11-03). |
 | P3 | "Copy patch" does not re-announce on a second click, because the live-region text is unchanged. | Cosmetic for screen readers; clear the text before setting it again. |
 | P3 | `aria-label` sits on generic elements: `<pre>` in `Diff` and `.defect-code`, and the holdout `/27` count span. ARIA 1.2 prohibits naming generic roles, although Chromium honors it. | Use `role="region"` with the label, or visually hidden text. |
 | P3 | At 390 px the header's five tools wrap to three rows above the hero. | A layout choice; consider collapsing CLI guide and Sound cues into a menu on narrow screens. |
 | P3 | Gaps in test coverage: NDJSON split across network chunks, `CrawlInterrupted` mid-stream, and SSE `after=` resume after a real drop. | The code reads correctly; these need a streaming mock rather than `route.fulfill`. |
 | P3 | "the retained Meta job" (singular, `JudgeEvidence.tsx:33`). Two retained Meta jobs exist (`3573b32b`, `82ac2dcc`). | The claim holds for both, so it is accurate as written. |
+
+---
+
+## Second-stage pass (2026-11-03)
+
+Branch `FrankieBiz/claude-devpost-demo-perfection`. It covers submission copy, the voiceover, and demo rehearsal tooling. The Inspector UI did not change.
+
+### Submission and voiceover copy
+
+| Where | Was | Record | Now |
+|---|---|---|---|
+| `DEVPOST_SUBMISSION.md:23` | "The ledger script refuses any non-Meta response." | `IMPACT_EVIDENCE.md:23`, `JudgeEvidence.tsx:86` | "`scripts/trial_ledger.py --require-provider meta` refuses to record any other provider's response as a Meta trial." |
+| `DEVPOST_SUBMISSION.md:24` | "a one-line patch in 6.9 s" | `job.json` `generation_ms` 6,863 | The same figure, plus "(6,863 ms recorded generation time)". This is the source of the voiceover's "under seven seconds". |
+| `DEVPOST_SUBMISSION.md:34` | "Datadog", "completely broken", "for five hours until accounting caught" | `IMPACT_EVIDENCE.md` § Firsthand relevance names no vendor and says "nearly five hours" and "financial reconciliation" | Restated from the recorded account, with a link to it. The owner TODO for Inspiration is checked. |
+| `DEVPOST_SUBMISSION.md:69` | "Trusted browser and HTTP verification run outside the candidate." | `job.json` verification report: 16 checkout + 1 confirmation + 27 regression | Names the 16 / 27 / 1 checks and says they run outside the candidate, against the sandboxed build. This matches `EvaluationCorpus.tsx:77`. |
+| `VOICEOVER_SCRIPT.md` video links | `file:///home/frankbiz/.../barnacle/...` | `data/` is gitignored | Repository-relative `../data/footage/...` links, plus a "Footage files" note naming the scripts that produce them. |
+| `VOICEOVER_SCRIPT.md` Meta segment (both tracks) | "runs … against 44 independent checks, passing every assertion" | Same verification report | "…passes all 44 independent checks, 27 of them business rules, on the first attempt." |
+| `VOICEOVER_SCRIPT.md` gauntlet segment (both tracks) | "reject every single wrong patch" | `EVALUATION.md`: 6 of 6 authored wrong repairs | "reject all six", scoped to the corpus being shown |
+
+`VOICEOVER_SCRIPT.md` now opens with a **Claim sources** table. It maps each spoken figure to its record.
+
+### Rehearsal tooling
+
+- `scripts/rehearse-demo.sh --dry-run` checks tools and readiness, prints the cue sheet, and creates no job. It requires `curl` and `jq` only; `uv` is needed only when a job is created.
+- `scripts/rehearse-demo.sh --interactive` pauses for Enter before each beat, and `q` stops the rehearsal. The beats follow the voiceover segments. Without a terminal on stdin it says so and runs unattended, so it cannot hang in CI. Combine both flags to practice narration without touching the controller.
+- After a verified job, the rehearsal prints the assertions by group and the generation time, and compares them with the spoken figures. Run against the recorded `3573b32b` job record, it prints `checkout 16, confirmation 1, regression 27` and `6863 ms (under seven seconds)`.
+- If the Inspector is unreachable, the rehearsal names the URL it tried and how to start the stack, instead of printing a bare curl error.
+- `scripts/start-live-demo.sh --check` (alias `--dry-run`) reports uv, Bubblewrap, cgroup v2, the systemd user session, the port, credential presence (never values), `LIVE_DEMO_REQUIRE_PROVIDER`, and the data directory. Then it exits without syncing or starting anything. It fails if the provider is pinned to `meta` without `META_API_KEY`.
+- Neither script's default (no-flag) behavior changed. `deploy/faultline-live.service` and `tests/test_rehearsal.py` still call them that way.
+
+### Verification
+
+| Check | Result |
+|---|---|
+| `npm run check` in `web/inspector-ui` (`tsc --noEmit` + `next build`, Next.js 16.4.3) | Pass, exit 0 |
+| `npm run test:inspector` in `tools/browser-runner` | **50 / 50 passed** (46.7 s) |
+| `pytest apps/buggyshop-backend/tests tests` | 328 passed, 23 skipped (platform-specific). This includes `tests/test_rehearsal.py`: 6 existing cases and 4 new ones for dry-run, readiness failure, the no-terminal fallback, and option rejection. |
+| `ruff check` and `ruff format --check` (the `make check` scope for `tests` and `scripts`) | Pass |
+| `rehearse-demo.sh` run against the recorded `3573b32b` job record through a stub `curl` | Exit 0. Prints `checkout 16, confirmation 1, regression 27` and `6863 ms (under seven seconds)`. |
+| `rehearse-demo.sh --dry-run --interactive` under a pseudo-terminal | All five beats wait for Enter. `q` exits 0 with "Rehearsal stopped by presenter". |
+| `start-live-demo.sh --check` | Exit 0 on this host, with two warnings: no model credential and no provider pin. Exit 1 when the port is taken, or when `LIVE_DEMO_REQUIRE_PROVIDER=meta` is set without `META_API_KEY`. |
+
+In a fresh worktree, `tests/test_platform_smoke.py` fails three cases with `runner_unavailable` until `npm --prefix tools/browser-runner run build` has run. That comes from the environment, not from this change.
+

@@ -293,7 +293,7 @@ BUGGYSHOP_API_PORT=8400 FAULTLINE_PORT=9400 BUGGYSHOP_PORT=3400 INSPECTOR_PORT=4
 FAULTLINE_INSPECTOR_URL=http://127.0.0.1:4400 ./scripts/rehearse-demo.sh
 ```
 
-`./scripts/rehearse-demo.sh` drives a full run headlessly. It exits non-zero for failed, cancelled, interrupted, timed-out, or unverified jobs.
+`./scripts/rehearse-demo.sh` drives a full run headlessly. It exits non-zero for failed, cancelled, interrupted, timed-out, or unverified jobs. Add `--dry-run` to check readiness without creating a job, and `--interactive` to step through the demo beats with Enter.
 
 ### Install the CLI globally
 

@@ -2,7 +2,7 @@
 
 > **Owner TODO before submitting. Remove this block from the pasted copy.**
 >
-> - [ ] **Inspiration.** Write the firsthand account in the section below, or state plainly that there is none ([IMPACT_EVIDENCE.md](IMPACT_EVIDENCE.md)). Do not invent an incident.
+> - [x] **Inspiration.** The section below now paraphrases the firsthand account recorded in [IMPACT_EVIDENCE.md](IMPACT_EVIDENCE.md#firsthand-relevance). Keep the two in step; do not add details the account does not contain.
 > - [ ] **Video.** Record and link the demo following [the storyboard](VIDEO_STORYBOARD.md).
 > - [ ] **User feedback.** Add only real conversations from [IMPACT_EVIDENCE.md](IMPACT_EVIDENCE.md). Otherwise keep the "not yet measured" sentence.
 > - [ ] **Verification.** Run `make check`, `make browser`, and `make integration` on the submitted commit and record the commit hash.
@@ -20,8 +20,8 @@ A browser reproduces a checkout crash. Meta's model proposes a source patch. Ind
 
 | Claim | What is recorded |
 | --- | --- |
-| Meta's model repairs the seeded defect repeatedly | Three live `muse-spark-1.3` trials on October 31, 2026, all verified on the first attempt at 44 of 44 assertions, median wall time 10.5 s (10.4 to 12.6 s), cleanup confirmed each time ([ledger](https://github.com/FrankieBiz/Faultline/blob/main/docs/evidence/2026-10-31-controller-ledger-meta.md)). The ledger script refuses any non-Meta response. Scope: one registered scenario. |
-| One Meta repair is replayable step by step | One retained controller job on October 28, 2026 ([replay](https://frankiebiz.github.io/Faultline/replay/3573b32b-09bd-4f14-897d-cf6dccf9b118/index.html), [provenance review](https://github.com/FrankieBiz/Faultline/blob/main/docs/evidence/2026-10-28-meta-replay-review.md)). `muse-spark-1.3` returned a one-line patch in 6.9 s using 1,569 prompt and 1,685 completion tokens. The baseline failed with the seeded `TypeError`. The candidate passed 44 of 44 assertions, and cleanup succeeded. The whole job took 13.0 s. |
+| Meta's model repairs the seeded defect repeatedly | Three live `muse-spark-1.3` trials on October 31, 2026, all verified on the first attempt at 44 of 44 assertions, median wall time 10.5 s (10.4 to 12.6 s), cleanup confirmed each time ([ledger](https://github.com/FrankieBiz/Faultline/blob/main/docs/evidence/2026-10-31-controller-ledger-meta.md)). `scripts/trial_ledger.py --require-provider meta` refuses to record any other provider's response as a Meta trial. Scope: one registered scenario. |
+| One Meta repair is replayable step by step | One retained controller job on October 28, 2026 ([replay](https://frankiebiz.github.io/Faultline/replay/3573b32b-09bd-4f14-897d-cf6dccf9b118/index.html), [provenance review](https://github.com/FrankieBiz/Faultline/blob/main/docs/evidence/2026-10-28-meta-replay-review.md)). `muse-spark-1.3` returned a one-line patch in 6.9 s (6,863 ms recorded generation time) using 1,569 prompt and 1,685 completion tokens. The baseline failed with the seeded `TypeError`. The candidate passed 44 of 44 assertions, and cleanup succeeded. The whole job took 13.0 s. |
 | Verification catches what a symptom check misses | Six plausible but wrong repairs were authored for the seeded defect. A "does the request now return 201" check accepted five of them. FaultLine accepted none, and it accepted both correct repairs ([evaluation](https://github.com/FrankieBiz/Faultline/blob/main/docs/EVALUATION.md#what-verification-catches)). |
 | The loop handles defects the model was not told about | Measured only with a labeled **non-Meta** model, DeepSeek `deepseek-v4-pro`. Over two trials, it verified 18 of 20 runs across the seeded defect and nine variants. The gates rejected its two wrong patches. Meta has not yet been run on this corpus. |
 | Candidates run contained | Each candidate backend runs in Linux namespaces inside a cgroup v2 scope (512 MiB, no swap, 64 tasks, one CPU), and those limits are read back from the kernel. Readiness enforces adversarial memory-hog (OOM killed, exit -9) and task-hog probes. Both executions in the Meta job recorded verified limits, as did every backend session in both recorded evaluation runs (48 of 48 and 19 of 19). |
@@ -31,7 +31,7 @@ Three live trials on one scenario are a small sample, not a reliability rate, an
 
 ## Inspiration
 
-A symptom check is not a repair check. In an e-commerce checkout deployment, an emergency hotfix made an intermittent HTTP 500 disappear by returning a 200 OK without coupon processing. The error metrics cleared on Datadog, but percentage discounts and tax logic were completely broken, silently leaking revenue for five hours until accounting caught the discrepancy. That experience proved that a 200 OK response is never proof of a correct fix.
+A symptom check is not a repair check. In an e-commerce checkout deployment, checkout threw intermittent runtime exceptions whenever a cart omitted a coupon. A rapid hotfix made the endpoint return 200 OK by skipping coupon processing when no coupon was sent. Monitoring dashboards showed zero 500 errors and the incident was declared resolved, but the patch also short-circuited percentage coupon normalization and tax calculation. The margin loss went undetected for nearly five hours, until financial reconciliation flagged the captured totals ([account](https://github.com/FrankieBiz/Faultline/blob/main/docs/IMPACT_EVIDENCE.md#firsthand-relevance)). A 200 OK response is not proof of a correct fix.
 
 We also authored six plausible but wrong repairs for one seeded checkout defect: a naive "does the request now return 201" check accepted five of the six. FaultLine's business oracles rejected all six and accepted both correct repairs ([evaluation](https://github.com/FrankieBiz/Faultline/blob/main/docs/EVALUATION.md#what-verification-catches)). That is a measured property of an authored corpus, demonstrating why sandboxed execution and independent invariant checking are essential.
 
@@ -66,7 +66,7 @@ Without credentials, an explicitly labeled deterministic provider (`deterministi
 
 - FastAPI control plane with transactional SQLite idempotency, a singleton execution lease, and resumable SSE events.
 - Content-addressed exports from detached Git worktrees pinned to a fixture revision.
-- Restricted candidate execution with aggregate cgroup v2 limits, verified at every launch. Before readiness, an OOM and task-limit probe must pass. Trusted browser and HTTP verification run outside the candidate.
+- Restricted candidate execution with aggregate cgroup v2 limits, verified at every launch. Before readiness, an OOM and task-limit probe must pass. The trusted checks (16 browser, 27 HTTP business, 1 confirmation) run outside the candidate, against the sandboxed build.
 - A hash-pinned evaluation corpus and harness, a trial ledger, a static checksummed replay export, and an offline evidence-bundle checker.
 - Next.js 16 / React 19 Inspector and storefront, and a Playwright runner that writes the report and evidence.
 

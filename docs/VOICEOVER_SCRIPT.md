@@ -8,10 +8,23 @@ Choose the version that fits your presentation format:
 
 Both cuts are strictly under the Hackathon's 3-minute (180-second) ceiling.
 
+## Claim sources
+
+Every figure spoken below comes from a committed record. Re-check this table before re-recording if any record changes.
+
+| Spoken claim | Record |
+| --- | --- |
+| "In under seven seconds, Meta returns a … diff" | Retained job `3573b32b`: `generation_ms` 6,863 ([replay review](evidence/2026-10-28-meta-replay-review.md), [job record](replay/3573b32b-09bd-4f14-897d-cf6dccf9b118/job.json)) |
+| "44 independent checks, 27 of them business rules, on the first attempt" | Same job: one attempt; verification report = 16 checkout + 1 confirmation + 27 regression assertions, all passed. The checks run outside the sandbox, against the sandboxed build. |
+| "512 megabytes of RAM, 64 tasks, and one CPU" | cgroup v2 limits read back from the kernel ([submission](DEVPOST_SUBMISSION.md), [Inspector audit](audits/INSPECTOR_PERFECTION_AUDIT.md#confirmed-correct-no-change)) |
+| "accepts five of six plausible wrong repairs … reject all six" | Authored gauntlet ([evaluation](EVALUATION.md#what-verification-catches)); deterministic fallback and DeepSeek runs, not Meta |
+
+The Inspector segment is a local deterministic-fallback run, not a Meta trial, and its caption says so.
+
 ---
 
 # Track B: Extended Master Cut with Pre-Flight CLI Gate Flex (2:39.5)
-**Video File:** [`data/footage/20261101-193931/rough-cut-extended.mp4`](file:///home/frankbiz/orca/workspaces/Faultline/barnacle/data/footage/20261101-193931/rough-cut-extended.mp4)  
+**Video File:** [`data/footage/20261101-193931/rough-cut-extended.mp4`](../data/footage/20261101-193931/rough-cut-extended.mp4) (local, see [Footage files](#3-footage-files))  
 **Total Duration:** 2 minutes, 39.5 seconds (159.5 s)
 
 ### Segment 1: The Problem (0:00 – 0:28 | 28 seconds)
@@ -42,7 +55,7 @@ Both cuts are strictly under the Hackathon's 3-minute (180-second) ceiling.
   >
   > Here, Meta's `muse-spark-1.3` model receives the checkout's business contract and the failure evidence—never the bug or the fix.
   >
-  > In under seven seconds, Meta returns a schema-bound single-file diff. The candidate runs in a kernel-isolated sandbox against 44 independent checks, passing every assertion on the first attempt."
+  > In under seven seconds, Meta returns a schema-bound single-file diff. The candidate runs in a kernel-isolated sandbox and passes all 44 independent checks, 27 of them business rules, on the first attempt."
 
 ---
 
@@ -62,7 +75,7 @@ Both cuts are strictly under the Hackathon's 3-minute (180-second) ceiling.
 - **Voiceover Narration (speak from 2:10 to 2:31):**
   > "Why independent verification matters: on this corpus, a naive status check accepts five of six plausible wrong repairs, including one that returns 201 but silently drops the customer order!
   >
-  > FaultLine's independent assertions reject every single wrong patch. Our cross-platform Pre-Flight Gate blocks broken code before deployment on macOS, Linux, and Windows."
+  > FaultLine's independent assertions reject all six. Our cross-platform Pre-Flight Gate blocks broken code before deployment on macOS, Linux, and Windows."
 
 ---
 
@@ -75,7 +88,7 @@ Both cuts are strictly under the Hackathon's 3-minute (180-second) ceiling.
 ---
 
 # Track A: Standard Cut (2:13.8)
-**Video File:** [`data/footage/20261101-193931/rough-cut.mp4`](file:///home/frankbiz/orca/workspaces/Faultline/barnacle/data/footage/20261101-193931/rough-cut.mp4)  
+**Video File:** [`data/footage/20261101-193931/rough-cut.mp4`](../data/footage/20261101-193931/rough-cut.mp4) (local, see [Footage files](#3-footage-files))  
 **Total Duration:** 2 minutes, 13.8 seconds (133.8 s)
 
 ### Segment 1: The Problem (0:00 – 0:28 | 28 seconds)
@@ -96,7 +109,7 @@ Both cuts are strictly under the Hackathon's 3-minute (180-second) ceiling.
   >
   > Here, Meta's `muse-spark-1.3` model receives the checkout's business contract and the failure evidence—never the bug or the fix.
   >
-  > In under seven seconds, Meta returns a schema-bound single-file diff. The candidate runs in a kernel-isolated sandbox against 44 independent checks, passing every assertion on the first attempt."
+  > In under seven seconds, Meta returns a schema-bound single-file diff. The candidate runs in a kernel-isolated sandbox and passes all 44 independent checks, 27 of them business rules, on the first attempt."
 
 ---
 
@@ -116,7 +129,7 @@ Both cuts are strictly under the Hackathon's 3-minute (180-second) ceiling.
 - **Voiceover Narration (speak from 1:45 to 2:06):**
   > "Why independent verification matters: on this corpus, a naive status check accepts five of six plausible wrong repairs, including one that returns 201 but silently drops the customer order!
   >
-  > FaultLine's independent assertions reject every single wrong patch. Our cross-platform Pre-Flight Gate blocks broken code before deployment on macOS, Linux, and Windows."
+  > FaultLine's independent assertions reject all six. Our cross-platform Pre-Flight Gate blocks broken code before deployment on macOS, Linux, and Windows."
 
 ---
 
@@ -149,7 +162,11 @@ ffmpeg -i data/footage/20261101-193931/rough-cut.mp4 -i voiceover.wav \
   -c:v copy -c:a aac -b:a 192k -shortest final-demo-standard.mp4
 ```
 
-### 3. Immediate Playback Preview
+### 3. Footage files
+
+The rough cuts are local build outputs, not committed files. `data/` is gitignored, so the links above resolve only in a checkout where the footage has been recorded (`scripts/record-footage.sh`) and assembled (`scripts/assemble-footage.sh` for Track A, `scripts/assemble-extended-cut.sh` for Track B). Paths are relative to the repository root.
+
+### 4. Immediate Playback Preview
 You can preview either video file locally before recording:
 ```bash
 # Preview Track B (Extended Cut)
