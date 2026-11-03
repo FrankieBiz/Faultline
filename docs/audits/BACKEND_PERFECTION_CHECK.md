@@ -2,9 +2,9 @@
 
 Date: 2026-11-02. Audited revision: `0288183daf11d92197c5a70b40a07a6725db26a1`.
 
-Follow-up, 2026-11-03: **P01, P02, P03, and P05 have been remediated**, with regression tests and [verification evidence](../evidence/2026-11-03-backend-security-hardening.json). The report below preserves the original audit observations; P04, P06, P07, and P08 remain open.
+Follow-up, 2026-11-03: **P01, P02, P03, and P05 have been remediated**, with regression tests and [verification evidence](../evidence/2026-11-03-backend-security-hardening.json). The report below preserves the original audit observations; at that point P04, P06, P07, and P08 remained open.
 
-Follow-up, 2026-11-03 (later): commit `26b032e` fixes **P04** (scope release in `finally`; independent cleanup of every owned resource) and **P07** (whole-root snapshot allowlist), each with regression tests, and **partly** fixes **P06** (project-mode browser scope and bounded artifacts; the fixture-path frontend and runner remain unscoped). No probe re-run for these three has been recorded: `probes/backend_perfection_edges.py` now stops at `snapshot_nonapplication_file` because the P07 fix rejects its planted file. **P08 remains open.** See the [adversarial judging debate](ADVERSARIAL_JUDGING_DEBATE.md#objection-33-your-own-audit-found-eight-backend-isolation-bugs-are-p01p07-really-fixed).
+Follow-up, 2026-11-03 (later): commit `26b032e` fixes **P04** (scope release in `finally`; independent cleanup of every owned resource) and **P07** (whole-root snapshot allowlist), each with regression tests, and **partly** fixes **P06** (project-mode browser scope and bounded artifacts; the fixture-path frontend and runner remain unscoped). No probe re-run for these three has been recorded: `probes/backend_perfection_edges.py` now stops at `snapshot_nonapplication_file` because the P07 fix rejects its planted file. **P08 is resolved by the build dependency and required CI integration changes documented below.** See the [adversarial judging debate](ADVERSARIAL_JUDGING_DEBATE.md#objection-33-your-own-audit-found-eight-backend-isolation-bugs-are-p01p07-really-fixed).
 
 Before publication, the audit branch incorporated `c9ed4e850c4288f8754e6078a9dffb28de01ef39`, an independently completed Inspector fix. The audited backend/orchestrator files and Makefile remained unchanged.
 
@@ -46,7 +46,7 @@ The successful full check still printed Node's cosmetic `NO_COLOR`/`FORCE_COLOR`
 | P05 | Medium | Catch-all policy misses non-assignment bindings and enclosing suppression | AST and full patch validation probes |
 | P06 | Medium | Candidate quotas do not bound host browser work or artifact production | Live cgroup observation and source trace |
 | P07 | Low | Fixture snapshot identity does not cover the entire mounted tree | Synthetic extra-file probe |
-| P08 | Low | CI does not require all live containment paths; parallel check ordering is incomplete | Makefile/workflow review |
+| P08 | Low | Resolved: CI requires all four integration files; tests depend on frontend builds | Makefile/workflow review |
 
 ### P01 — Browser fallback retains a network-policy hole
 
@@ -137,15 +137,17 @@ Adding an innocuous `unhashed-extra.txt` at an otherwise valid fixture snapshot 
 
 This requires mutation or misuse on the trusted host side. The normal snapshot manager exports only approved application files, and the candidate's mount is read-only; this is not a demonstrated candidate-controlled file disclosure. Recommendation: apply the whole-tree allowlist before mounting, or mount exactly the attested subtree. Test extra root/sibling files and unusual filesystem objects.
 
-### P08 — Required coverage and build ordering have gaps
+### P08 — Required coverage and build ordering gaps (resolved)
 
 Code: [`Makefile:12`](../../Makefile#L12), integration target at line 17; [Verify workflow](../../.github/workflows/check.yml), [PR gate](../../.github/workflows/faultline-ci.yml).
 
-The workflows do not set `FAULTLINE_REQUIRE_ISOLATED_TESTS=1` or run the required integration target. Conditional tests can skip on an unprepared runner. `make integration` requires the older fixture/cgroup files but does not explicitly include the production ReproSpec browser and project-runtime test files. The 49-test audit command below covers all four, but still misses the forced real fallback in P01.
+Resolved, 2026-11-03: `Makefile` now encodes the dependency edge `test: frontend runner inspector`, so `make -j check` waits for all three builds before starting Python tests. Previously these targets were sibling prerequisites of `check`, which only established ordering for serial make.
 
-Also, `frontend`, `runner`, and `test` are sibling prerequisites of `check`. Serial `make check` follows their listed order; `make -j check` has no dependency edge ensuring builds finish before tests begin. This is source-confirmed ordering risk; a clean parallel-build race was not reproduced here.
+`make integration` sets `FAULTLINE_REQUIRE_ISOLATED_TESTS=1` and explicitly runs all four required files: `test_isolated_runtime.py`, `test_resource_limits_cgroup.py`, `test_repro_browser.py`, and `test_project_run.py`. Missing isolation/browser prerequisites therefore fail the required tests instead of silently skipping them.
 
-Recommendation: require a prepared Linux job with non-skipping fixture, cgroup, project, and real-browser tests; add forced fallback coverage; encode build prerequisites in the target dependency graph. Keep native platform checks separate and explicit.
+The Verify workflow installs bubblewrap prerequisites on Ubuntu and runs `make integration` after `make check` and `make browser`, with `FAULTLINE_REQUIRE_ISOLATED_TESTS: 1` in the integration step environment. The PR gate also sets this variable at job scope. Installing bubblewrap alone does not establish delegated cgroup readiness; the required integration tests enforce live runtime prerequisites. Native platform checks remain separate.
+
+Verification: `make check` exited 0 (134 runner tests passed; backend/root: 328 passed, 23 skipped; orchestrator: 1,356 passed, 3 skipped; all builds passed). `make integration` exited 0 with **77 passed, no skips** across the four required files. A temporary harness retaining the Makefile dependency graph reproduced tests starting before build completion under `make -j8 check` before the fix and passed after the dependency edge was added.
 
 ## Controls and edge cases that held
 

@@ -24,6 +24,12 @@ jobs:
         with:
           enable-cache: true
       - run: uv python install 3.13
+      - name: Install sandbox diagnostic prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap
+          test -f /sys/fs/cgroup/cgroup.controllers
+          command -v systemd-run
       - run: npm --prefix apps/buggyshop-frontend ci
       - run: npm --prefix tools/browser-runner ci
       - run: npm --prefix web/inspector-ui ci
@@ -31,6 +37,9 @@ jobs:
         working-directory: tools/browser-runner
       - run: make check
       - run: make browser
+      - run: make integration
+        env:
+          FAULTLINE_REQUIRE_ISOLATED_TESTS: 1
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:

@@ -8,14 +8,14 @@ FRONTEND := apps/buggyshop-frontend
 RUNNER := tools/browser-runner
 INSPECTOR := web/inspector-ui
 
-# Tests follow the storefront and runner builds; isolated-runtime tests need both.
+# The test target depends on all frontend builds, including under parallel make.
 check: lint typecheck provenance frontend runner inspector test build
 
 setup:
 	./scripts/setup.sh
 
 integration: frontend runner
-	FAULTLINE_REQUIRE_ISOLATED_TESTS=1 $(ORCHESTRATOR_UV) pytest $(ORCHESTRATOR)/tests/test_isolated_runtime.py $(ORCHESTRATOR)/tests/test_resource_limits_cgroup.py
+	FAULTLINE_REQUIRE_ISOLATED_TESTS=1 $(ORCHESTRATOR_UV) pytest $(ORCHESTRATOR)/tests/test_isolated_runtime.py $(ORCHESTRATOR)/tests/test_resource_limits_cgroup.py $(ORCHESTRATOR)/tests/test_repro_browser.py $(ORCHESTRATOR)/tests/test_project_run.py
 
 browser:
 	cd $(RUNNER) && npm run test:inspector
@@ -30,7 +30,7 @@ runner:
 inspector:
 	cd $(INSPECTOR) && npm run check
 
-test:
+test: frontend runner inspector
 	$(UV) pytest $(BACKEND)/tests tests
 	$(ORCHESTRATOR_UV) pytest $(ORCHESTRATOR)/tests
 
