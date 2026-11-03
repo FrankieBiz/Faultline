@@ -31,7 +31,6 @@ import pytest
 from test_crawler import CLEAN_REPORT, FAILURE_REPORT
 from test_gate import GATE_KEYS
 from test_verify_bundle_tool import exported
-from tools.verify_bundle import _artifact_file, _sha256_file, verify_bundle
 
 from app import crawler_service
 from app.cli import PLAIN, build_parser
@@ -57,6 +56,7 @@ from app.cli_crawl import (
     sanitize_text,
 )
 from app.proof_bundle import bundle_digest
+from tools.verify_bundle import _artifact_file, _sha256_file, verify_bundle
 
 # --- hostile corpus -----------------------------------------------------------
 
@@ -248,10 +248,20 @@ def test_describe_signal_sanitizes_untrusted_fields(field: str) -> None:
 
 
 def test_render_event_sanitizes_url_and_label() -> None:
-    event = {"type": "navigate", "url": "http://x/" + OSC_TITLE}
-    _assert_no_terminal_control(render_event(event, PLAIN))
-    event = {"type": "action", "step": 1, "action": "click", "label": C1_CSI + "Evil", "ok": True}
-    _assert_no_terminal_control(render_event(event, PLAIN))
+    nav_event: dict[str, Any] = {"type": "navigate", "url": "http://x/" + OSC_TITLE}
+    rendered = render_event(nav_event, PLAIN)
+    assert rendered is not None
+    _assert_no_terminal_control(rendered)
+    act_event: dict[str, Any] = {
+        "type": "action",
+        "step": 1,
+        "action": "click",
+        "label": C1_CSI + "Evil",
+        "ok": True,
+    }
+    rendered_act = render_event(act_event, PLAIN)
+    assert rendered_act is not None
+    _assert_no_terminal_control(rendered_act)
 
 
 def test_evidence_and_breadcrumb_lines_sanitize() -> None:

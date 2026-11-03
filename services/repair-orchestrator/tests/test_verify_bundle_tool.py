@@ -8,10 +8,10 @@ from typing import Any
 
 import pytest
 from test_proof_bundle import _make_report, _make_sample_job, artifact, compile_sample
-from tools.verify_bundle import verify_bundle
 
 from app.proof_bundle import bundle_digest
 from shared.contracts.models import ExecutionVerdict
+from tools.verify_bundle import verify_bundle
 
 TOOL = Path(__file__).parents[3] / "tools/verify-bundle.py"
 
