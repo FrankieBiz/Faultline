@@ -32,6 +32,7 @@ from app.database import utcnow
 from app.isolated_runtime import (
     AggregateLimits,
     BackendResources,
+    BoundedTCPTransport,
     BoundedUDSTransport,
     BridgeServer,
     IsolatedRuntime,
@@ -291,29 +292,35 @@ class ProjectRuntime(IsolatedRuntime):
         self, owned: SessionResources, snapshot: Snapshot, session_id: str
     ) -> None:
         backend = owned.backend
-        listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        backend.listener = listener
-        address = "\0faultline-" + session_id
-        listener.bind(address)
-        listener.listen(16)
+        # The candidate listener is created through the platform seam, so the
+        # transport is an abstract Unix socket on Linux, a filesystem Unix
+        # socket on macOS, and a reserved loopback TCP port on Windows.
+        endpoint = self._backend_endpoint(session_id)
+        backend.listener = endpoint.socket
+        if endpoint.kind == "named-unix":
+            backend.socket_path = Path(endpoint.address)
         port = 8765  # Private network namespace; every session can use the same port.
+        fd = endpoint.socket.fileno() if endpoint.socket is not None else int(endpoint.address)
         backend.process = await ManagedProcess.start(
             *self._sandbox(snapshot.path, unit=backend.unit),
             "/python/bin/python3.13",
             "-I",
             "-u",
             "/trusted_backend.py",
-            str(listener.fileno()),
+            str(fd),
             str(port),
             json.dumps(self.run.command(port)),
             env=self.scope_environment(backend.unit),
-            pass_fds=(listener.fileno(),),
+            pass_fds=self._backend_pass_fds(endpoint),
         )
+        if endpoint.kind == "tcp":
+            transport: httpx.AsyncBaseTransport = BoundedTCPTransport(endpoint.address)
+            base_url = f"http://127.0.0.1:{endpoint.address}"
+        else:
+            transport = BoundedUDSTransport(endpoint.address)
+            base_url = "http://service"
         backend.client = httpx.AsyncClient(
-            transport=BoundedUDSTransport(address),
-            base_url="http://service",
-            timeout=3,
-            follow_redirects=False,
+            transport=transport, base_url=base_url, timeout=3, follow_redirects=False
         )
         if backend.unit is not None:
             await self._await_scope(backend.unit, backend.process)
