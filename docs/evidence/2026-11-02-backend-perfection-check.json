@@ -1,0 +1,235 @@
+{
+  "schema_version": 1,
+  "audit_date": "2026-11-02",
+  "audited_revision": "0288183daf11d92197c5a70b40a07a6725db26a1",
+  "scope": "Backend isolation, patch containment, reproduction browser, lifecycle cleanup, verification coverage",
+  "application_changes": false,
+  "environment": {
+    "system": "Linux",
+    "python": "3.13.16",
+    "node": "v24.21.0"
+  },
+  "verification": {
+    "initial_make_check": {
+      "exit_code": 2,
+      "failure": "Missing installed frontend eslint",
+      "completed": [
+        "Python lint",
+        "Python format",
+        "Python types",
+        "fixture and evaluation provenance"
+      ]
+    },
+    "setup": {
+      "command": "npm --prefix <project> ci",
+      "projects": [
+        "apps/buggyshop-frontend",
+        "tools/browser-runner",
+        "web/inspector-ui"
+      ],
+      "exit_codes": [
+        0,
+        0,
+        0
+      ],
+      "lockfile_changes": false
+    },
+    "make_check": {
+      "exit_code": 0,
+      "backend_root": {
+        "passed": 324,
+        "skipped": 23,
+        "seconds": 13.65,
+        "skip_scope": "PowerShell and native Windows on Linux"
+      },
+      "orchestrator": {
+        "passed": 1146,
+        "skipped": 0,
+        "seconds": 84.93
+      },
+      "browser_runner": {
+        "passed": 134,
+        "seconds": 57.7
+      },
+      "mypy_files": [
+        38,
+        57
+      ],
+      "ruff_format_files": [
+        52,
+        58
+      ],
+      "provenance": "passed",
+      "frontend_runner_inspector_builds": "passed",
+      "python_distributions": "built",
+      "warning": "NO_COLOR ignored due to FORCE_COLOR"
+    },
+    "required_isolation": {
+      "command": "FAULTLINE_REQUIRE_ISOLATED_TESTS=1 uv run --project services/repair-orchestrator --python 3.13 --locked pytest services/repair-orchestrator/tests/test_isolated_runtime.py services/repair-orchestrator/tests/test_resource_limits_cgroup.py services/repair-orchestrator/tests/test_repro_browser.py services/repair-orchestrator/tests/test_project_run.py",
+      "exit_code": 0,
+      "passed": 49,
+      "skipped": 0,
+      "seconds": 24.14,
+      "overlaps_make_check": true
+    },
+    "probe_lint_and_format": {
+      "ruff_check": "passed",
+      "ruff_format_check": "2 files already formatted"
+    },
+    "not_run": [
+      "make browser",
+      "make evaluate",
+      "native Windows/macOS/WSL checks",
+      "resource exhaustion of host browser",
+      "kernel escape testing"
+    ],
+    "make_check_after_rebase": {
+      "integration_base_revision": "c9ed4e850c4288f8754e6078a9dffb28de01ef39",
+      "exit_code": 0,
+      "backend_root": {
+        "passed": 324,
+        "skipped": 23,
+        "seconds": 12.11
+      },
+      "orchestrator": {
+        "passed": 1146,
+        "skipped": 0,
+        "seconds": 81.43
+      },
+      "browser_runner": {
+        "passed": 134,
+        "seconds": 57.1
+      },
+      "lint_format_typecheck_provenance_builds": "passed"
+    }
+  },
+  "backend_preflight": {
+    "enforcement_preflight": "passed",
+    "probe_memory_max_bytes": 67108864,
+    "probe_tasks_max": 16,
+    "oom_events": 1,
+    "oom_kill_events": 1,
+    "hog_exit_code": -9,
+    "pids_max_events": 1,
+    "threads_started": 13,
+    "environment_clean": true
+  },
+  "edges": {
+    "policy.loop_shadow": {
+      "bytes": 90,
+      "result": [
+        true,
+        true,
+        null
+      ]
+    },
+    "policy.argument_shadow": {
+      "bytes": 92,
+      "result": [
+        true,
+        true,
+        null
+      ]
+    },
+    "policy.finally_return": {
+      "bytes": 98,
+      "result": [
+        true,
+        true,
+        null
+      ]
+    },
+    "policy.alias_recursion": {
+      "bytes": 12234,
+      "result": "RecursionError"
+    },
+    "policy.full_patch_shadow": true,
+    "policy.full_patch_recursion": {
+      "diff_bytes": 12436,
+      "result": false
+    },
+    "snapshot.extra_file_admitted": true,
+    "worker.persistence_transition": {
+      "exception": "OperationalError",
+      "runtime_cleanup_called": false,
+      "runtime_prepared": true,
+      "runtime_activated": true,
+      "snapshot_runtime_remains": true,
+      "lease_quarantined_in_run_job": false
+    },
+    "worker.persistence_update": {
+      "exception": "OperationalError",
+      "runtime_cleanup_called": false,
+      "runtime_prepared": true,
+      "runtime_activated": true,
+      "snapshot_runtime_remains": true,
+      "lease_quarantined_in_run_job": false
+    },
+    "worker.cancel_during_cleanup": {
+      "stage": "cleanup",
+      "cleanup_status": "in_progress",
+      "outcome": null,
+      "lease_quarantined": false
+    },
+    "worker.cooperative_deadline": {
+      "local_budget_ms": 10,
+      "still_pending_after_extra_ms": 50,
+      "pending": true
+    },
+    "runtime.stop_timeout": {
+      "scope_release_attempted": false
+    }
+  },
+  "browser": [
+    {
+      "forced_fallback": false,
+      "stun_bytes_received": 0,
+      "page_result": {
+        "result": {
+          "value": "rtc-started"
+        }
+      },
+      "driver_in_faultline_candidate_scope": false,
+      "driver_shares_controller_cgroup": true
+    },
+    {
+      "forced_fallback": true,
+      "stun_bytes_received": 20,
+      "page_result": {
+        "result": {
+          "value": "rtc-started"
+        }
+      },
+      "driver_in_faultline_candidate_scope": false,
+      "driver_shares_controller_cgroup": true
+    }
+  ],
+  "probe_sha256": {
+    "docs/audits/probes/backend_perfection_edges.py": "aaf49c9e3abe27c91b576ded816b075cbc87a2018f2d3cfd74fd2abeb30342a7",
+    "docs/audits/probes/backend_perfection_browser.py": "738c931cb9b1f6327c3a5db9e0eaff6c9dea6e0d03ba463016b101f6991ebc1c"
+  },
+  "interpretation": {
+    "probe_exit_zero": "Successful observation, not a security pass",
+    "worker_probes": "Existing simulated runtime, real worker/SQLite/Git exports, not a demonstrated live process leak",
+    "browser_probe": "Real production driver and browser, forced supported fallback, loopback-only listeners",
+    "alias_recursion": "Direct helper raises; full public patch validator rejects safely",
+    "findings": {
+      "high": [
+        "P01",
+        "P02"
+      ],
+      "medium": [
+        "P03",
+        "P04",
+        "P05",
+        "P06"
+      ],
+      "low": [
+        "P07",
+        "P08"
+      ]
+    }
+  },
+  "integration_base_revision": "c9ed4e850c4288f8754e6078a9dffb28de01ef39",
+  "audited_backend_unchanged_after_rebase": true
+}
