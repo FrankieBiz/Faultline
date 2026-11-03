@@ -37,6 +37,7 @@ import {
   type ObservationKind,
   type RunOutcome,
 } from "./contracts.js";
+import { browserEnvironment } from "./env.js";
 import { ArtifactStore, PageEvidenceCollector, truncateUtf8 } from "./evidence.js";
 import {
   FIXTURE_CATALOG,
@@ -537,7 +538,7 @@ export async function executeCheckoutScenario(options: CheckoutScenarioOptions):
     await store.init();
     let browser = options.browser;
     if (!browser) {
-      ownedBrowser = await chromium.launch({ headless: true });
+      ownedBrowser = await chromium.launch({ headless: true, env: browserEnvironment() });
       browser = ownedBrowser;
     }
     state.step = "create_context";

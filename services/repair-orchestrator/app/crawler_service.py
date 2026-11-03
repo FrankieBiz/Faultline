@@ -17,7 +17,7 @@ import threading
 import time
 import urllib.parse
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -52,6 +52,18 @@ RUNNER_ENVIRONMENT = (
 )
 
 Event = dict[str, Any]
+
+
+def runner_environment(environ: Mapping[str, str]) -> dict[str, str]:
+    """Return the scrubbed environment for the browser runner subprocess.
+
+    Only the ``RUNNER_ENVIRONMENT`` allowlist may cross into the runner. This
+    pure function reads a caller-supplied mapping rather than ``os.environ`` so
+    tests can prove a hostile host environment (Linux, macOS, or Windows
+    spellings) contributes nothing beyond browser discovery and OS behavior
+    variables, never an API key, token, or control credential.
+    """
+    return {name: environ[name] for name in RUNNER_ENVIRONMENT if name in environ}
 
 
 class CrawlError(Exception):
@@ -198,7 +210,7 @@ def run_crawl(
         text=True,
         encoding="utf-8",
         errors="replace",
-        env={name: os.environ[name] for name in RUNNER_ENVIRONMENT if name in os.environ},
+        env=runner_environment(os.environ),
     ) as process:
         assert process.stdout is not None and process.stderr is not None
         stderr = process.stderr
