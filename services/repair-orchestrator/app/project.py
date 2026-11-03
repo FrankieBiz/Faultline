@@ -3,6 +3,7 @@
 import ast
 import hashlib
 import json
+import re
 import shlex
 import shutil
 import tomllib
@@ -14,6 +15,7 @@ from uuid import uuid4
 from pydantic import Field
 
 from app.policy import PatchPolicyError, parse_unified_diff
+from app.portable import normalize_relpath
 from app.repro import AssertStep, ReproSpec, ServicePath
 from app.snapshots import Snapshot, SnapshotManager, contained_path
 from shared.config import Scenario
@@ -21,19 +23,50 @@ from shared.contracts.models import ContractModel, PatchValidationResult
 
 
 def source_path(value: str) -> str:
-    path = PurePosixPath(value)
+    """Return the canonical contained spelling of a project-relative repair target.
+
+    Containment and cross-platform normalization are delegated to
+    ``normalize_relpath``, which rejects empty, absolute, parent-traversing,
+    Windows drive-letter, UNC, and NUL-bearing spellings and converts ``\\`` to
+    ``/`` on every host. The remaining checks reject hidden and secret-named
+    components.
+    """
+    try:
+        normalized = normalize_relpath(value)
+    except ValueError as exc:
+        raise ValueError("expected an ordinary, non-secret project-relative path") from exc
+    parts = PurePosixPath(normalized).parts
     if (
-        not value
-        or path.is_absolute()
-        or ".." in path.parts
-        or str(path) != value
-        or any(part.startswith(".") for part in path.parts)
+        any(part.startswith(".") for part in parts)
         or any(char.isspace() for char in value)
-        or "\\" in value
-        or any(part.lower() in {"meta-provided", "id_rsa", "id_ed25519"} for part in path.parts)
-        or path.suffix in {".pem", ".key"}
+        or any(part.lower() in {"meta-provided", "id_rsa", "id_ed25519"} for part in parts)
+        or PurePosixPath(normalized).suffix in {".pem", ".key"}
     ):
         raise ValueError("expected an ordinary, non-secret project-relative path")
+    return normalized
+
+
+_SCENARIO_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*")
+
+
+def normalize_scenario_id(value: str) -> str:
+    """Return a scenario name unchanged, refusing path-like or reserved input.
+
+    Scenario names become ``Scenario.id`` and ``ReproSpec.id``; they are never a
+    filesystem path. This mirrors the ``repro.Name`` contract while additionally
+    rejecting the empty string, a NUL byte, a leading separator (``.``/``-``), a
+    Windows drive or UNC spelling (``:``, ``/``, and ``\\`` are outside the
+    allowed set), and the reserved ``scenario.``/``probe-`` prefixes that would
+    collide with how invariants and registered probes are named.
+    """
+    if not isinstance(value, str) or not value:
+        raise ValueError("scenario name must be a nonempty plain identifier")
+    if "\x00" in value:
+        raise ValueError("scenario name must not contain a NUL byte")
+    if value.startswith(("scenario.", "probe-")):
+        raise ValueError("scenario name must not use a reserved prefix")
+    if not _SCENARIO_ID.fullmatch(value):
+        raise ValueError("scenario name must be a plain identifier")
     return value
 
 
@@ -88,6 +121,8 @@ def load_project(
 ) -> tuple[Path, ProjectRun]:
     """Read TOML scenarios or a CLI JSON ReproSpec, rejecting ambiguous selection."""
     config = config.resolve()
+    if name is not None:
+        normalize_scenario_id(name)
     data = tomllib.loads(config.read_text())
     if data.get("schema") != 1:
         raise ValueError("faultline.toml requires schema = 1")

@@ -63,7 +63,9 @@ class CrawlError(Exception):
 
 
 def validate_url(url: str) -> str:
-    """Return ``url`` if it is an absolute http(s) URL with a host."""
+    """Return ``url`` if it is an absolute http(s) URL with a host, no credentials,
+    and no fragment. This mirrors ``app.probes.validate_target`` so the crawl,
+    scan, and gate commands refuse the same hostile spellings on every host."""
     candidate = url.strip()
     if len(candidate) > MAX_URL_LENGTH:
         raise CrawlError("invalid_url", f"URL is longer than {MAX_URL_LENGTH} characters.")
@@ -75,6 +77,10 @@ def validate_url(url: str) -> str:
         raise CrawlError("invalid_url", "URL is not a valid http:// or https:// URL.") from exc
     if parsed.scheme not in ("http", "https") or not hostname:
         raise CrawlError("invalid_url", "URL must be an absolute http:// or https:// URL.")
+    if parsed.username is not None or parsed.password is not None:
+        raise CrawlError("invalid_url", "URL must not contain credentials.")
+    if parsed.fragment:
+        raise CrawlError("invalid_url", "URL must not contain a #fragment.")
     return candidate
 
 
