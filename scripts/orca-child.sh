@@ -26,7 +26,7 @@ ORCA_BIN="$(resolve_orca)"
 usage() {
   cat <<'EOF'
 Usage:
-  ./scripts/orca-child.sh spawn <codex|claude> <worktree-name> <prompt> [effort]
+  ./scripts/orca-child.sh spawn <codex|claude|opencode> <worktree-name> <prompt> [effort]
   ./scripts/orca-child.sh list
   ./scripts/orca-child.sh status <worktree-name>
   ./scripts/orca-child.sh read <worktree-name> [limit]
@@ -34,8 +34,9 @@ Usage:
   ./scripts/orca-child.sh clean <worktree-name>
 
 Frontier Model Defaults:
-  codex  -> gpt-6.1-sol (effort: high or xhigh)
-  claude -> claude-opus-5-5 (effort: high or xhigh)
+  codex    -> gpt-6.1-sol (effort: high or xhigh)
+  claude   -> claude-opus-5-5 (effort: high or xhigh)
+  opencode -> deepseek/deepseek-v4-pro (via DEEPSEEK_API_KEY)
 EOF
   exit 1
 }
@@ -60,8 +61,11 @@ cmd_spawn() {
     claude)
       model="claude-opus-5-5"
       ;;
+    opencode)
+      model="deepseek/deepseek-v4-pro"
+      ;;
     *)
-      echo "Error: Unsupported agent '$agent'. Must be 'codex' or 'claude'." >&2
+      echo "Error: Unsupported agent '$agent'. Must be 'codex', 'claude', or 'opencode'." >&2
       exit 1
       ;;
   esac
@@ -70,15 +74,20 @@ cmd_spawn() {
   local current_branch
   current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")"
   local output
-  output="$("$ORCA_BIN" worktree create \
-    --name "$name" \
-    --agent "$agent" \
-    --model "$model" \
-    --effort "$effort" \
-    --prompt "$prompt" \
-    --base-branch "$current_branch" \
-    --activate \
-    --json)"
+
+  local create_args=(
+    --name "$name"
+    --agent "$agent"
+    --prompt "$prompt"
+    --base-branch "$current_branch"
+    --activate
+    --json
+  )
+  if [[ "$agent" != "opencode" ]]; then
+    create_args+=(--model "$model" --effort "$effort")
+  fi
+
+  output="$("$ORCA_BIN" worktree create "${create_args[@]}")"
 
   local ok
   ok="$(echo "$output" | jq -r '.ok // false')"
