@@ -58,6 +58,7 @@ from shared.contracts.models import (
 )
 
 logger = logging.getLogger("faultline.worker")
+HEARTBEAT_SECONDS = 5.0
 
 
 @dataclass(frozen=True)
@@ -139,6 +140,7 @@ class RepairWorker:
         self._job_lock = asyncio.Lock()
         self._stopping = False
         self._supervision_failed = False
+        self._owner_id = str(uuid4())
         self.probe: ProbeResult | None = None
         self.probe_time: str | None = None
 
@@ -200,6 +202,7 @@ class RepairWorker:
             except Exception:
                 logger.exception("Worker shutdown encountered a trusted operation failure")
             self._task = None
+        self.database.release_worker(self._owner_id)
 
     def notify(self) -> None:
         """Wake the sole worker after durable admission or cancellation."""
@@ -845,12 +848,41 @@ class RepairWorker:
     async def run_job(self, job_id: str) -> OrchestratorJob:
         """Run the seven-stage machine, always attempting cleanup before terminal state."""
         async with self._job_lock:
+            self.database.reserve_worker(self._owner_id)
             # Capture ownership before any workflow side effects or logging faults.
             installation = self.database.get_lease().installation_id
             if not self.database.claim_job(job_id):
+                if self.database.get_lease().quarantined:
+                    self._supervision_failed = True
                 return self.database.get_job(job_id)
+            lease = self.database.get_lease()
+            parent = asyncio.current_task()
+            assert parent is not None
+            heartbeat_failed = False
+
+            async def heartbeat() -> None:
+                nonlocal heartbeat_failed
+                try:
+                    while True:
+                        await asyncio.sleep(HEARTBEAT_SECONDS)
+                        if lease.owner_id is None or not self.database.heartbeat_lease(
+                            lease.owner_id, lease.generation_id
+                        ):
+                            raise RuntimeUnavailable("lease_heartbeat_rejected")
+                except Exception:
+                    heartbeat_failed = True
+                    self._supervision_failed = True
+                    logger.exception("Lease heartbeat failed for job %s", job_id)
+                    # The parent owns cancellation-safe cleanup. Stop side effects
+                    # immediately; do not let a detached task continue the job.
+                    parent.cancel("lease_heartbeat_failed")
+
+            renewal = asyncio.create_task(heartbeat(), name="faultline-lease-heartbeat")
             try:
-                return await self._run_claimed_job(job_id, installation)
+                result = await self._run_claimed_job(job_id, installation)
+                if heartbeat_failed:
+                    raise RuntimeUnavailable("lease_heartbeat_failed")
+                return result
             except (Exception, asyncio.CancelledError):
                 self._supervision_failed = True
                 try:
@@ -858,6 +890,9 @@ class RepairWorker:
                 except Exception:
                     logger.exception("Job finalization could not persist quarantine")
                 raise
+            finally:
+                renewal.cancel()
+                await asyncio.gather(renewal, return_exceptions=True)
 
     async def _run_claimed_job(self, job_id: str, installation: str) -> OrchestratorJob:
         """Keep resource disposal independent of workflow and persistence failures."""
@@ -966,26 +1001,34 @@ class RepairWorker:
 
     async def reconcile(self) -> None:
         """Abandon interrupted jobs; never resume midway through a candidate mutation."""
-        installation = self.database.get_lease().installation_id
-        for job in self.database.unfinished_jobs():
-            clean = False
-            try:
-                async with asyncio.timeout(self.budgets.cleanup):
-                    if not self.runtime.ready:
-                        raise RuntimeError("Previous runtime resources cannot be confirmed clean")
-                    await self.runtime.cleanup(installation, job.id)
-                    await self.snapshots.cleanup(job.id)
-                    clean = True
-            except Exception:
-                pass
+        self.database.reserve_worker(self._owner_id)
+        lease = self.database.get_lease()
+        installation = lease.installation_id
+        jobs = self.database.unfinished_jobs()
+        # Persist before the first await: cancellation or another crash during
+        # recovery must never expose an apparently idle, clean runtime.
+        if jobs or lease.owner_id is not None:
+            self.database.quarantine_runtime()
+        reconciliation_error: Exception | None = None
+        try:
+            async with asyncio.timeout(self.budgets.preflight):
+                # Fresh runtime objects have no in-memory generations. Only the
+                # installation sweep can discover scopes orphaned by SIGKILL.
+                await self.runtime.reconcile(installation)
+        except Exception as exc:
+            self.database.quarantine_runtime()
+            reconciliation_error = exc
+        for job in jobs:
+            clean = await self._cleanup_job(installation, job.id, time.monotonic())
+            clean = clean and self.runtime.ready and reconciliation_error is None
             self.database.finish_job(
                 job.id,
                 TerminalOutcome.INTERRUPTED,
                 clean=clean,
                 error_details={"code": "controller_restart", "failed_stage": job.stage.value},
             )
-        async with asyncio.timeout(self.budgets.preflight):
-            await self.runtime.reconcile(installation)
+        if reconciliation_error is not None:
+            raise reconciliation_error
         lease = self.database.get_lease()
         if lease.owner_id is not None and lease.owner_id.startswith("reset:"):
             # This controller is the sole startup owner. An interrupted reset
@@ -995,6 +1038,7 @@ class RepairWorker:
 
     async def reset(self) -> None:
         """Reserve idle maintenance and clear quarantine only after confirmed cleanup."""
+        self.database.reserve_worker(self._owner_id)
         if self._supervision_failed:
             await self.reconcile()
         lease = self.database.begin_reset()

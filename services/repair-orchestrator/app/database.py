@@ -8,14 +8,17 @@ the terminal outcome commit together.
 """
 
 import hashlib
+import importlib
 import json
+import os
 import sqlite3
+import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import RLock
-from typing import Any
+from typing import IO, Any
 from uuid import UUID, uuid4
 
 from shared.config import REGISTRY
@@ -35,6 +38,7 @@ from shared.contracts.models import (
 )
 
 MAX_EVENT_SEQUENCE = 2**63 - 1
+LEASE_TIMEOUT = timedelta(seconds=30)
 
 TERMINAL_STATES = frozenset(
     {JobState.SUCCEEDED, JobState.FAILED, JobState.CANCELLED, JobState.INTERRUPTED}
@@ -67,14 +71,37 @@ class Database:
         if self.path != ":memory:":
             Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         self._lock = RLock()
+        self._worker_owner: str | None = None
+        self._worker_file: IO[bytes] | None = None
         self._connection = sqlite3.connect(
             self.path, isolation_level=None, check_same_thread=False, timeout=5
         )
         self._connection.row_factory = sqlite3.Row
-        self._connection.execute("PRAGMA foreign_keys = ON")
-        self._connection.execute("PRAGMA busy_timeout = 5000")
-        self._connection.execute("PRAGMA journal_mode = WAL")
-        self.initialize()
+        try:
+            self._connection.execute("PRAGMA foreign_keys = ON")
+            self._connection.execute("PRAGMA busy_timeout = 5000")
+            self._enable_wal()
+            self.initialize()
+        except BaseException:
+            self._connection.close()
+            raise
+
+    def _enable_wal(self) -> None:
+        """Bound retries for competing first-open journal mode changes only.
+
+        This pragma can report SQLITE_BUSY immediately despite busy_timeout.
+        Retrying it in autocommit is safe; workflow transactions are never replayed.
+        """
+        deadline = time.monotonic() + 5
+        while True:
+            try:
+                self._connection.execute("PRAGMA journal_mode = WAL")
+                return
+            except sqlite3.OperationalError as exc:
+                remaining = deadline - time.monotonic()
+                if getattr(exc, "sqlite_errorcode", None) != sqlite3.SQLITE_BUSY or remaining <= 0:
+                    raise
+                time.sleep(min(0.01, remaining))
 
     def initialize(self) -> None:
         """Apply the initial versioned schema; repeated initialization is safe."""
@@ -82,9 +109,21 @@ class Database:
             version = self._connection.execute("PRAGMA user_version").fetchone()[0]
             if version not in (0, 1):
                 raise RuntimeError("Unsupported database schema version")
-            self._connection.executescript(
-                """
-                BEGIN IMMEDIATE;
+            # Observers must open even while another connection owns the writer
+            # lock. Only a new (or partially initialized legacy) database writes.
+            if (
+                version == 1
+                and self._connection.execute(
+                    "SELECT 1 FROM runtime_leases WHERE singleton = 1"
+                ).fetchone()
+                and self._connection.execute(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' "
+                    "AND name IN ('probes', 'invariant_checks')"
+                ).fetchone()[0]
+                == 2
+            ):
+                return
+            schema = """
                 CREATE TABLE IF NOT EXISTS jobs (
                     id TEXT PRIMARY KEY,
                     idempotency_key TEXT NOT NULL UNIQUE,
@@ -138,10 +177,11 @@ class Database:
                 CREATE INDEX IF NOT EXISTS invariant_checks_latest
                     ON invariant_checks(invariant_id, created_at DESC);
                 PRAGMA user_version = 1;
-                COMMIT;
                 """
-            )
             with self._transaction():
+                for statement in schema.split(";"):
+                    if statement.strip():
+                        self._connection.execute(statement)
                 lease = RuntimeLease(
                     installation_id=str(uuid4()),
                     job_id=None,
@@ -178,6 +218,49 @@ class Database:
         """Close the owned connection after worker and streams have stopped."""
         with self._lock:
             self._connection.close()
+            if self._worker_owner is not None:
+                self.release_worker(self._worker_owner)
+
+    def reserve_worker(self, owner_id: str) -> None:
+        """Fence resource reconciliation with a kernel lock released on process death.
+
+        Database readers never take this lock. Keep its inode after release so
+        contenders always lock the same file, including after SIGKILL.
+        """
+        with self._lock:
+            if self._worker_owner == owner_id:
+                return
+            if self._worker_owner is not None:
+                raise DatabaseError("worker_busy", 409)
+            if self.path != ":memory:":
+                handle = Path(f"{Path(self.path).resolve()}.worker.lock").open("a+b")
+                try:
+                    if os.name == "nt":
+                        msvcrt = importlib.import_module("msvcrt")
+                        handle.seek(0, os.SEEK_END)
+                        if handle.tell() == 0:
+                            handle.write(b"\0")
+                            handle.flush()
+                        handle.seek(0)
+                        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                    else:
+                        fcntl = importlib.import_module("fcntl")
+                        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except OSError as exc:
+                    handle.close()
+                    raise DatabaseError("worker_busy", 409) from exc
+                self._worker_file = handle
+            self._worker_owner = owner_id
+
+    def release_worker(self, owner_id: str) -> None:
+        """Release controller ownership only after its tasks and cleanup stop."""
+        with self._lock:
+            if self._worker_owner != owner_id:
+                return
+            if self._worker_file is not None:
+                self._worker_file.close()
+                self._worker_file = None
+            self._worker_owner = None
 
     def _job(self, job_id: str) -> OrchestratorJob:
         row = self._connection.execute(
@@ -231,6 +314,38 @@ class Database:
         """Read the durable lease, including installation identity."""
         with self._lock:
             return self._lease()
+
+    def heartbeat_lease(self, owner_id: str, generation_id: str) -> bool:
+        """Renew the exact live generation; expired owners cannot revive it."""
+        with self._transaction():
+            lease = self._lease()
+            if (
+                lease.owner_id != owner_id
+                or lease.generation_id != generation_id
+                or lease.quarantined
+            ):
+                return False
+            now = utcnow()
+            expired = now - lease.updated_at >= LEASE_TIMEOUT
+            self._save_lease(lease.model_copy(update={"quarantined": expired, "updated_at": now}))
+            return not expired
+
+    def expire_lease(self) -> bool:
+        """Quarantine an expired owner without releasing its resource identities.
+
+        Expiration is not permission to steal the runtime: only reconciliation
+        under the worker lock may confirm cleanup and release ownership.
+        """
+        with self._transaction():
+            lease = self._lease()
+            if (
+                lease.owner_id is None
+                or lease.quarantined
+                or utcnow() - lease.updated_at < LEASE_TIMEOUT
+            ):
+                return False
+            self._save_lease(lease.model_copy(update={"quarantined": True}))
+            return True
 
     def quarantine_runtime(self) -> None:
         """Preserve ownership after an ambiguous worker fault until reconciliation."""
@@ -391,11 +506,20 @@ class Database:
         with self._transaction():
             job = self._job(job_id)
             lease = self._lease()
-            if job.state != JobState.QUEUED or lease.job_id != job_id or lease.quarantined:
+            if (
+                job.state != JobState.QUEUED
+                or lease.job_id != job_id
+                or lease.owner_id is None
+                or lease.quarantined
+            ):
+                return False
+            if utcnow() - lease.updated_at >= LEASE_TIMEOUT:
+                self._save_lease(lease.model_copy(update={"quarantined": True}))
                 return False
             self._save_job(
                 job.model_copy(update={"state": JobState.RUNNING, "updated_at": utcnow()})
             )
+            self._save_lease(lease.model_copy(update={"updated_at": utcnow()}))
             return True
 
     def update_job(self, job_id: str, **changes: Any) -> OrchestratorJob:

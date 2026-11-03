@@ -877,10 +877,18 @@ class IsolatedRuntime:
         output = await self._systemctl(
             "list-units", "--all", "--plain", "--no-legend", "--type=scope", f"{prefix}*"
         )
+        error: RuntimeUnavailable | None = None
         for line in output.splitlines():
             name = line.split(maxsplit=1)[0] if line.strip() else ""
             if name.startswith(prefix) and UNIT_PATTERN.fullmatch(name):
-                await self.release_scope(name, grace=0)
+                try:
+                    await self.release_scope(name, grace=0)
+                except RuntimeUnavailable as exc:
+                    # One stuck unit must not prevent disposal of other orphaned
+                    # scopes. Preserve failure so admission still fails closed.
+                    error = exc
+        if error is not None:
+            raise error
 
     async def _profile_preflight(self) -> None:
         # The exact interpreter profile must launch without mounting project/home.
