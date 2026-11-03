@@ -145,10 +145,17 @@ def backend_endpoint(generation_id: str, *, runtime_dir: Path | None = None) -> 
     if IS_MACOS:
         directory = runtime_dir or Path(tempfile.gettempdir())
         directory.mkdir(parents=True, exist_ok=True)
-        # A short name keeps the AF_UNIX path well under the 108-byte limit.
+        # A short name keeps the AF_UNIX path well under the 108-byte limit, but
+        # only when the directory itself is short: a long runtime_dir still
+        # overruns sockaddr_un. Close the listener on a refused bind so a path
+        # too long leaks neither a descriptor nor an ambiguous half-open socket.
         path = directory / f"flt-{generation_id[:8]}.sock"
         listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        listener.bind(str(path))
+        try:
+            listener.bind(str(path))
+        except BaseException:
+            listener.close()
+            raise
         listener.listen(16)
         return BackendEndpoint(listener, str(path), "named-unix")
     # Linux: the abstract namespace keeps the socket out of the filesystem.
