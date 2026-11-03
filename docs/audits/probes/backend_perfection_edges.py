@@ -30,6 +30,7 @@ from app.evidence import EvidenceStore
 from app.isolated_runtime import BackendResources, IsolatedRuntime
 from app.model_adapter import MetaRepairAdapter, ModelSettings
 from app.policy import TARGET_FILE, PatchPolicy, validate_ast
+from app.runtime import CandidateRejected
 from app.snapshots import SnapshotManager
 from app.worker import RepairWorker
 from shared.contracts.models import CleanupStatus, JobStage, TerminalOutcome
@@ -85,13 +86,20 @@ def policy_probes():
         outcome = PatchPolicy().validate(diff, base).is_valid
     except Exception as exc:
         outcome = type(exc).__name__
-    results["policy.full_patch_recursion"] = {"diff_bytes": len(diff.encode()), "result": outcome}
+    results["policy.full_patch_recursion"] = {
+        "diff_bytes": len(diff.encode()),
+        "result": outcome,
+    }
     # Existing seed need not be executed. This only checks mount identity validation.
     with tempfile.TemporaryDirectory(prefix="faultline-audit-snapshot-") as directory:
         snap = snapshot(Path(directory), False)
         (snap.path / "unhashed-extra.txt").write_text("innocuous audit marker")
-        IsolatedRuntime._verify_snapshot(snap)
-        results["snapshot.extra_file_admitted"] = True
+        try:
+            IsolatedRuntime._verify_snapshot(snap)
+            results["snapshot.extra_file_admitted"] = True
+        except CandidateRejected as exc:
+            results["snapshot.extra_file_admitted"] = False
+            results["snapshot.rejection_reason"] = str(exc)
 
 
 async def worker_probe(fault_site):

@@ -1,0 +1,67 @@
+{
+  "policy.loop_shadow": {
+    "bytes": 90,
+    "result": [
+      true,
+      false,
+      "Exception handlers must name trusted exception types or aliases"
+    ]
+  },
+  "policy.argument_shadow": {
+    "bytes": 92,
+    "result": [
+      true,
+      false,
+      "Exception handlers must name trusted exception types or aliases"
+    ]
+  },
+  "policy.finally_return": {
+    "bytes": 98,
+    "result": [
+      true,
+      false,
+      "Exception suppression by finally control flow is forbidden"
+    ]
+  },
+  "policy.alias_recursion": {
+    "bytes": 12234,
+    "result": "RecursionError"
+  },
+  "policy.full_patch_shadow": false,
+  "policy.full_patch_recursion": {
+    "diff_bytes": 12436,
+    "result": false
+  },
+  "snapshot.extra_file_admitted": false,
+  "snapshot.rejection_reason": "snapshot_nonapplication_file",
+  "worker.persistence_transition": {
+    "exception": "OperationalError",
+    "runtime_cleanup_called": true,
+    "runtime_prepared": true,
+    "runtime_activated": true,
+    "snapshot_runtime_remains": false,
+    "lease_quarantined_in_run_job": true
+  },
+  "worker.persistence_update": {
+    "exception": "OperationalError",
+    "runtime_cleanup_called": true,
+    "runtime_prepared": true,
+    "runtime_activated": true,
+    "snapshot_runtime_remains": false,
+    "lease_quarantined_in_run_job": true
+  },
+  "worker.cancel_during_cleanup": {
+    "stage": "completed",
+    "cleanup_status": "failed",
+    "outcome": "cleanup_failed",
+    "lease_quarantined": true
+  },
+  "worker.cooperative_deadline": {
+    "local_budget_ms": 10,
+    "still_pending_after_extra_ms": 50,
+    "pending": true
+  },
+  "runtime.stop_timeout": {
+    "scope_release_attempted": true
+  }
+}
