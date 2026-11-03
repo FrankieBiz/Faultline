@@ -8,6 +8,7 @@ is possible only after evidence and cleanup have both been confirmed.
 import asyncio
 import json
 import logging
+import random
 import time
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
@@ -26,6 +27,7 @@ from app.model_adapter import (
     ModelError,
     ProbeResult,
     RepairContext,
+    retry_backoff,
 )
 from app.policy import PatchPolicy, PatchPolicyError
 from app.project import ProjectPatchPolicy, ProjectRun
@@ -59,7 +61,6 @@ from shared.contracts.models import (
 
 logger = logging.getLogger("faultline.worker")
 HEARTBEAT_SECONDS = 5.0
-RETRY_BACKOFF_SECONDS = 1.0
 
 
 @dataclass(frozen=True)
@@ -127,6 +128,7 @@ class RepairWorker:
         *,
         budgets: Budgets | None = None,
         project: ProjectRun | None = None,
+        retry_random: random.Random | None = None,
     ) -> None:
         self.project = project
         self.scenarios = {project.scenario.id: project.scenario} if project else dict(REGISTRY)
@@ -136,6 +138,7 @@ class RepairWorker:
         self.snapshots = snapshots
         self.evidence = evidence
         self.budgets = budgets if budgets is not None else Budgets()
+        self._retry_random = retry_random if retry_random is not None else random.Random()
         self._wake = asyncio.Event()
         self._task: asyncio.Task[None] | None = None
         self._job_lock = asyncio.Lock()
@@ -791,8 +794,8 @@ class RepairWorker:
                 if exc.disables_repair or not exc.retryable:
                     break
                 if exc.code not in CORRECTABLE_PROPOSAL_ERRORS:
-                    retry_delay = max(
-                        RETRY_BACKOFF_SECONDS * 2 ** (number - 1), exc.retry_after or 0.0
+                    retry_delay = retry_backoff(
+                        number, rng=self._retry_random, retry_after=exc.retry_after
                     )
             except (PatchPolicyError, CandidateRejected) as exc:
                 final = (
@@ -828,7 +831,7 @@ class RepairWorker:
                 )
                 self.database.save_attempt(attempt.model_copy(update={"outcome": previous_gate}))
                 if previous_gate == "provider_timeout":
-                    retry_delay = RETRY_BACKOFF_SECONDS * 2 ** (number - 1)
+                    retry_delay = retry_backoff(number, rng=self._retry_random)
             except JobAbort as exc:
                 self.database.save_attempt(attempt.model_copy(update={"outcome": exc.code}))
                 if exc.outcome not in {TerminalOutcome.INVALID_PATCH, TerminalOutcome.UNRESOLVED}:

@@ -13,6 +13,7 @@ import difflib
 import hashlib
 import json
 import os
+import random
 import secrets
 import time
 from dataclasses import dataclass, field
@@ -35,6 +36,8 @@ MAX_FEEDBACK_TEXT = 240
 LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 # Only Meta-operated hosts may be labeled as Meta inference in evidence.
 META_HOST_SUFFIXES = ("meta.ai", "meta.com", "llama.com")
+RETRY_BACKOFF_SECONDS = 1.0
+MAX_RETRY_BACKOFF_SECONDS = 30.0
 
 
 @dataclass(frozen=True)
@@ -226,6 +229,19 @@ class ModelError(Exception):
         self.retryable = retryable
         self.disables_repair = disables_repair
         self.retry_after = retry_after
+
+
+def retry_backoff(attempt: int, *, rng: random.Random, retry_after: float | None = None) -> float:
+    """Full jitter after a one-based attempt; valid Retry-After overrides it.
+
+    Inject a seeded RNG for reproducibility. The worker owns sleeping and rejects
+    waits that cannot leave room for a complete attempt within the job deadline.
+    Provider-directed waits are never shortened by the local backoff cap.
+    """
+    if retry_after is not None:
+        return retry_after
+    ceiling = min(MAX_RETRY_BACKOFF_SECONDS, RETRY_BACKOFF_SECONDS * 2 ** (attempt - 1))
+    return rng.uniform(0.0, ceiling)
 
 
 def _retry_after(value: str | None) -> float | None:

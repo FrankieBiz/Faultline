@@ -7,6 +7,7 @@ adapter retries or changes to the two-request job budget.
 
 import asyncio
 import json
+import random
 import time
 from collections.abc import AsyncIterator
 from dataclasses import replace
@@ -21,19 +22,70 @@ from conftest import Harness
 
 from app.model_adapter import (
     CORRECTABLE_PROPOSAL_ERRORS,
+    MAX_RETRY_BACKOFF_SECONDS,
     MAX_WIRE_BYTES,
+    RETRY_BACKOFF_SECONDS,
     MetaRepairAdapter,
     ModelError,
     ModelSettings,
     RepairContext,
     deterministic_diff,
+    retry_backoff,
 )
 from app.policy import TARGET_FILE
-from app.worker import Budgets
+from app.worker import Budgets, RepairWorker
 from shared.contracts.models import TerminalOutcome
 
 TRANSIENT_STATUSES = (429, 500, 502, 503, 504)
 PRIVATE = "private provider body and credential marker"
+
+
+@pytest.fixture
+def retry_random(harness: Harness) -> random.Random:
+    """Exercise the worker's public RNG injection with a reproducible stream."""
+    rng = random.Random(0)
+    harness.worker = RepairWorker(
+        harness.database,
+        harness.adapter,
+        harness.runtime,
+        harness.snapshots,
+        harness.evidence,
+        retry_random=rng,
+    )
+    return rng
+
+
+@pytest.mark.parametrize("attempt", [1, 2, 4, 6, 10])
+def test_full_jitter_distribution_is_bounded_and_capped(attempt: int) -> None:
+    ceiling = min(MAX_RETRY_BACKOFF_SECONDS, RETRY_BACKOFF_SECONDS * 2 ** (attempt - 1))
+    rng = random.Random(42)
+    delays = [retry_backoff(attempt, rng=rng) for _ in range(4096)]
+    assert all(0 <= delay <= ceiling for delay in delays)
+    assert sum(delays) / len(delays) == pytest.approx(ceiling / 2, rel=0.03)
+    for quartile in range(4):
+        count = sum(
+            ceiling * quartile / 4 <= delay < ceiling * (quartile + 1) / 4 for delay in delays
+        )
+        assert count == pytest.approx(len(delays) / 4, rel=0.1)
+
+
+def test_full_jitter_seed_reproduces_delays_without_synchronizing_other_seeds() -> None:
+    def delays(seed: int) -> list[float]:
+        rng = random.Random(seed)
+        return [retry_backoff(attempt, rng=rng) for attempt in range(1, 11)]
+
+    assert delays(42) == delays(42)
+    assert delays(42) != delays(43)
+
+
+@pytest.mark.parametrize("retry_after", [0.0, 0.25, 2.0, 60.0, float("inf")])
+def test_retry_after_overrides_jitter_and_cap_without_consuming_randomness(
+    retry_after: float,
+) -> None:
+    rng = random.Random(42)
+    state = rng.getstate()
+    assert retry_backoff(1, rng=rng, retry_after=retry_after) == retry_after
+    assert rng.getstate() == state
 
 
 def completion(source: str, *, finish_reason: str = "stop") -> dict[str, Any]:
@@ -437,7 +489,7 @@ async def test_retry_after_beyond_job_budget_prevents_second_dispatch(
 
 @pytest.mark.parametrize("retry_after", [None, "1"])
 async def test_backoff_must_leave_budget_for_a_complete_second_attempt(
-    harness: Harness, retry_after: str | None
+    harness: Harness, retry_random: random.Random, retry_after: str | None
 ) -> None:
     harness.worker.budgets = replace(Budgets(), work=1.0, attempt=0.75)
     requests = 0
@@ -456,36 +508,77 @@ async def test_backoff_must_leave_budget_for_a_complete_second_attempt(
     assert "cleanup" in harness.runtime.calls
 
 
-@pytest.mark.parametrize("retry_after,minimum_wait", [(None, 1.0), ("invalid", 1.0), ("2", 2.0)])
+@pytest.mark.parametrize("status", [429, 503])
+@pytest.mark.parametrize("retry_after", [None, "invalid", "0", "2"])
 async def test_worker_waits_before_second_dispatch(
-    harness: Harness, seeded_source: str, retry_after: str | None, minimum_wait: float
+    harness: Harness,
+    seeded_source: str,
+    retry_random: random.Random,
+    monkeypatch: pytest.MonkeyPatch,
+    status: int,
+    retry_after: str | None,
 ) -> None:
     dispatch_times: list[float] = []
+    sleeps: list[float] = []
+    original_sleep = asyncio.sleep
+    expected = float(retry_after) if retry_after in {"0", "2"} else random.Random(0).uniform(0, 1)
+
+    async def sleep(delay: float) -> None:
+        sleeps.append(delay)
+        await original_sleep(delay)
+
+    monkeypatch.setattr(asyncio, "sleep", sleep)
 
     def handle(request: httpx.Request) -> httpx.Response:
         dispatch_times.append(time.monotonic())
         if len(dispatch_times) == 2:
             return httpx.Response(200, json=completion(seeded_source))
         headers = {} if retry_after is None else {"Retry-After": retry_after}
-        return httpx.Response(503, headers=headers)
+        return httpx.Response(status, headers=headers)
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
         harness.worker.adapter = MetaRepairAdapter(ModelSettings(api_key="test"), client=client)
         job = await harness.run()
     assert job.outcome == TerminalOutcome.VERIFIED
     assert len(dispatch_times) == len(harness.database.list_attempts(job.id)) == 2
-    assert dispatch_times[1] - dispatch_times[0] >= minimum_wait
+    assert dispatch_times[1] - dispatch_times[0] >= expected
+    assert sleeps.count(expected) == (1 if expected else 0)
 
 
+async def test_worker_provider_timeout_uses_jitter(
+    harness: Harness, retry_random: random.Random, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    expected = random.Random(0).uniform(0, 1)
+    sleeps: list[float] = []
+    original_sleep = asyncio.sleep
+
+    async def sleep(delay: float) -> None:
+        sleeps.append(delay)
+        await original_sleep(0 if delay == expected else delay)
+
+    monkeypatch.setattr(asyncio, "sleep", sleep)
+    propose = AsyncMock(side_effect=[TimeoutError(), ModelError("provider_http_401")])
+    monkeypatch.setattr(harness.adapter, "propose_patch", propose)
+    job = await harness.run()
+    assert job.outcome == TerminalOutcome.MODEL_ERROR
+    assert propose.await_count == len(harness.database.list_attempts(job.id)) == 2
+    assert sleeps.count(expected) == 1
+
+
+@pytest.mark.parametrize("retry_after", [None, "2"])
 async def test_cancellation_during_backoff_prevents_second_dispatch(
-    harness: Harness, monkeypatch: pytest.MonkeyPatch
+    harness: Harness,
+    retry_random: random.Random,
+    monkeypatch: pytest.MonkeyPatch,
+    retry_after: str | None,
 ) -> None:
     sleeping = asyncio.Event()
     original_sleep = asyncio.sleep
     requests = 0
+    expected = 2.0 if retry_after else random.Random(0).uniform(0, 1)
 
     async def sleep(delay: float) -> None:
-        if delay == 2.0:
+        if delay == expected:
             sleeping.set()
             await asyncio.Event().wait()
         else:
@@ -496,7 +589,8 @@ async def test_cancellation_during_backoff_prevents_second_dispatch(
     def handle(request: httpx.Request) -> httpx.Response:
         nonlocal requests
         requests += 1
-        return httpx.Response(429, headers={"Retry-After": "2"})
+        headers = {} if retry_after is None else {"Retry-After": retry_after}
+        return httpx.Response(429, headers=headers)
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
         harness.worker.adapter = MetaRepairAdapter(ModelSettings(api_key="test"), client=client)
