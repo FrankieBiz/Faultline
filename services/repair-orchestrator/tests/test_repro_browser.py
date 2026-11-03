@@ -29,7 +29,8 @@ async def test_browser_preflight_falls_back_with_sandbox_and_webrtc_policy(
         "  assert.deepEqual(options.args, ['--disable-webrtc',\n"
         "    '--webrtc-ip-handling-policy=disable_non_proxied_udp',\n"
         "    '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',\n"
-        "    '--disable-features=WebRtcHideLocalIpsWithMdns,WebRTC']);\n"
+        "    '--disable-features=WebRtcHideLocalIpsWithMdns,WebRTC',\n"
+        "    '--js-flags=--max-old-space-size=128']);\n"
         "  assert.equal(options.channel, attempts === 1 ? 'chromium' : undefined);\n"
         "  assert.equal(options.executablePath,\n"
         "    attempts === 1 ? undefined : '/trusted/chromium');\n"
@@ -201,3 +202,117 @@ async def test_browser_aborts_when_isolated_launches_are_unavailable(tmp_path: P
     assert process.returncode != 0
     assert not stdout
     assert b"sandboxed_browser_isolation_unavailable" in stderr
+
+
+@pytest.mark.parametrize("kind", ["text", "value"])
+async def test_browser_rejects_oversized_dom_before_protocol_serialization(
+    tmp_path: Path, kind: str
+) -> None:
+    """Run the production capture callback; forbid the unbounded Playwright APIs."""
+    driver = Path(project_runtime.__file__).with_name("repro_browser.mjs")
+    playwright = tmp_path / "bounded.mjs"
+    playwright.write_text(
+        "const element = { innerText: 'x'.repeat(200000), value: 'x'.repeat(200000) };\n"
+        "const page = { on() {}, locator() { return {\n"
+        "  async innerText() { return element.innerText; },\n"
+        "  async inputValue() { return element.value; },\n"
+        "  async evaluate(fn, arg) { return fn(element, arg); }\n"
+        "}; } };\n"
+        "const context = { async route() {}, async routeWebSocket() {},\n"
+        "  tracing: { async start() {} }, async newPage() { return page; } };\n"
+        "export const chromium = { async launch() { return {\n"
+        "  async close() {}, async newContext() { return context; } }; } };\n"
+    )
+    process = await asyncio.create_subprocess_exec(
+        "node",
+        str(driver),
+        str(playwright),
+        "http://127.0.0.1:1",
+        str(tmp_path),
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await process.communicate(
+        json.dumps(
+            {"action": "capture", "kind": kind, "selector": "body", "timeout_ms": 100}
+        ).encode()
+        + b"\n"
+    )
+    assert process.returncode == 0, stderr.decode()
+    ready, result = stdout.splitlines()
+    assert json.loads(ready) == {"ready": True}
+    assert json.loads(result) == {"error": "browser_step_failed"}
+
+
+@pytest.mark.parametrize("action", ["capture", "finish"])
+async def test_browser_bounds_screenshot_pixels_and_trace_export(
+    tmp_path: Path, action: str
+) -> None:
+    driver = Path(project_runtime.__file__).with_name("repro_browser.mjs")
+    playwright = tmp_path / "artifacts.mjs"
+    playwright.write_text(
+        "import assert from 'node:assert/strict';\n"
+        "import { writeFileSync, truncateSync } from 'node:fs';\n"
+        "const page = { on() {}, async screenshot(options) {\n"
+        "  writeFileSync(process.argv[4] + '/options.json', JSON.stringify(options));\n"
+        "  assert.deepEqual(options.clip, {x:0,y:0,width:1280,height:720});\n"
+        "  assert.equal(options.fullPage, false); assert.equal(options.scale, 'css');\n"
+        "  if (options.path) writeFileSync(options.path, 'png');\n"
+        "  return Buffer.alloc(600 * 1024);\n"
+        "} };\n"
+        "const context = { async route() {}, async routeWebSocket() {},\n"
+        "  tracing: { async start() {}, async stop({path}) {\n"
+        "    writeFileSync(path, ''); truncateSync(path, 26 * 1024 * 1024);\n"
+        "  } }, async newPage() { return page; } };\n"
+        "export const chromium = { async launch() { return {\n"
+        "  async close() {}, async newContext() { return context; } }; } };\n"
+    )
+    process = await asyncio.create_subprocess_exec(
+        "node",
+        str(driver),
+        str(playwright),
+        "http://127.0.0.1:1",
+        str(tmp_path),
+        "--stream-artifacts",
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await process.communicate(
+        json.dumps({"action": action, "kind": "screenshot", "timeout_ms": 100}).encode() + b"\n"
+    )
+    assert process.returncode == 0, stderr.decode()
+    options = json.loads((tmp_path / "options.json").read_text())
+    assert options["clip"] == {"x": 0, "y": 0, "width": 1280, "height": 720}
+    assert options["fullPage"] is False
+    assert options["scale"] == "css"
+    messages = [json.loads(line) for line in stdout.splitlines()]
+    assert messages[-1] == {"error": "browser_step_failed"}
+    assert not any(message.get("artifact") == "trace.zip" for message in messages)
+
+
+async def test_browser_rejects_command_growth_while_reading(tmp_path: Path) -> None:
+    driver = Path(project_runtime.__file__).with_name("repro_browser.mjs")
+    playwright = tmp_path / "input.mjs"
+    playwright.write_text(
+        "const context = { async route() {}, async routeWebSocket() {},\n"
+        "tracing: { async start() {} }, async newPage() { return {on() {}}; } };\n"
+        "export const chromium = { async launch() { return {\n"
+        "async newContext() { return context; }, async close() {} }; } };\n"
+    )
+    process = await asyncio.create_subprocess_exec(
+        "node",
+        str(driver),
+        str(playwright),
+        "http://127.0.0.1:1",
+        str(tmp_path),
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    # No newline: readline would continue accumulating without ever parsing.
+    stdout, stderr = await process.communicate(b"x" * 70000)
+    assert process.returncode != 0
+    assert stdout.strip() == b'{"ready":true}'
+    assert b"command_limit" in stderr

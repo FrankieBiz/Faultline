@@ -6,11 +6,12 @@ import io
 import json
 import os
 import shutil
+import socket
 import time
 import zipfile
 from collections.abc import AsyncIterator
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import httpx
@@ -247,3 +248,107 @@ async def test_idle_reconcile_retries_transient_resource_cleanup(tmp_path: Path)
     assert not directory.exists()
     assert not runtime.generations
     assert not runtime.ready
+
+
+@pytest.mark.parametrize("extra", ["unhashed-extra.txt", "apps/sibling.py", "empty", "fifo"])
+def test_snapshot_rejects_unhashed_mount_entries(tmp_path: Path, extra: str) -> None:
+    snap = snapshot(tmp_path, False)
+    path = snap.path / extra
+    if extra == "empty":
+        path.mkdir()
+    elif extra == "fifo":
+        os.mkfifo(path)
+    else:
+        path.write_text("unattested bytes")
+    with pytest.raises(CandidateRejected, match="snapshot_nonapplication_file"):
+        IsolatedRuntime._verify_snapshot(snap)
+
+
+@pytest.mark.parametrize("failure", [TimeoutError, OSError, asyncio.CancelledError])
+async def test_backend_stop_failure_releases_scope_and_local_handles(
+    tmp_path: Path, failure: type[BaseException], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.isolated_runtime import BackendResources
+
+    runtime = IsolatedRuntime(ROOT)
+    listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    socket_path = tmp_path / "backend.sock"
+    listener.bind(str(socket_path))
+    process = AsyncMock(spec=ManagedProcess)
+    process.stop.side_effect = failure("stop failed")
+    client = httpx.AsyncClient()
+    backend = BackendResources(
+        unit="owned.scope",
+        listener=listener,
+        process=process,
+        client=client,
+        socket_path=socket_path,
+    )
+    release = AsyncMock()
+    monkeypatch.setattr(runtime, "release_scope", release)
+    with pytest.raises(failure):
+        await runtime._release_session(backend)
+    release.assert_awaited_once_with("owned.scope")
+    assert listener.fileno() == -1
+    assert client.is_closed
+    assert not socket_path.exists()
+
+
+async def test_release_session_closes_handles_when_stop_backend_itself_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.isolated_runtime import BackendResources
+
+    runtime = IsolatedRuntime(ROOT)
+    backend = BackendResources(listener=socket.socket(), client=httpx.AsyncClient())
+    monkeypatch.setattr(
+        runtime, "_stop_backend", AsyncMock(side_effect=RuntimeError("stop failed"))
+    )
+    with pytest.raises(RuntimeError, match="stop failed"):
+        await runtime._release_session(backend)
+    assert backend.listener is not None and backend.listener.fileno() == -1
+    assert backend.client is not None and backend.client.is_closed
+
+
+@pytest.mark.parametrize("failed_step", ["runner", "frontend", "backend", "bridge"])
+async def test_generation_cleanup_attempts_every_owned_resource(
+    tmp_path: Path, failed_step: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.isolated_runtime import BackendResources, BridgeServer, Generation
+
+    runtime = IsolatedRuntime(ROOT)
+    directory = tmp_path / "generation"
+    directory.mkdir()
+    backend = BackendResources(listener=socket.socket(), client=httpx.AsyncClient())
+    owned = Generation(snapshot(tmp_path, False), directory, backend)
+    owned.runner = AsyncMock(spec=ManagedProcess)
+    owned.frontend = AsyncMock(spec=ManagedProcess)
+    owned.bridge_server = AsyncMock(spec=BridgeServer)
+    owned.bridge_socket = socket.socket()
+
+    async def bridge() -> None:
+        if failed_step == "bridge":
+            raise RuntimeError("teardown failed")
+
+    owned.bridge_task = asyncio.create_task(bridge())
+    stop_backend = AsyncMock()
+    monkeypatch.setattr(runtime, "_stop_backend", stop_backend)
+    stops = {
+        "runner": owned.runner.stop,
+        "frontend": owned.frontend.stop,
+        "backend": stop_backend,
+    }
+    if failed_step != "bridge":
+        stops[failed_step].side_effect = RuntimeError("teardown failed")
+    runtime.generations["job"] = owned
+    with pytest.raises(RuntimeError, match="teardown failed"):
+        await runtime.cleanup("installation", "job")
+    for stop in stops.values():
+        stop.assert_awaited_once()
+    assert owned.bridge_server.should_exit
+    assert owned.bridge_task.done()
+    assert owned.bridge_socket.fileno() == -1
+    assert backend.listener is not None and backend.listener.fileno() == -1
+    assert backend.client is not None and backend.client.is_closed
+    assert runtime.generations["job"] is owned
+    assert directory.exists()

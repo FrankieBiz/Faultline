@@ -5,6 +5,7 @@ import difflib
 import hashlib
 import json
 import os
+import socket
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -259,6 +260,8 @@ async def test_project_execution_timeout_cleans_up_session(
         monkeypatch.setattr("app.project_runtime.BrowserSession.perform", hang)
     monkeypatch.setattr(runtime, "_release_session", release)
     monkeypatch.setattr(runtime, "scope_unit", lambda _: None)
+    monkeypatch.setattr(runtime, "_browser_command", lambda _: ["/trusted/node"])
+    monkeypatch.setattr(runtime, "verify_scope", AsyncMock())
     # The outer watchdog keeps this regression fast even before the fix.
     execution = asyncio.create_task(runtime.execute(job_id, str(uuid4()), "baseline", snapshot, 20))
     try:
@@ -534,6 +537,8 @@ async def test_browser_startup_failure_after_readiness_is_infrastructure(
     monkeypatch.setattr(runtime, "_launch_service", AsyncMock())
     monkeypatch.setattr(runtime, "_start_bridge", AsyncMock(return_value="http://127.0.0.1:1"))
     monkeypatch.setattr(runtime, "scope_unit", lambda session_id: None)
+    monkeypatch.setattr(runtime, "_browser_command", lambda _: ["/trusted/node"])
+    monkeypatch.setattr(runtime, "verify_scope", AsyncMock())
     browser = SimpleNamespace(
         process=SimpleNamespace(
             stdout=SimpleNamespace(
@@ -660,3 +665,143 @@ async def test_real_node_repository_baseline_repair_and_proof(
     finally:
         await worker.adapter.close()
         worker.database.close()
+
+
+@pytest.mark.parametrize("failed_step", ["browser", "scope", "bridge", "backend"])
+async def test_project_teardown_failure_attempts_all_resources(
+    project: tuple[Path, ProjectRun], monkeypatch: pytest.MonkeyPatch, failed_step: str
+) -> None:
+    from app.isolated_runtime import BackendResources, BridgeServer
+    from app.project_runtime import SessionResources
+
+    root, run = project
+    runtime = ProjectRuntime(root, run)
+    owned = SessionResources(BackendResources(), browser_unit="owned.scope")
+    browser = AsyncMock(spec=ManagedProcess)
+    owned.browser = browser
+    owned.bridge = AsyncMock(spec=BridgeServer)
+    owned.bridge_socket = socket.socket()
+
+    async def bridge() -> None:
+        if failed_step == "bridge":
+            raise RuntimeError("teardown failed")
+
+    owned.bridge_task = asyncio.create_task(bridge())
+    release = AsyncMock(
+        side_effect=RuntimeError("teardown failed") if failed_step == "backend" else None
+    )
+    monkeypatch.setattr(runtime, "_release_session", release)
+    release_scope = AsyncMock(
+        side_effect=RuntimeError("teardown failed") if failed_step == "scope" else None
+    )
+    monkeypatch.setattr(runtime, "release_scope", release_scope)
+    if failed_step == "browser":
+        browser.stop.side_effect = RuntimeError("teardown failed")
+    runtime.sessions["job/session"] = owned
+    with pytest.raises(RuntimeError, match="teardown failed"):
+        await runtime._close_session("job/session")
+    browser.stop.assert_awaited_once()
+    release_scope.assert_awaited_once_with("owned.scope")
+    release.assert_awaited_once_with(owned.backend)
+    assert owned.bridge.should_exit
+    assert owned.bridge_task.done()
+    assert owned.bridge_socket.fileno() == -1
+    assert runtime.sessions["job/session"] is owned
+
+
+@pytest.mark.parametrize("payload", [{"value": "x" * 200000}, {"body": [0] * 70000}])
+def test_browser_command_rejects_oversized_payload_before_serializing(
+    payload: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app import project_runtime
+
+    def unexpected_serialization(*args: Any, **kwargs: Any) -> None:
+        pytest.fail("oversized payload reached JSON serialization")
+
+    monkeypatch.setattr("app.project_runtime.json.dumps", unexpected_serialization)
+    with pytest.raises(RuntimeUnavailable, match="browser_command_limit"):
+        project_runtime._browser_command_bytes(payload)
+
+
+@pytest.mark.parametrize("oversized", [False, True])
+async def test_browser_artifact_stream_is_bounded_before_host_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, oversized: bool
+) -> None:
+    import base64
+    from typing import cast
+    from unittest.mock import Mock
+
+    from app import project_runtime
+    from app.isolated_runtime import BackendResources
+
+    monkeypatch.setattr(project_runtime, "ARTIFACT_LIMITS", {"trace.zip": 5})
+    messages = [
+        {"artifact": "trace.zip", "data": base64.b64encode(b"1234").decode()},
+        {"artifact": "trace.zip", "data": base64.b64encode(b"56" if oversized else b"5").decode()},
+        {"result": None},
+    ]
+    process = Mock(
+        stdin=Mock(drain=AsyncMock()),
+        stdout=Mock(readline=AsyncMock(side_effect=[json.dumps(m).encode() for m in messages])),
+    )
+    session = project_runtime.BrowserSession(
+        cast(asyncio.subprocess.Process, process), BackendResources(), "session", None
+    )
+    if oversized:
+        with pytest.raises(RuntimeUnavailable, match="browser_artifact_limit"):
+            await session.finish(tmp_path)
+        assert (tmp_path / "trace.zip").read_bytes() == b"1234"
+    else:
+        await session.finish(tmp_path)
+        assert (tmp_path / "trace.zip").read_bytes() == b"12345"
+
+
+async def test_browser_scope_and_kernel_artifact_production_limits(
+    project: tuple[Path, ProjectRun],
+) -> None:
+    """Exercise the actual launch profile, cgroup membership, and write limits."""
+    from app.project_runtime import BROWSER_LIMITS, BROWSER_STORAGE_BYTES
+
+    root, run = project
+    runtime = ProjectRuntime(root, run)
+    runtime._installation = str(uuid4())
+    try:
+        await runtime.backend_preflight()
+    except RuntimeUnavailable as exc:
+        if os.environ.get("FAULTLINE_REQUIRE_ISOLATED_TESTS") == "1":
+            pytest.fail(str(exc))
+        pytest.skip(str(exc))
+    unit = runtime.scope_unit(str(uuid4()))
+    process = None
+    try:
+        process = await ManagedProcess.start(
+            *runtime._browser_command(unit),
+            "-e",
+            "const fs = require('node:fs'); const chunk = Buffer.alloc(1024*1024); "
+            "let sizes = [], errors = []; "
+            "for (let i = 0; i < 4; i++) { "
+            " const path = '/tmp/artifacts/' + i; const fd = fs.openSync(path, 'w'); "
+            " try { for (let j = 0; j < 32; j++) fs.writeSync(fd, chunk); } "
+            " catch(e) { errors.push(e.code); } finally { fs.closeSync(fd); } "
+            " sizes.push(fs.statSync(path).size); } "
+            "console.log(JSON.stringify({sizes, errors})); setInterval(() => {}, 1000);",
+            env={**runtime._trusted_environment(), **runtime.scope_environment(unit)},
+        )
+        verified = await runtime.verify_scope(unit, process, BROWSER_LIMITS)
+        assert verified.verified
+        assert verified.memory_max_bytes == BROWSER_LIMITS.memory_max_bytes
+        async with asyncio.timeout(5):
+            while b"\n" not in process.stdout:
+                assert process.process.returncode is None, bytes(process.stderr)
+                await asyncio.sleep(0.01)
+        observed = json.loads(bytes(process.stdout))
+        assert "EFBIG" in observed["errors"]
+        assert "ENOSPC" in observed["errors"]
+        assert max(observed["sizes"]) == 25 * 1024 * 1024
+        assert sum(observed["sizes"]) <= BROWSER_STORAGE_BYTES
+    finally:
+        try:
+            if process is not None:
+                await process.stop()
+        finally:
+            await runtime.release_scope(unit)

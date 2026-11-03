@@ -12,9 +12,10 @@ import json
 import os
 import shutil
 import socket
+import sys
 import time
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, ExitStack, asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -42,6 +43,43 @@ from app.runtime import Phase, RuntimeArtifact, RuntimeExecution, RuntimeUnavail
 from app.snapshots import Snapshot
 from shared.contracts.models import ExecutionReport, ExecutionVerdict, Observation, ObservationKind
 
+BROWSER_LIMITS = AggregateLimits(memory_max_bytes=1024 * 1024 * 1024, tasks_max=256)
+BROWSER_STORAGE_BYTES = 64 * 1024 * 1024
+ARTIFACT_LIMITS = {
+    "screenshot.png": 10 * 1024 * 1024,
+    "trace.zip": 25 * 1024 * 1024,
+    "requests.json": 16 * 1024,
+}
+
+
+def _browser_command_bytes(payload: dict[str, Any]) -> bytes:
+    # Check before serialization: large fill values and JSON request bodies
+    # must not first allocate an equally large encoded copy in the controller.
+    remaining = 65536
+
+    def check(value: Any, depth: int = 0) -> None:
+        nonlocal remaining
+        remaining -= 1
+        if depth > 32 or remaining < 0:
+            raise RuntimeUnavailable("browser_command_limit")
+        if isinstance(value, str):
+            remaining -= len(value)
+            if remaining < 0:
+                raise RuntimeUnavailable("browser_command_limit")
+        elif isinstance(value, dict):
+            for key, item in value.items():
+                check(key, depth + 1)
+                check(item, depth + 1)
+        elif isinstance(value, list):
+            for item in value:
+                check(item, depth + 1)
+
+    check(payload)
+    encoded = json.dumps(payload).encode() + b"\n"
+    if len(encoded) > 65536:
+        raise RuntimeUnavailable("browser_command_limit")
+    return encoded
+
 
 class _BrowserStartupUnavailable(RuntimeUnavailable):
     """Distinguish driver startup from missing capture files after reproduction."""
@@ -62,12 +100,45 @@ class BrowserSession:
 
     async def exchange(self, payload: dict[str, Any]) -> Any:
         assert self.process.stdin is not None and self.process.stdout is not None
-        self.process.stdin.write(json.dumps(payload).encode() + b"\n")
+        self.process.stdin.write(_browser_command_bytes(payload))
         await self.process.stdin.drain()
-        response = json.loads(await self.process.stdout.readline())
+        response = await self._read_message()
         if "error" in response:
             raise RuntimeUnavailable("browser_step_failed")
         return response.get("result")
+
+    async def _read_message(self) -> dict[str, Any]:
+        assert self.process.stdout is not None
+        line = await self.process.stdout.readline()
+        if len(line) > 1024 * 1024:
+            raise RuntimeUnavailable("browser_measurement_limit")
+        response = json.loads(line)
+        if not isinstance(response, dict):
+            raise RuntimeUnavailable("browser_protocol_error")
+        return response
+
+    async def finish(self, directory: Path) -> None:
+        assert self.process.stdin is not None
+        self.process.stdin.write(b'{"action":"finish"}\n')
+        await self.process.stdin.drain()
+        sizes = dict.fromkeys(ARTIFACT_LIMITS, 0)
+        with ExitStack() as handles:
+            files = {name: handles.enter_context((directory / name).open("wb")) for name in sizes}
+            while True:
+                response = await self._read_message()
+                if "artifact" not in response:
+                    if response != {"result": None} or not all(sizes.values()):
+                        raise RuntimeUnavailable("browser_finish_failed")
+                    break
+                name = response["artifact"]
+                data = response.get("data")
+                if name not in sizes or not isinstance(data, str) or len(data) > 65536:
+                    raise RuntimeUnavailable("browser_artifact_limit")
+                chunk = base64.b64decode(data, validate=True)
+                sizes[name] += len(chunk)
+                if sizes[name] > ARTIFACT_LIMITS[name]:
+                    raise RuntimeUnavailable("browser_artifact_limit")
+                files[name].write(chunk)
 
     async def perform(self, step: ReproStep) -> Measurement | bytes | None:
         result = await self.exchange(step.model_dump(mode="json"))
@@ -92,6 +163,7 @@ class SessionResources:
     bridge: BridgeServer | None = None
     bridge_task: asyncio.Task[None] | None = None
     bridge_socket: socket.socket | None = None
+    browser_unit: str | None = None
 
 
 class ProjectRuntime(IsolatedRuntime):
@@ -331,22 +403,71 @@ class ProjectRuntime(IsolatedRuntime):
 
     async def _close_session(self, key: str) -> None:
         owned = self.sessions[key]
-        try:
+        async with AsyncExitStack() as teardown:
+            teardown.push_async_callback(self._release_session, owned.backend)
+            teardown.push_async_callback(
+                self._close_bridge, owned.bridge, owned.bridge_task, owned.bridge_socket
+            )
+            teardown.push_async_callback(self.release_scope, owned.browser_unit)
             if owned.browser is not None:
-                await owned.browser.stop()
-            if owned.bridge is not None:
-                owned.bridge.should_exit = True
-            if owned.bridge_task is not None:
-                try:
-                    await asyncio.wait_for(owned.bridge_task, timeout=2)
-                except TimeoutError:
-                    owned.bridge_task.cancel()
-                    await asyncio.gather(owned.bridge_task, return_exceptions=True)
-            if owned.bridge_socket is not None:
-                owned.bridge_socket.close()
-        finally:
-            await self._release_session(owned.backend)
+                teardown.push_async_callback(owned.browser.stop)
         del self.sessions[key]
+
+    def _browser_command(self, unit: str | None) -> list[str]:
+        """Bound host helper memory/CPU/tasks and temporary artifact production.
+
+        Keep the host network for the owned loopback bridge. The read-only host
+        mount supplies trusted tooling; all browser writes go to private tmpfs.
+        No artifact is written to host storage until the controller accepts its
+        bounded stream. Failure to provision this profile aborts reproduction.
+        """
+        if unit is None or not self.systemd_run or not self.bwrap or not self.node:
+            raise RuntimeUnavailable("browser_limits_unavailable")
+        return [
+            self.systemd_run,
+            "--user",
+            "--scope",
+            "--quiet",
+            f"--unit={unit}",
+            *BROWSER_LIMITS.properties(),
+            "--",
+            self.bwrap,
+            "--unshare-user",
+            "--unshare-ipc",
+            "--unshare-uts",
+            "--die-with-parent",
+            "--new-session",
+            "--ro-bind",
+            "/",
+            "/",
+            "--dev",
+            "/dev",
+            "--proc",
+            "/proc",
+            "--size",
+            str(BROWSER_STORAGE_BYTES),
+            "--tmpfs",
+            "/tmp",
+            "--size",
+            str(BROWSER_STORAGE_BYTES),
+            "--tmpfs",
+            "/dev/shm",
+            "--dir",
+            "/tmp/artifacts",
+            "--chdir",
+            "/tmp",
+            "--setenv",
+            "TMPDIR",
+            "/tmp",
+            "--setenv",
+            "HOME",
+            "/tmp",
+            sys.executable,
+            "-I",
+            str(Path(__file__).with_name("browser_host.py")),
+            self.node,
+            "--max-old-space-size=128",
+        ]
 
     @asynccontextmanager
     async def _session(
@@ -362,20 +483,26 @@ class ProjectRuntime(IsolatedRuntime):
             url = await self._start_bridge(owned)
             assert self.node is not None
             try:
+                owned.browser_unit = self.scope_unit(str(uuid4()))
                 owned.browser = await ManagedProcess.start(
-                    self.node,
+                    *self._browser_command(owned.browser_unit),
                     str(self.driver),
                     str(self.playwright),
                     url,
-                    str(directory),
-                    env=self._trusted_environment(),
+                    "/tmp/artifacts",
+                    "--stream-artifacts",
+                    env={
+                        **self._trusted_environment(),
+                        **self.scope_environment(owned.browser_unit),
+                    },
                     interactive=True,
                 )
+                await self.verify_scope(owned.browser_unit, owned.browser, BROWSER_LIMITS)
                 assert owned.browser.process.stdout is not None
                 async with asyncio.timeout(10):
                     if json.loads(await owned.browser.process.stdout.readline()) != {"ready": True}:
                         raise ValueError("invalid browser handshake")
-            except (OSError, ValueError, TimeoutError):
+            except (OSError, ValueError, TimeoutError, RuntimeUnavailable):
                 self._preflight = False
                 raise _BrowserStartupUnavailable("sandboxed_browser_launch_failed") from None
             session = BrowserSession(
@@ -383,7 +510,7 @@ class ProjectRuntime(IsolatedRuntime):
             )
             yield session
             async with asyncio.timeout(5):
-                await session.exchange({"action": "finish"})
+                await session.finish(directory)
                 assert owned.browser.process.stdin is not None
                 owned.browser.process.stdin.close()
                 if await owned.browser.process.wait() != 0:
@@ -469,6 +596,7 @@ class ProjectRuntime(IsolatedRuntime):
         )
 
     async def cleanup(self, installation_id: str, job_id: str) -> None:
-        for key in list(self.sessions):
-            if key.startswith(job_id + "/"):
-                await self._close_session(key)
+        async with AsyncExitStack() as teardown:
+            for key in list(self.sessions):
+                if key.startswith(job_id + "/"):
+                    teardown.push_async_callback(self._close_session, key)

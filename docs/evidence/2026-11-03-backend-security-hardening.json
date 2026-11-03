@@ -1,0 +1,186 @@
+{
+  "date": "2026-11-03",
+  "implementation_revision": "433e87f93b026fc73d2d729af5872abeea6e3471",
+  "remediated_findings": [
+    "P01",
+    "P02",
+    "P03",
+    "P05"
+  ],
+  "changes": {
+    "P01": "Both launches use the same sandbox and all requested WebRTC switches. Fallback explicitly selects full Chromium instead of the default headless shell; unavailable isolated launches abort before ready.",
+    "P02": "Capture installation ownership before workflow side effects; unconditional finally disposes runtime and snapshots even when cleanup-entry persistence fails. Ambiguous finalization quarantines admission in memory and best-effort storage.",
+    "P03": "Separately owned, shielded cleanup survives repeated job cancellation and has its own cleanup deadline. Independent snapshot teardown is attempted after runtime failure; unconfirmed teardown cannot publish proof or release quarantine.",
+    "P05": "Track non-assignment bindings as unproven handler types and reject exception-suppressing finally returns/breaks/continues. Preserve trusted aliases, diagnostic reraises, nested function returns, and control transfers local to finally loops."
+  },
+  "verification": {
+    "make_check": {
+      "exit_code": 0,
+      "backend_root_passed": 324,
+      "backend_root_skipped": 23,
+      "orchestrator_passed": 1175,
+      "browser_runner_passed": 134,
+      "lint_format_types_provenance_builds": "passed"
+    },
+    "after_fast_forward_to_9ebc828": {
+      "backend_root_passed": 328,
+      "backend_root_skipped": 23,
+      "backend_root_lint_format": "passed"
+    },
+    "focused_policy_worker_browser": {
+      "passed": 185,
+      "exit_code": 0
+    },
+    "required_isolation_suite": {
+      "passed": 51,
+      "skipped": 0,
+      "exit_code": 0,
+      "files": [
+        "test_isolated_runtime.py",
+        "test_resource_limits_cgroup.py",
+        "test_repro_browser.py",
+        "test_project_run.py"
+      ],
+      "environment": "FAULTLINE_REQUIRE_ISOLATED_TESTS=1",
+      "execution": "Serialized after builds and other owned test processes completed; readiness diagnostics wrapped reconcile without changing its result.",
+      "prior_runs": [
+        {
+          "passed": 50,
+          "failed": 1,
+          "failure": "test_actual_browser_baseline_and_healthy_fixture_in_bubblewrap: baseline fingerprint mismatch",
+          "context": "Overlapped make check storefront rebuild."
+        },
+        {
+          "passed": 50,
+          "failed": 1,
+          "failure": "test_trusted_browser_cleanup_on_liveness_eof_or_cancellation[cancel]: runtime unavailable",
+          "context": "Overlapped full orchestrator suite. Lifecycle tests share installation lifecycle-test, whose scopes reconcile can remove."
+        }
+      ],
+      "diagnosis": "A fresh UUID-owned standalone preflight passed memory/task enforcement. Serialization eliminated the observed failures; concurrent build/scope interference is supported by source inspection, not exhaustively proven.",
+      "diagnostic_harness_setup": "Initial wrapper imported application dependencies before pytest plugin initialization and hit PytestAssertRewriteWarning before collection. Instrumentation was moved to pytest_configure; warnings-as-errors remained enabled."
+    },
+    "faultline_gate": {
+      "gate_status": "PASSED",
+      "verdict": "SAFE_TO_DEPLOY",
+      "exit_code": 0,
+      "target_url": "http://127.0.0.1:19190/healthz",
+      "summary": "No defects found in explored flows: explored 0 elements across 1 screen with 0 actions. This does not establish business completeness.",
+      "elements_explored": 0,
+      "actions_taken": 0,
+      "stop_reason": "exhausted",
+      "screens_visited": [
+        {
+          "url": "http://127.0.0.1:19190/healthz",
+          "path": "/healthz",
+          "title": "",
+          "elements": 0,
+          "forms": 0,
+          "first_step": 1
+        }
+      ],
+      "failure": null,
+      "reproduction_trail": [
+        "1. Open http://127.0.0.1:19190/healthz"
+      ],
+      "agent_remediation_prompt": null,
+      "error": null
+    }
+  },
+  "browser_probe": [
+    {
+      "forced_fallback": false,
+      "stun_bytes_received": 0,
+      "page_result": {
+        "result": {
+          "value": "rtc-started"
+        }
+      },
+      "driver_in_faultline_candidate_scope": false,
+      "driver_shares_controller_cgroup": true
+    },
+    {
+      "forced_fallback": true,
+      "stun_bytes_received": 0,
+      "page_result": {
+        "result": {
+          "value": "rtc-started"
+        }
+      },
+      "driver_in_faultline_candidate_scope": false,
+      "driver_shares_controller_cgroup": true
+    }
+  ],
+  "edge_probe": {
+    "policy.loop_shadow": {
+      "bytes": 90,
+      "result": [
+        true,
+        false,
+        "Exception handlers must name trusted exception types or aliases"
+      ]
+    },
+    "policy.argument_shadow": {
+      "bytes": 92,
+      "result": [
+        true,
+        false,
+        "Exception handlers must name trusted exception types or aliases"
+      ]
+    },
+    "policy.finally_return": {
+      "bytes": 98,
+      "result": [
+        true,
+        false,
+        "Exception suppression by finally control flow is forbidden"
+      ]
+    },
+    "policy.alias_recursion": {
+      "bytes": 12234,
+      "result": "RecursionError"
+    },
+    "policy.full_patch_shadow": false,
+    "policy.full_patch_recursion": {
+      "diff_bytes": 12436,
+      "result": false
+    },
+    "snapshot.extra_file_admitted": true,
+    "worker.persistence_transition": {
+      "exception": "OperationalError",
+      "runtime_cleanup_called": true,
+      "runtime_prepared": true,
+      "runtime_activated": true,
+      "snapshot_runtime_remains": false,
+      "lease_quarantined_in_run_job": true
+    },
+    "worker.persistence_update": {
+      "exception": "OperationalError",
+      "runtime_cleanup_called": true,
+      "runtime_prepared": true,
+      "runtime_activated": true,
+      "snapshot_runtime_remains": false,
+      "lease_quarantined_in_run_job": true
+    },
+    "worker.cancel_during_cleanup": {
+      "stage": "completed",
+      "cleanup_status": "failed",
+      "outcome": "cleanup_failed",
+      "lease_quarantined": true
+    },
+    "worker.cooperative_deadline": {
+      "local_budget_ms": 10,
+      "still_pending_after_extra_ms": 50,
+      "pending": true
+    },
+    "runtime.stop_timeout": {
+      "scope_release_attempted": false
+    }
+  },
+  "limits": [
+    "The UDP probe demonstrates zero STUN bytes on both real launch paths for the installed Chromium build; it does not prove general browser network confinement.",
+    "Gate coverage is an API health smoke check: zero interactive elements on one screen. Worker behavior is covered by fault-injection tests and probes.",
+    "P04, P06, P07, and P08 remain outside this remediation scope. Original edge probes still expose stop-timeout, browser accounting, and snapshot-integrity limitations.",
+    "Cleanup deadlines still require cooperative trusted runtime cancellation; unconfirmed cleanup remains quarantined."
+  ]
+}
