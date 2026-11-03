@@ -41,7 +41,14 @@ from fastapi import FastAPI, Request, Response
 
 from app.database import utcnow
 from app.http_regression import regression
-from app.portable import IS_WINDOWS, BackendEndpoint, backend_endpoint, current_host, portable_pipe
+from app.portable import (
+    IS_WINDOWS,
+    BackendEndpoint,
+    backend_endpoint,
+    complete_cleanup,
+    current_host,
+    portable_pipe,
+)
 from app.runtime import (
     CandidateRejected,
     Phase,
@@ -62,6 +69,8 @@ from shared.contracts.models import (
 
 LOG_LIMIT = 256 * 1024
 REPORT_LIMIT = 64 * 1024
+HEADER_LIMIT = 16 * 1024
+HEADER_COUNT_LIMIT = 100
 
 AGGREGATE_MODES = frozenset({"required", "disabled"})
 # Reasons that withhold readiness; "aggregate_limits_disabled" is informational.
@@ -314,15 +323,24 @@ class BoundedBackendTransport(httpx.AsyncBaseTransport):
     async def _bounded_request(self, request: httpx.Request) -> httpx.Response:
         response = await self.inner.handle_async_request(request)
         try:
+            header_bytes = 0
+            for count, (name, value) in enumerate(response.headers.raw, 1):
+                header_bytes += len(name) + len(value) + 4  # ': ' and CRLF
+                if count > HEADER_COUNT_LIMIT or header_bytes > HEADER_LIMIT:
+                    raise RuntimeUnavailable("backend_header_limit")
             # Compressed bodies could expand after a raw-byte cap; the fixture
             # requires plain JSON, so reject unsupported compression outright.
             if response.headers.get("content-encoding", "identity") != "identity":
                 raise RuntimeUnavailable("backend_compressed_response_forbidden")
             content = bytearray()
-            async for chunk in response.aiter_raw():
+            # Iterate the transport stream directly: aiter_raw filters empty
+            # chunks internally, so an empty stream can starve its caller's timer.
+            assert isinstance(response.stream, httpx.AsyncByteStream)
+            async for chunk in response.stream:
                 if len(content) + len(chunk) > REPORT_LIMIT:
                     raise RuntimeUnavailable("backend_response_limit")
                 content.extend(chunk)
+                await asyncio.sleep(0)
             return httpx.Response(
                 response.status_code,
                 headers=response.headers,
@@ -332,7 +350,11 @@ class BoundedBackendTransport(httpx.AsyncBaseTransport):
         finally:
             # A read error, size rejection, or cancellation still closes the
             # underlying stream so the pooled connection is released, not leaked.
-            await response.aclose()
+            async def close() -> None:
+                async with asyncio.timeout(1):
+                    await response.aclose()
+
+            await complete_cleanup(asyncio.create_task(close()))
 
     async def aclose(self) -> None:
         """Idempotently release the wrapped transport after error or cancellation."""
@@ -425,9 +447,14 @@ class ManagedProcess:
             process = await asyncio.shield(spawn)
         except BaseException:
             os.close(write_fd)
-            try:
+
+            async def cleanup() -> None:
                 process = await spawn
-                await process.communicate()
+                owned = cls._bind_pumps(cls(process), process, interactive=False)
+                await owned.stop()
+
+            try:
+                await complete_cleanup(asyncio.create_task(cleanup()))
             finally:
                 os.close(read_fd)
             raise
@@ -464,11 +491,21 @@ class ManagedProcess:
         try:
             process = await asyncio.shield(spawn)
         except BaseException:
-            try:
-                process = await spawn
-                await process.communicate()
-            finally:
-                shutil.rmtree(stop_dir, ignore_errors=True)
+
+            async def cleanup() -> None:
+                try:
+                    process = await spawn
+                except BaseException:
+                    shutil.rmtree(stop_dir, ignore_errors=True)
+                    raise
+                owned = cls._bind_pumps(
+                    cls(process, stop_file=stop_file), process, interactive=False
+                )
+                await owned.stop()
+
+            # Do not remove the stop request before a delayed supervisor sees it.
+            stop_file.touch()
+            await complete_cleanup(asyncio.create_task(cleanup()))
             raise
         return cls._bind_pumps(cls(process, stop_file=stop_file), process, interactive)
 
@@ -503,6 +540,9 @@ class ManagedProcess:
 
     async def stop(self) -> None:
         """Signal the supervisor, then confirm cleanup/reap of the whole tree."""
+        await complete_cleanup(asyncio.create_task(self._stop()))
+
+    async def _stop(self) -> None:
         self.request_stop()
         try:
             async with asyncio.timeout(4):
@@ -524,7 +564,7 @@ class ManagedProcess:
                     raise RuntimeUnavailable("trusted_process_output_limit")
                 return result
         finally:
-            await asyncio.shield(self.stop())
+            await self.stop()
 
 
 @dataclass
