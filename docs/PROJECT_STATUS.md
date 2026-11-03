@@ -25,10 +25,11 @@ Updated November 1, 2026 (America/New_York). See [QUALITY_REVIEW.md](QUALITY_REV
 - Pre-Flight Agent Gate CLI (`faultline gate`) with deterministic Playwright exploration, fail-closed exit codes (0 = safe, 1 = blocked/inconclusive, 2 = usage error), machine-readable output (`--json`, `--markdown`, `--format ci`), and native cross-platform support across macOS, Linux, and Windows.
 - Safe setup/start/reconciliation/rehearsal scripts and GitHub verification workflow.
 
-Current recorded verification (November 1, 2026):
-- `make check` passed with 345 backend/script tests, 1,008 orchestrator/CLI tests, and 132 runner unit tests (**1,485 tests total**; 2 native Windows demo tests skipped on Linux), plus Ruff lint and format checks, strict mypy across 94 source files (0 errors), Next.js frontend builds, and fixture and corpus provenance.
-- `make browser` passed with 43 Inspector and 2 storefront browser tests (**45 browser tests total**).
-- 14 required Linux isolation tests under `FAULTLINE_REQUIRE_ISOLATED_TESTS=1` passed.
+Current recorded verification (November 3, 2026):
+- `make check` passed with 328 backend/root tests, 1,238 orchestrator/CLI tests, and 134 runner unit tests (**1,700 automated tests total**; 23 native Windows tests skipped on Linux), plus Ruff lint and format checks, strict mypy across 102 source files (0 errors), Next.js frontend builds, and fixture and corpus provenance.
+- `make browser` passed with 52 Inspector and 2 storefront browser tests (**54 browser tests total**).
+- 49 required Linux isolation, repro, and project tests under `FAULTLINE_REQUIRE_ISOLATED_TESTS=1` passed.
+- Backend Perfection Check Findings P01–P07 resolved and proven by executable probes: WebRTC fallback sealed (0 UDP bytes), persistence/cancellation cleanup finalized in `try...finally`, cgroup release decoupled from process-stop timeouts, AST policy expanded to cover non-assignment bindings, host browser helpers memory-bounded, snapshot roots allowlisted, and cross-platform isolation adapters (macOS `sandbox-exec`, Windows Job Objects, Linux Bubblewrap) integrated into CLI capability dispatch.
 
 Recorded Meta Model API evidence:
 - On October 31, 2026, **3 of 3 live `muse-spark-1.3` trials** verified on the first attempt at 44 of 44 assertions, median wall time 10.5 s (10.4 to 12.6 s), ~3,200 tokens per repair, with confirmed cleanup ([ledger](evidence/2026-10-31-controller-ledger-meta.md)). The ledger script strictly validates provider identity against the Meta endpoint.
