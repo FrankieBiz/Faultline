@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CheckRecord, StoreStatus, Tone } from "@/lib/faultline-api";
 import { checkVerdict } from "@/lib/faultline-api";
 import ConfirmButton from "@/components/ConfirmButton";
@@ -110,6 +110,18 @@ export default function GuidedFlow(props: {
   ];
   const next = steps.find((step) => step.n === current && step.enabled) ?? null;
 
+  // Status lines sit in each button's description, which a screen reader reads only on focus; announce the ones that change.
+  const [announcement, setAnnouncement] = useState("");
+  const said = useRef<string[] | null>(null);
+  const lines = steps.map((step) => `Step ${step.n}, ${step.title}: ${step.status.text}`).join("\n");
+  useEffect(() => {
+    const now = lines.split("\n");
+    const before = said.current;
+    said.current = now;
+    const changed = before ? now.filter((line, i) => line !== before[i]) : [];
+    if (changed.length) setAnnouncement(changed.join(". "));
+  }, [lines]);
+
   // Space runs the highlighted step from anywhere on the page that is not itself a control.
   const advance = useRef<(() => void) | null>(null);
   advance.current = next ? next.onClick : null;
@@ -172,6 +184,7 @@ export default function GuidedFlow(props: {
             );
           })}
         </ol>
+        <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">{announcement}</p>
         <p className="flow-hint">
           {next ? <><kbd>Space</kbd> runs step {next.n}, {next.title}</>
             : current === null ? "All three steps are done. Break it again to replay the demo."

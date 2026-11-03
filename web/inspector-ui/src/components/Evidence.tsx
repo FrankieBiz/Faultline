@@ -63,8 +63,8 @@ const STEP_STATE_TEXT: Record<StepState, string> = {
 export const currentStep = (job: JobDetail["job"], events: JobEvent[]) => STEP_OF[events.at(-1)?.stage ?? job.stage] ?? STEP_OF[job.stage];
 
 /** What happened at each step, read only from recorded data; nothing is inferred as passed. */
-export function Pipeline(props: { detail: JobDetail; events: JobEvent[]; verification: Execution | null; verified: boolean }) {
-  const { detail, events, verification, verified } = props;
+export function Pipeline(props: { detail: JobDetail; events: JobEvent[]; verification: Execution | null; verified: boolean; candidate?: string | null }) {
+  const { detail, events, verification, verified, candidate = null } = props;
   const { job, baseline, attempts, artifacts } = detail;
   const terminal = TERMINAL.has(job.state);
   const current = terminal ? -1 : currentStep(job, events);
@@ -108,22 +108,39 @@ export function Pipeline(props: { detail: JobDetail; events: JobEvent[]; verific
       : null,
   ];
 
+  const steps = STEP_LABELS.map((label, i) => ({ label, ...(!terminal
+    ? i < current ? recorded[i] ?? { state: "done" as const, tone: "idle" as const, text: "Complete." }
+      : { state: i === current ? "current" as const : "pending" as const, tone: "idle" as const, text: STEP_DOING[i] }
+    : recorded[i] ?? { state: "skipped" as const, tone: "idle" as const, text: "Not reached in this run." }) }));
+  // The heading names the current step; this announces each step result as it is recorded and each candidate entering the sandbox.
+  const [announcement, setAnnouncement] = useState("");
+  const said = useRef<{ job: string; lines: string[] } | null>(null);
+  const lines = [
+    ...steps.map((step, i) => recorded[i] && (step.state === "done" || step.state === "failed") ? `${step.label}, ${STEP_STATE_TEXT[step.state]}: ${step.text}` : ""),
+    candidate ? `${candidate} is being verified in the sandbox.` : "",
+  ].join("\n");
+  useEffect(() => {
+    const now = lines.split("\n");
+    // Opening another run is not progress; only changes within one run are announced.
+    const before = said.current?.job === job.id ? said.current.lines : null;
+    said.current = { job: job.id, lines: now };
+    const changed = before ? now.filter((line, i) => line && line !== before[i]) : [];
+    if (changed.length) setAnnouncement(changed.join(" "));
+  }, [job.id, lines]);
+
   return (
-    <ol className="pipeline" aria-label="What FaultLine did in this run">
-      {STEP_LABELS.map((label, i) => {
-        const step = !terminal
-          ? i < current ? recorded[i] ?? { state: "done" as const, tone: "idle" as const, text: "Complete." }
-            : { state: i === current ? "current" as const : "pending" as const, tone: "idle" as const, text: STEP_DOING[i] }
-          : recorded[i] ?? { state: "skipped" as const, tone: "idle" as const, text: "Not reached in this run." };
-        return (
-          <li key={label} data-state={step.state} data-step-tone={step.tone} aria-current={step.state === "current" ? "step" : undefined}>
+    <>
+      <ol className="pipeline" aria-label="What FaultLine did in this run">
+        {steps.map((step, i) => (
+          <li key={step.label} data-state={step.state} data-step-tone={step.tone} aria-current={step.state === "current" ? "step" : undefined}>
             <span className="pipeline-mark" aria-hidden="true">{markGlyph(step.state, step.tone, i + 1)}</span>
-            <strong>{label}<span className="sr-only"> ({STEP_STATE_TEXT[step.state]})</span></strong>
+            <strong>{step.label}<span className="sr-only"> ({STEP_STATE_TEXT[step.state]})</span></strong>
             <p>{step.text}</p>
           </li>
-        );
-      })}
-    </ol>
+        ))}
+      </ol>
+      <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">{announcement}</p>
+    </>
   );
 }
 

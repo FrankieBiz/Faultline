@@ -76,7 +76,8 @@ export default function JobResult(props: {
         {job.error_details && <p className="muted">Error detail: <code>{JSON.stringify(job.error_details).slice(0, 240)}</code></p>}
         {syncError && <p className="notice" role="status">Updates interrupted: {syncError} Retrying.</p>}
       </div>
-      <Pipeline detail={detail} events={events} verification={verification} verified={verified} />
+      <Pipeline detail={detail} events={events} verification={verification} verified={verified}
+        candidate={candidate ? `Candidate ${candidate} of up to ${CANDIDATE_BUDGET}` : null} />
       <Seam baseline={detail.baseline} verification={verification} verified={verified}
         step={step}
         attemptNumber={verifiedAttempt?.attempt_number ?? null} artifacts={detail.artifacts} />

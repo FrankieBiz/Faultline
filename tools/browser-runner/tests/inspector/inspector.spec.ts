@@ -310,6 +310,7 @@ test("dialog errors stay in the dialog and Escape closes it", async ({ page }) =
   await expect(dialog.getByLabel(/JSON body/)).not.toHaveAttribute("aria-invalid");
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
+  await expect(page.getByRole("button", { name: "Custom URL check" })).toBeFocused();
   expect(calls.checks).toHaveLength(0);
   // Reopening keeps the draft but not the last attempt's error.
   await page.getByRole("button", { name: "Custom URL check" }).click();
@@ -415,8 +416,12 @@ test("the guided demo advances Break it, repair, and Apply fix on recorded evide
   await page.goto("/");
   const flow = page.getByRole("list", { name: "Guided demo" });
   const steps = flow.getByRole("listitem");
+  // Status lines are button descriptions, read only on focus, so a polite live region announces each change.
+  const announced = page.locator("#demo").getByRole("status");
   await expect(steps).toHaveCount(3);
   await expect(page.locator(".readiness")).toHaveText("Engine Status: Ready");
+  await expect(announced).toHaveAttribute("aria-live", "polite");
+  await expect(announced).toHaveAttribute("aria-atomic", "true");
   await expect(steps.nth(0)).toHaveAttribute("aria-current", "step");
   // A deterministic provider is never called Meta; the step names the fallback instead.
   const repair = flow.getByRole("button", { name: /Auto-repair/ });
@@ -437,12 +442,14 @@ test("the guided demo advances Break it, repair, and Apply fix on recorded evide
   await expect(hud.getByRole("log", { name: "Agent steps" })).toContainText("[Step 1] Session 1: POST /api/checkout → HTTP 500");
   await expect(steps.nth(0)).toHaveAttribute("data-state", "done");
   await expect(steps.nth(0).locator(".flow-status")).toHaveText("HTTP 500 · checkout crashes");
+  await expect(announced).toContainText("Step 1, Break it: HTTP 500 · checkout crashes");
   await expect(steps.nth(1)).toHaveAttribute("aria-current", "step");
 
   await repair.click();
   await expect(page.getByRole("heading", { name: "Verified repair", exact: true })).toBeVisible();
   expect(calls.jobBodies).toEqual([expect.objectContaining({ scenario_id: pack.id, mode: "repair" })]);
   await expect(steps.nth(1).locator(".flow-status")).toHaveText("44 of 44 checks passed");
+  await expect(announced).toContainText(/Step 2, Auto-repair[^:]*: 44 of 44 checks passed/);
   // Step 2 repaired the defect on the HUD, so the mission follows that run to its verified fix.
   await expect(hud).toContainText("Fix verified: 44/44 assertions passed in the Bubblewrap sandbox");
   await expect(hud.getByRole("button", { name: "Apply Verified Fix to Demo Store" })).toBeEnabled();
@@ -451,6 +458,7 @@ test("the guided demo advances Break it, repair, and Apply fix on recorded evide
 
   await flow.getByRole("button", { name: "Apply fix" }).click();
   await expect(steps.nth(2).locator(".flow-status")).toHaveText("HTTP 201 · checkout works");
+  await expect(announced).toContainText("Step 3, Apply fix: HTTP 201 · checkout works");
   expect(calls.applies).toBe(1);
   expect(calls.checks).toHaveLength(2);
   for (const index of [0, 1, 2]) await expect(steps.nth(index)).toHaveAttribute("data-state", "done");
@@ -1373,6 +1381,39 @@ test("candidate verification shows a live badge with the candidate count, then t
   await expect(page.locator(".job .side").first()).toHaveAttribute("data-tone", "bad");
   await expect(page.locator(".job .side").last()).toHaveAttribute("data-tone", "ok");
   await expect(page.locator(".job .side").last().locator(".side-mark")).toHaveText("✓");
+});
+
+test("the run timeline announces each recorded step and the candidate entering verification", async ({ page }) => {
+  const attempt = {
+    id: "00000000-0000-4000-8000-000000000031", attempt_number: 1, prompt_tokens: null, completion_tokens: null,
+    raw_patch: null, parsed_diff: "--- a/x\n+++ b/x", outcome: null,
+    validation_result: { provider: "deterministic", model: "deterministic-checkout-v1", is_valid: true, syntax_valid: true, ast_safe: true },
+  };
+  const at = (stage: string) => [{ sequence: 1, timestamp: "2026-10-27T12:00:01Z", stage, message_code: stage, message: `Entered ${stage}.` }];
+  let phase: "diagnosing" | "verification" | "finished" = "diagnosing";
+  await mock(page, { detail: { ...detail("running", null), events: at("diagnosing") } });
+  await page.route(`**/api/faultline/jobs/${id}`, (route) => route.fulfill({ json: phase === "finished" ? verifiedDetail()
+    : phase === "verification" ? { ...detail("running", null), attempts: [attempt], events: at("verification") }
+    : { ...detail("running", null), events: at("diagnosing") } }));
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Running: Propose a patch" })).toBeVisible();
+  const announced = page.locator(".job .pipeline + [role=status]");
+  await expect(announced).toHaveAttribute("aria-live", "polite");
+  await expect(announced).toHaveAttribute("aria-atomic", "true");
+  // What was already on screen when the page attached is not read out again.
+  await expect(announced).toBeEmpty();
+
+  phase = "verification";
+  await expect(page.getByRole("heading", { name: "Running: Verify the candidate" })).toBeVisible();
+  await expect(announced).toContainText("Propose a patch, complete: Deterministic fallback · deterministic-checkout-v1 · no model call");
+  await expect(announced).toContainText("Pass the policy gates, complete: Scope, syntax, and AST safety policy passed before any code ran.");
+  await expect(announced).toContainText("Candidate 1 of up to 2 is being verified in the sandbox.");
+
+  phase = "finished";
+  await expect(page.getByRole("heading", { name: "Verified repair" })).toBeVisible();
+  await expect(announced).toContainText("Verify the candidate, complete: 44 of 44 checks passed in the isolated runtime.");
+  await expect(announced).toContainText("Record evidence and clean up, complete: Cleanup confirmed");
+  await expect(announced).not.toContainText("Candidate");
 });
 
 test("the event log follows the newest event until scrolled up, then counts arrivals and jumps back", async ({ page }) => {
