@@ -22,7 +22,6 @@ import argparse
 import asyncio
 import hashlib
 import json
-import shutil
 import statistics
 import subprocess
 import time
@@ -49,7 +48,7 @@ from app.model_adapter import (
 )
 from app.policy import TARGET_FILE, PatchPolicy, parse_unified_diff
 from app.runtime import CandidateRejected
-from app.snapshots import REPOSITORY_ROOT, contained_path
+from app.snapshots import REPOSITORY_ROOT, contained_path, remove_owned_tree
 from fixtures.evaluation.corpus import Corpus, HoldoutCase, PatchCase, case_bytes, load_corpus
 from fixtures.provenance import verify_manifest
 from shared.contracts.models import AssertionResult
@@ -134,7 +133,7 @@ class ApplicationExporter:
     """Write application files from the pinned seed commit with one replaced target."""
 
     def __init__(self, repository_root: Path, seed_commit: str, work_root: Path) -> None:
-        self.work_root = work_root
+        self.work_root = work_root.absolute()
         self.files: dict[str, bytes] = {}
         listing = subprocess.run(
             ["git", "-C", str(repository_root), "ls-tree", "-r", "-z", seed_commit, "--"]
@@ -159,11 +158,17 @@ class ApplicationExporter:
 
     def export(self, target_source: str) -> Path:
         """Create a fresh, owned application tree; nothing is imported here."""
-        root = self.work_root / str(uuid4())
-        for name, content in self.files.items():
-            path = contained_path(root, name)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(target_source.encode() if name == TARGET_FILE else content)
+        root = contained_path(self.work_root, str(uuid4()))
+        root.mkdir(parents=True, exist_ok=False, mode=0o700)
+        try:
+            for name, content in self.files.items():
+                path = contained_path(root, name)
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(target_source.encode() if name == TARGET_FILE else content)
+                path.chmod(0o644)
+        except BaseException:
+            remove_owned_tree(root)
+            raise
         return root
 
 
@@ -187,7 +192,7 @@ async def measure(
                 status = None
             return Measurement(tuple(checks), status, backend.logs())
     finally:
-        shutil.rmtree(application, ignore_errors=True)
+        remove_owned_tree(application)
 
 
 def failure_evidence(measurement: Measurement) -> str:
@@ -763,7 +768,7 @@ async def _main(arguments: argparse.Namespace) -> int:
         )
     finally:
         await adapter.close()
-        shutil.rmtree(work_root, ignore_errors=True)
+        remove_owned_tree(work_root)
     _write(out, report)
     if not arguments.out:
         # Publish only complete runs; keep the previous report if evaluation fails.
