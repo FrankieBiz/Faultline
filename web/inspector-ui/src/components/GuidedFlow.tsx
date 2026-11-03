@@ -142,7 +142,8 @@ export default function GuidedFlow(props: {
                   {checking && !breaking && !confirming ? "Checking…" : "Check checkout live"}
                 </button>
               )}
-              <ConfirmButton className="btn quiet inline-btn" disabled={!canRevert} confirmLabel="Confirm revert?" onConfirm={props.onRevert}>
+              <ConfirmButton className="btn quiet inline-btn" disabled={!canRevert} confirmLabel="Confirm revert?" onConfirm={props.onRevert}
+                busy={reverting} description={`Restores ${store.target_file} to the seeded checkout defect. Asks once before it writes.`}>
                 {reverting && !breaking ? "Reverting…" : "Revert store"}
               </ConfirmButton>
             </div>
@@ -155,7 +156,7 @@ export default function GuidedFlow(props: {
             const phase = step.status.tone === "active" ? "active" : step.done ? "done" : step.n === current ? "current" : "pending";
             return (
               <li key={step.n} className="flow-step" data-state={phase} aria-current={step.n === current ? "step" : undefined}>
-                <button type="button" className="flow-button" onClick={step.onClick} disabled={!step.enabled}
+                <button type="button" className="flow-button" onClick={step.onClick} disabled={!step.enabled} aria-busy={phase === "active" || undefined}
                   aria-labelledby={`flow-${step.n}-t`} aria-describedby={`flow-${step.n}-k flow-${step.n}-d flow-${step.n}-s`}>
                   <span key={phase} className="flow-mark" aria-hidden="true">{phase === "done" ? "✓" : step.n}</span>
                   <span className="flow-copy">

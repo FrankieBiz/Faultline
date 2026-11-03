@@ -379,6 +379,7 @@ test("the playground applies only an opened verified run, reverts, and checks ch
   await expect(bar.getByRole("button", { name: "Apply fix" })).toBeDisabled();
   await expect(bar.getByRole("button", { name: "Apply fix" })).toHaveAccessibleDescription(/Unlocks after a verified repair/);
   await expect(bar.getByRole("button", { name: "Revert store" })).toBeDisabled();
+  await expect(bar.getByRole("button", { name: "Revert store" })).toHaveAccessibleDescription(`Restores ${target} to the seeded checkout defect. Asks once before it writes.`);
   await inspectPastRun(page);
   await expect(page.getByRole("heading", { name: "Verified repair", exact: true })).toBeVisible();
   await expect(bar.getByRole("button", { name: "Apply fix" })).toHaveAccessibleDescription(new RegExp(`Writes run ${id.slice(0, 8)}'s verified fix to the store`));
@@ -937,6 +938,7 @@ test("the mission HUD repairs, verifies, and applies the fix it caught", async (
   await expect(hud).toContainText("Fix verified: 44/44 assertions passed in the Bubblewrap sandbox");
   await expect(hud.getByRole("status")).toHaveText("Fix verified");
   await expect(hud).toHaveAttribute("data-seismic", "resonance");
+  await expect(hud.getByRole("button", { name: "Apply Verified Fix to Demo Store" })).toHaveAccessibleDescription(/Writes only this verified diff, then re-checks checkout live/);
   await hud.getByRole("button", { name: "Apply Verified Fix to Demo Store" }).click();
   await expect(hud).toContainText(`Applied to ${target}.`);
   await expect(hud).toContainText("Live checkout re-checked: HTTP 201 · defect gone.");
@@ -1450,6 +1452,69 @@ test("judge evidence opens from the header and J with the rubric, the Meta ledge
   const box = await drawer.boundingBox();
   expect(box && box.x >= 0 && box.x + box.width <= 390).toBe(true);
   expect(await drawer.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+});
+
+test("the runtime pill names the host kernel and discloses the sandbox, read-only root, and kernel-read bounds", async ({ page }) => {
+  await mock(page, { readiness: { ...ready,
+    host: { os: "Linux", kernel: "7.2.13-200.fc44.x86_64", runtime_kind: "isolated-browser" },
+    resource_limits: { requested: "required", mode: "cgroup-v2-scope", enforcement_preflight: "passed", reason: null, configured: { memory_max_bytes: 536870912, tasks_max: 64, cpu_quota_percent: 100 } } } });
+  await page.goto("/");
+  const pill = page.getByRole("button", { name: "Runtime: Linux · cgroup v2" });
+  await expect(pill).toHaveAttribute("data-tone", "ok");
+  await expect(pill).toHaveAttribute("aria-expanded", "false");
+  // The details are not in the page until the pill opens them.
+  await expect(page.getByText("Host paths bound read-only")).toHaveCount(0);
+  await pill.click();
+  await expect(pill).toHaveAttribute("aria-expanded", "true");
+  const panel = page.getByRole("group", { name: /Host runtime/ });
+  await expect(pill).toHaveAttribute("aria-controls", (await panel.getAttribute("id"))!);
+  await expect(panel.locator("dt")).toHaveText(["Host kernel", "Kernel sandbox", "Read-only root", "Memory", "Tasks", "CPU", "Enforcement"]);
+  await expect(panel.locator("dd")).toHaveText(["Linux 7.2.13-200.fc44.x86_64", "Bubblewrap · own Linux namespaces per run",
+    "Host paths bound read-only · writes to private tmpfs", "512 MiB hard cap", "64 processes max", "100% quota", "Kernel read-back passed"]);
+  await expect(panel).toContainText("not a VM");
+  // Escape closes it and returns focus; so does a click anywhere outside.
+  await page.keyboard.press("Escape");
+  await expect(panel).toHaveCount(0);
+  await expect(pill).toBeFocused();
+  await pill.click();
+  await page.locator(".wordmark").click();
+  await expect(panel).toHaveCount(0);
+  await expect(pill).toHaveAttribute("aria-expanded", "false");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await pill.click();
+  const box = await panel.boundingBox();
+  expect(box && box.x >= 0 && box.x + box.width <= 390).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test("the runtime pill is amber when limits are opted out and red when the sandbox or its limits are missing", async ({ page }) => {
+  await mock(page, { readiness: { ...ready, host: { os: "Linux", kernel: "6.9.0", runtime_kind: "isolated-browser" },
+    resource_limits: { requested: "disabled", mode: "disabled", enforcement_preflight: null, reason: null, configured: null } } });
+  await page.goto("/");
+  const optedOut = page.getByRole("button", { name: "Runtime: Platform isolated" });
+  await expect(optedOut).toHaveAttribute("data-tone", "warn");
+  await optedOut.click();
+  await expect(page.getByRole("group", { name: /Host runtime/ })).toContainText("cgroup limits disabled by the operator");
+
+  await mock(page, { readiness: { ...ready, host: { os: "Linux", kernel: "6.9.0", runtime_kind: "isolated-browser" },
+    resource_limits: { requested: "required", mode: null, enforcement_preflight: "failed", reason: "cgroup delegation unavailable", configured: null } } });
+  await page.goto("/");
+  const unenforced = page.getByRole("button", { name: "Runtime: Limits not enforced" });
+  await expect(unenforced).toHaveAttribute("data-tone", "bad");
+  await unenforced.click();
+  await expect(page.getByRole("group", { name: /Host runtime/ })).toContainText("Not enforced (cgroup delegation unavailable)");
+
+  await mock(page, { readiness: { ...ready, status: "blocked", runtime_ready: false, reason: "isolated_runtime_unavailable" } });
+  await page.goto("/");
+  const blocked = page.getByRole("button", { name: "Runtime: Sandbox unavailable" });
+  await expect(blocked).toHaveAttribute("data-tone", "bad");
+  await blocked.click();
+  const panel = page.getByRole("group", { name: /Host runtime/ });
+  await expect(panel.locator("dd").nth(1)).toHaveText("Unavailable");
+  await expect(panel).toContainText("refuses to execute checkout code");
+  await expect(page.locator(".runtime-pill[data-tone='ok']")).toHaveCount(0);
 });
 
 test("an engine without enforced limits never shows the sandbox as verified", async ({ page }) => {

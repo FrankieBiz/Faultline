@@ -45,6 +45,8 @@ export interface Readiness {
   model: Probe | null;
   reason: string | null;
   resource_limits?: LimitsStatus | null;
+  /** The controller's own kernel and the runtime kind that isolates candidates; absent on older engines. */
+  host?: { os: string; kernel: string; runtime_kind: string | null } | null;
 }
 
 export interface Job {
@@ -402,7 +404,7 @@ export function providerLabel(probe: Probe | null): string {
   return probe.available ? name : `${name} · unavailable (${probe.reason ?? "no reason given"})`;
 }
 
-const mib = (bytes: number) => `${Math.round(bytes / 1048576)} MiB`;
+export const mib = (bytes: number) => `${Math.round(bytes / 1048576)} MiB`;
 
 /** One line for an execution's recorded aggregate limits; absent records say so. */
 export function limitsName(limits: ResourceLimits | null | undefined): string {
