@@ -7,8 +7,10 @@ descriptor passing and no ``killpg``: the controller instead writes a stop-file
 and the supervisor tears the tree down with ``taskkill /T /F``, which walks the
 parent-child tree that ``CREATE_NEW_PROCESS_GROUP`` rooted at this process.
 
-Either way the guarantee is the same: if the controller exits or cancels, the
-child and every descendant are reaped, never left orphaned.
+The supervisor reaps its direct child. POSIX descendants must stay in the
+owned process group; escaped sessions require an outer kernel boundary. On
+Windows the candidate Job Object, not the parent/PID tree, owns descendants.
+The Windows stop-file only handles explicit shutdown, not controller crashes.
 """
 
 import os
@@ -20,16 +22,21 @@ import time
 from pathlib import Path
 
 
-def _taskkill_tree(pid: int) -> None:
+def _taskkill_tree(pid: int) -> bool:
     """Kill a Windows process and its descendants via ``taskkill /T /F``."""
     system_root = os.environ.get("SystemRoot", r"C:\Windows")
     executable = os.path.join(system_root, "System32", "taskkill.exe")
-    subprocess.run(
-        [executable, "/PID", str(pid), "/T", "/F"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        check=False,
-    )
+    try:
+        result = subprocess.run(
+            [executable, "/PID", str(pid), "/T", "/F"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=2,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0
 
 
 def _main_posix() -> None:
@@ -44,7 +51,10 @@ def _main_posix() -> None:
             if selector.select(timeout=0.1) and not os.read(liveness_fd, 1):
                 break
         if process.poll() is None:
-            os.killpg(process.pid, signal.SIGTERM)
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass  # The leader may exit between poll() and killpg().
             until = time.monotonic() + 1
             while process.poll() is None and time.monotonic() < until:
                 time.sleep(0.02)
@@ -69,17 +79,18 @@ def _main_windows() -> None:
     try:
         while process.poll() is None:
             if stop_file.exists():
-                _taskkill_tree(process.pid)
                 break
             time.sleep(0.05)
-        # A child that exited may still have left grandchildren running; the
-        # group tree is the ownership boundary, so always sweep it on exit too.
-        _taskkill_tree(process.pid)
-        code = process.wait()
+        # Never taskkill an already-reaped PID: it may have been reused. The
+        # wrapper's Job Object closes on exit and sweeps its own descendants.
+        if process.poll() is None and not _taskkill_tree(process.pid):
+            process.kill()  # TerminateProcess closes the wrapper's job handle.
+        code = process.wait(timeout=2)
         raise SystemExit(code if code >= 0 else 128 - code)
     finally:
         try:
-            stop_file.unlink(missing_ok=True)
+            if process.poll() is not None:
+                stop_file.unlink(missing_ok=True)
         except OSError:
             pass
 

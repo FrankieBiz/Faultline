@@ -489,7 +489,10 @@ class ManagedProcess:
                 await self.process.wait()
                 await asyncio.gather(*self.pumps)
         finally:
-            if self.stop_file is not None:
+            # Retain the request when the supervisor has not exited. A timeout
+            # is not proof of cleanup, and deleting it could revoke the stop
+            # before a delayed Windows supervisor observes it.
+            if self.stop_file is not None and self.process.returncode is not None:
                 shutil.rmtree(self.stop_file.parent, ignore_errors=True)
 
     async def wait(self, timeout: float) -> int:

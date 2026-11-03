@@ -18,6 +18,7 @@ reported as ``mode="docker"`` with ``verified=True``.
 
 from __future__ import annotations
 
+import json
 import shutil
 import sys
 import tempfile
@@ -66,11 +67,14 @@ def sandbox_profile(
         Path("/dev"),
     )
     lines = ["(version 1)", "(deny default)", '(import "system.sb")']
-    lines.extend(f'(allow file-read* (subpath "{path}"))' for path in read_only)
+    lines.extend(f"(allow file-read* (subpath {json.dumps(str(path))}))" for path in read_only)
     lines.extend(
         (
             "(allow file-read-metadata)",
-            "(allow process*)",
+            "(allow process-exec)",
+            # The native backend runs one interpreter. Forking would let a
+            # candidate daemonize into a new session outside killpg ownership.
+            "(deny process-fork)",
             "(allow sysctl-read)",
             '(allow mach-lookup (global-name "com.apple.bsd.dirhelper"))',
             '(allow file-write* (subpath "/tmp") (subpath "/private/tmp"))',
@@ -247,14 +251,12 @@ class DarwinIsolatedRuntime(IsolatedRuntime):
                 str(self.host_python),
                 "-I",
                 "-c",
-                "import os;"
-                "assert os.path.isdir('/snapshot') or True;"
-                "denied=False;"
+                "denied=False\n"
                 "try:\n"
                 "    open('/etc/hosts','a').close()\n"
                 "except OSError:\n"
                 "    denied=True\n"
-                "assert denied, 'sandbox must deny writes outside /tmp';"
+                "assert denied, 'sandbox must deny writes outside /tmp'\n"
                 "print('darwin-profile-ready')",
                 env={},
             )
@@ -274,12 +276,16 @@ class DarwinIsolatedRuntime(IsolatedRuntime):
                 str(self.host_python),
                 "-I",
                 "-c",
+                "import runpy\n"
+                f"runpy.run_path({str(self.launcher)!r})['_apply_rlimits']()\n"
                 "held=[]\n"
                 "try:\n"
-                "    while True: held.append(b'x' * (1 << 20))\n"
+                f"    for _ in range({(DARWIN_MEMORY_MAX_BYTES >> 20) + 1}):\n"
+                "        held.append(b'x' * (1 << 20))\n"
                 "except MemoryError:\n"
-                "    pass\n"
-                "print('rlimit-enforced')",
+                "    print('rlimit-enforced')\n"
+                "else:\n"
+                "    print('rlimit-not-enforced')",
                 env={},
             )
             try:

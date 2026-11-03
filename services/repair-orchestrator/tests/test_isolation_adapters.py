@@ -1,23 +1,29 @@
-"""Multiplatform isolation adapters: host selection, argv, profiles, and modes.
+"""Adversarial adapter tests, mocked platform APIs and real POSIX process trees.
 
-Nothing here launches a sandbox or contacts a real systemd / Docker / Job
-Object. These tests assert the adapters build the correct argv, profile, and
-limit records so the platform-specific mechanisms can be verified on their own
-hosts, and that the Linux seam refactor preserves the abstract-socket backend.
+Native Windows/Seatbelt enforcement still needs validation on those hosts;
+passing mocks is not evidence that a host kernel enforces the boundary.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
+import selectors
+import shutil
+import signal
+import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
 import app.portable as portable
-from app.isolated_runtime import IsolatedRuntime, ManagedProcess
+import app.process_supervisor as supervisor
+from app.isolated_runtime import AggregateLimits, IsolatedRuntime, ManagedProcess
 from app.isolation import select_runtime
 from app.isolation.darwin import DARWIN_MEMORY_MAX_BYTES, DARWIN_TASKS_MAX, sandbox_profile
 from app.isolation.windows import windows_job_script
@@ -300,3 +306,331 @@ def test_darwin_fails_closed_without_sandbox_exec_or_docker() -> None:
     runtime.docker = None
     runtime._docker_mode = True
     assert runtime.limits_mode == "docker"
+
+
+@pytest.mark.parametrize("name", ['quote"(allow default)', "back\\slash", "line\nbreak"])
+def test_darwin_profile_escapes_untrusted_snapshot_paths(tmp_path: Path, name: str) -> None:
+    snapshot = tmp_path / name
+    profile = sandbox_profile(
+        python=tmp_path / "python", packages=tmp_path, snapshot=snapshot, launcher=tmp_path
+    )
+    assert f"(allow file-read* (subpath {json.dumps(str(snapshot))}))" in profile
+    assert len(profile.splitlines()) == 20
+
+
+def test_darwin_profile_denies_fork_escape(tmp_path: Path) -> None:
+    profile = sandbox_profile(
+        python=tmp_path, packages=tmp_path, snapshot=tmp_path, launcher=tmp_path
+    )
+    assert "(deny process-fork)" in profile
+    assert "(allow process*)" not in profile
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Windows uses Job Objects instead of rlimits")
+def test_darwin_rlimits_are_hard_and_fail_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.isolated_backend import _apply_rlimits
+
+    names = ("RLIMIT_NOFILE", "RLIMIT_CORE", "RLIMIT_CPU", "RLIMIT_AS", "RLIMIT_NPROC")
+    setter = Mock()
+    resource = SimpleNamespace(**dict(zip(names, range(5), strict=True)), setrlimit=setter)
+    monkeypatch.setitem(sys.modules, "resource", resource)
+    _apply_rlimits()
+    assert setter.call_args_list == [
+        ((0, (256, 256)),),
+        ((1, (0, 0)),),
+        ((2, (40, 40)),),
+        ((3, (DARWIN_MEMORY_MAX_BYTES, DARWIN_MEMORY_MAX_BYTES)),),
+        ((4, (DARWIN_TASKS_MAX, DARWIN_TASKS_MAX)),),
+    ]
+    setter.side_effect = OSError("setrlimit refused")
+    with pytest.raises(OSError, match="setrlimit refused"):
+        _apply_rlimits()
+
+
+@pytest.mark.asyncio
+async def test_darwin_memory_probe_applies_launcher_rlimits(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    runtime = darwin_runtime(monkeypatch, tmp_path)
+    process = SimpleNamespace(wait=AsyncMock(return_value=0), stdout=b"rlimit-enforced\n")
+    start = AsyncMock(return_value=process)
+    monkeypatch.setattr(ManagedProcess, "start", start)
+    assert await runtime._enforcement_probe() is None
+    command = start.call_args.args
+    code = command[command.index("-c") + 1]
+    assert "_apply_rlimits" in code
+    assert code.index("_apply_rlimits") < code.index("held=[]")
+
+
+@pytest.mark.asyncio
+async def test_darwin_profile_preflight_generates_valid_python(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    runtime = darwin_runtime(monkeypatch, tmp_path)
+    process = SimpleNamespace(wait=AsyncMock(return_value=0), stdout=b"darwin-profile-ready\n")
+    start = AsyncMock(return_value=process)
+    monkeypatch.setattr(ManagedProcess, "start", start)
+    await runtime._profile_preflight()
+    command = start.call_args.args
+    compile(command[command.index("-c") + 1], "<darwin-profile-preflight>", "exec")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("platform", ["darwin", "windows"])
+@pytest.mark.parametrize("status", [1, 137, -9, 0xC0000017])
+async def test_enforcement_probe_rejects_abnormal_exit_even_with_success_output(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, platform: str, status: int
+) -> None:
+    runtime = (darwin_runtime if platform == "darwin" else windows_runtime)(monkeypatch, tmp_path)
+    process = SimpleNamespace(
+        wait=AsyncMock(return_value=status),
+        stdout=b"rlimit-enforced\n" if platform == "darwin" else b"job-object-ready\n",
+    )
+    monkeypatch.setattr(ManagedProcess, "start", AsyncMock(return_value=process))
+    assert await runtime._enforcement_probe() == "aggregate_limits_not_enforced"
+
+
+@pytest.mark.asyncio
+async def test_windows_requested_job_limits_are_reported_and_passed_to_wrapper(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    runtime = windows_runtime(monkeypatch, tmp_path)
+    limits = AggregateLimits(memory_max_bytes=96 * 1024 * 1024, tasks_max=3, cpu_quota_percent=25)
+    argv = runtime._sandbox(tmp_path, limits=limits)
+    assert argv[argv.index("-MemoryBytes") + 1] == str(limits.memory_max_bytes)
+    assert argv[argv.index("-ActiveProcessLimit") + 1] == "3"
+    assert argv[argv.index("-CpuRate") + 1] == "2500"
+    observed = await runtime.verify_scope(None, NO_PROCESS, limits)
+    assert observed.memory_max_bytes == limits.memory_max_bytes
+    assert observed.tasks_max == 3
+    assert observed.cpu_quota_percent == 25
+
+
+def test_windows_job_assigns_suspended_child_and_reaps_handles_on_failure() -> None:
+    script = windows_job_script()
+    assert "CREATE_SUSPENDED" in script
+    assert script.index("AssignProcessToJobObject(job, process.hProcess)") < script.index(
+        "ResumeThread(process.hThread)"
+    )
+    assert "TerminateProcess(process.hProcess" in script
+    assert "CloseHandle(process.hThread)" in script
+    assert "CloseHandle(process.hProcess)" in script
+    assert "QueryInformationJobObject" in script
+    assert "observed.JobMemoryLimit" in script
+    assert "observed.BasicLimitInformation.ActiveProcessLimit" in script
+    assert "CREATE_BREAKAWAY_FROM_JOB" not in script
+    assert "[void][FaultLineJob]::Close($job)" in script
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(os.name == "nt", reason="POSIX supervisor signal semantics")
+@pytest.mark.parametrize("code", [3, 42, 137])
+async def test_supervisor_preserves_abnormal_exit_and_reaps(code: int) -> None:
+    process = await ManagedProcess.start(sys.executable, "-I", "-c", f"raise SystemExit({code})")
+    assert await process.wait(5) == code
+    assert process.process.returncode == code
+    assert process.liveness_fd is None
+    assert all(pump.done() for pump in process.pumps)
+    with pytest.raises(ChildProcessError):
+        os.waitpid(process.process.pid, os.WNOHANG)
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(os.name == "nt", reason="POSIX supervisor signal semantics")
+async def test_supervisor_reports_sigkill_exit_and_reaps() -> None:
+    process = await ManagedProcess.start(
+        sys.executable, "-I", "-c", "import os,signal; os.kill(os.getpid(),signal.SIGKILL)"
+    )
+    assert await process.wait(5) == 128 + signal.SIGKILL
+    assert process.liveness_fd is None
+    assert all(pump.done() for pump in process.pumps)
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(os.name == "nt", reason="POSIX supervisor signal semantics")
+@pytest.mark.parametrize("stop_mode", ["stop", "timeout", "cancel"])
+async def test_supervisor_escalates_when_sigterm_is_ignored(stop_mode: str) -> None:
+    process = await ManagedProcess.start(
+        sys.executable,
+        "-I",
+        "-u",
+        "-c",
+        "import signal,time,threading; signal.signal(signal.SIGTERM,signal.SIG_IGN); "
+        "threading.Thread(target=lambda: time.sleep(60),daemon=True).start(); "
+        "print('ready'); time.sleep(60)",
+    )
+    try:
+        async with asyncio.timeout(5):
+            while b"ready" not in process.stdout:
+                assert process.process.returncode is None
+                await asyncio.sleep(0.01)
+        async with asyncio.timeout(5):
+            if stop_mode == "stop":
+                await process.stop()
+            elif stop_mode == "timeout":
+                with pytest.raises(TimeoutError):
+                    await process.wait(0.01)
+            else:
+                waiter = asyncio.create_task(process.wait(60))
+                await asyncio.sleep(0)
+                waiter.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await waiter
+        assert process.process.returncode == 128 + signal.SIGKILL
+        assert all(pump.done() for pump in process.pumps)
+    finally:
+        await process.stop()
+
+
+@pytest.mark.asyncio
+async def test_stop_timeout_does_not_claim_reaped_or_delete_windows_stop_request(
+    tmp_path: Path,
+) -> None:
+    stop_file = tmp_path / "stop-request" / "stop"
+    stop_file.parent.mkdir()
+    child = SimpleNamespace(wait=AsyncMock(side_effect=TimeoutError), returncode=None)
+    process = ManagedProcess(cast(Any, child), stop_file=stop_file)
+    with pytest.raises(TimeoutError):
+        await process.stop()
+    assert child.returncode is None
+    assert stop_file.exists(), "an unreaped supervisor must still see the stop request"
+    child.wait.side_effect = None
+    child.returncode = 1
+    await process.stop()
+    assert not stop_file.parent.exists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("platform", ["darwin", "windows"])
+async def test_probe_timeout_fails_preflight_closed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, platform: str
+) -> None:
+    from app.runtime import RuntimeUnavailable
+
+    runtime = (darwin_runtime if platform == "darwin" else windows_runtime)(monkeypatch, tmp_path)
+    process = SimpleNamespace(wait=AsyncMock(side_effect=TimeoutError), stdout=b"")
+    monkeypatch.setattr(ManagedProcess, "start", AsyncMock(return_value=process))
+    monkeypatch.setattr(runtime, "_profile_preflight", AsyncMock())
+    with pytest.raises(RuntimeUnavailable, match="aggregate_limits_not_enforced"):
+        await runtime.backend_preflight()
+    assert runtime._backend_ready is False
+    assert runtime._limits_preflight == "failed"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process-group signals")
+@pytest.mark.parametrize("race", [False, True])
+def test_posix_sweeps_grandchildren_after_leader_exit_and_reaps(
+    monkeypatch: pytest.MonkeyPatch, race: bool
+) -> None:
+    child = Mock(pid=1234)
+    child.poll.side_effect = [None, None, 7] if race else [7, 7]
+    child.wait.return_value = 7
+    selector = Mock()
+    selector.select.return_value = [object()]
+    kill = Mock(side_effect=ProcessLookupError if race else None)
+    monkeypatch.setattr(sys, "argv", ["supervisor", "99", "", "candidate"])
+    monkeypatch.setattr(subprocess, "Popen", Mock(return_value=child))
+    monkeypatch.setattr(selectors, "DefaultSelector", Mock(return_value=selector))
+    monkeypatch.setattr(os, "read", Mock(return_value=b""))
+    monkeypatch.setattr(os, "close", Mock())
+    monkeypatch.setattr(os, "killpg", kill, raising=False)
+    with pytest.raises(SystemExit) as exit_info:
+        supervisor._main_posix()
+    assert exit_info.value.code == 7
+    assert kill.call_args_list[-1].args == (1234, signal.SIGKILL)
+    child.wait.assert_called_once_with()
+    selector.close.assert_called_once_with()
+
+
+def test_windows_taskkill_is_bounded_and_forceful(monkeypatch: pytest.MonkeyPatch) -> None:
+    run = Mock(return_value=SimpleNamespace(returncode=0))
+    monkeypatch.setattr(subprocess, "run", run)
+    assert supervisor._taskkill_tree(1234) is True
+    assert run.call_args.args[0][1:] == ["/PID", "1234", "/T", "/F"]
+    assert run.call_args.kwargs["timeout"] == 2
+
+
+@pytest.mark.parametrize("failure", ["timeout", "denied", "nonzero"])
+def test_windows_force_kills_wrapper_if_taskkill_fails(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, failure: str
+) -> None:
+    stop_file = tmp_path / "stop"
+    stop_file.touch()
+    child = Mock(pid=1234)
+    child.poll.side_effect = [None, None, 1]
+    child.wait.return_value = 1
+    run = Mock(return_value=SimpleNamespace(returncode=1))
+    if failure == "timeout":
+        run.side_effect = subprocess.TimeoutExpired("taskkill", 2)
+    elif failure == "denied":
+        run.side_effect = PermissionError("denied")
+    monkeypatch.setattr(sys, "argv", ["supervisor", str(stop_file), "wrapper"])
+    monkeypatch.setattr(subprocess, "Popen", Mock(return_value=child))
+    monkeypatch.setattr(subprocess, "run", run)
+    with pytest.raises(SystemExit) as exit_info:
+        supervisor._main_windows()
+    assert exit_info.value.code == 1
+    child.kill.assert_called_once_with()
+    child.wait.assert_called_once_with(timeout=2)
+    assert not stop_file.exists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process exit semantics")
+async def test_concurrent_abnormal_exits_release_every_pipe_and_reap() -> None:
+    async def run(code: int) -> None:
+        process = await ManagedProcess.start(
+            sys.executable, "-I", "-c", f"raise SystemExit({code})"
+        )
+        try:
+            assert await process.wait(10) == code
+            assert process.liveness_fd is None
+            assert all(pump.done() for pump in process.pumps)
+            with pytest.raises(ChildProcessError):
+                os.waitpid(process.process.pid, os.WNOHANG)
+        finally:
+            await process.stop()
+
+    await asyncio.gather(*(run(code) for code in range(1, 17)))
+
+
+@pytest.mark.skipif(os.name != "nt", reason="requires real Windows Job Objects")
+@pytest.mark.parametrize("probe", ["memory", "process", "exit"])
+def test_native_windows_job_limits_and_exit_status(tmp_path: Path, probe: str) -> None:
+    """Exercise the generated P/Invoke wrapper on Windows, including readback."""
+    pwsh = shutil.which("pwsh") or shutil.which("powershell.exe")
+    if pwsh is None:
+        pytest.skip("PowerShell is unavailable")
+    wrapper = tmp_path / "job.ps1"
+    wrapper.write_text(windows_job_script())
+    code = {
+        "memory": "try:\n    bytearray(256 << 20)\nexcept MemoryError:\n    print('bounded')\n",
+        "process": (
+            "import subprocess,sys\ntry:\n"
+            "    child=subprocess.Popen([sys.executable,'-I','-c','pass'])\n"
+            "    child.wait()\nexcept OSError:\n    print('bounded')\n"
+        ),
+        "exit": "raise SystemExit(42)",
+    }[probe]
+    result = subprocess.run(
+        [
+            pwsh,
+            "-NoProfile",
+            "-NonInteractive",
+            "-File",
+            str(wrapper),
+            "-MemoryBytes",
+            str(128 << 20),
+            "-ActiveProcessLimit",
+            "1",
+            "-CommandJson",
+            json.dumps([sys.executable, "-I", "-u", "-c", code]),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert result.returncode == (42 if probe == "exit" else 0), result.stderr
+    if probe != "exit":
+        assert result.stdout.strip() == "bounded", result.stderr

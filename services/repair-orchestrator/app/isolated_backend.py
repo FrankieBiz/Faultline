@@ -36,7 +36,7 @@ def _apply_rlimits() -> None:
     """Bound the candidate process where ``setrlimit`` exists; no-op on Windows.
 
     These are per-process bounds. On Linux they complement the aggregate cgroup
-    scope; on macOS they are the native aggregate ceiling (there is no cgroup).
+    scope; on macOS they remain per-process bounds, not an aggregate ceiling.
     Windows enforces memory and task caps through the Job Object that launched
     this interpreter, so nothing is applied here.
     """
