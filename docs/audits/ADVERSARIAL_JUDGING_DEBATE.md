@@ -8,7 +8,7 @@ This is a skeptical internal review, not an official Meta judging result or a pl
 
 - Impact is unmeasured.
 - Meta's evidence covers one scenario.
-- The macOS and Windows isolation adapters are not functional yet.
+- The macOS and Windows isolation adapters have never run on their own hosts.
 - The narrated video does not exist.
 
 Three status claims in the repository overstated the evidence. They are listed in [Documentation corrections](#documentation-corrections) and were fixed in the same change.
@@ -24,6 +24,7 @@ All four commands below were run on `82c0b8e` in a clean worktree, after `npm ci
 | Total | **1,700 automated + 54 browser = 1,754 tests passing.** |
 | `make integration` | **Not run.** Its lifecycle tests share cgroup scope names with any concurrent run in another worktree, and the [2026-11-03 record](../evidence/2026-11-03-backend-security-hardening.json) shows overlap causing spurious failures. The latest recorded run is 51 passed, 0 skipped (`FAULTLINE_REQUIRE_ISOLATED_TESTS=1`) at `433e87f`. |
 | Targeted P04/P06/P07 unit tests | 25 passed (all mocked, no Bubblewrap needed). |
+| After merging `ef54542` (adapter hardening, landed mid-review) | `make check` **exit 0**: 328 passed / 23 skipped, orchestrator **1,272 passed / 3 skipped** (Windows-only adapter tests), runner 134. `make browser` **exit 0**: 52 + 2. That is **1,734 automated + 54 browser = 1,788** on the merged head. The submission copy keeps the 1,754 figure pinned to `82c0b8e`, where it was measured. |
 
 The first `make check` attempt exited 2 with `eslint: command not found`, because the fresh worktree had no `node_modules`. That is the same setup gap the [backend perfection check](BACKEND_PERFECTION_CHECK.md) recorded. It is not a code defect, but `make setup` must run first.
 
@@ -162,19 +163,35 @@ The grill boundary also holds: containment "establishes instruction/data boundar
 
 ### Objection 3.2: "You claim native macOS sandbox-exec and Windows Job Object isolation. Show me it working."
 
-**Evidence:** The adapters exist (`app/isolation/darwin.py`, `windows.py`), and their tests pass on Linux. Those tests check generated argv, profile text, and hardcoded limits under monkeypatched `sys.platform`. Neither adapter has been exercised natively, and inspection found blocking defects:
+**Evidence at `82c0b8e`:** The adapters exist (`app/isolation/darwin.py`, `windows.py`), and their tests pass on Linux. Those tests check generated argv, profile text, and hardcoded limits under monkeypatched `sys.platform`. Neither adapter has been exercised natively, and inspection found blocking defects:
 
-- **macOS: the preflight can never pass.** `_profile_preflight` (`darwin.py:248-259`) builds a `python -c` program that places `try:` after semicolon-joined statements on one line. Compiling it raises `SyntaxError`, confirmed for this review. The adapter therefore always fails closed with `isolated_profile_unavailable`. That failure is safe, but the adapter is not functional.
-- **macOS: the limits are self-certified.** The limit probe runs Python without the launcher, so no rlimits apply. In Docker mode, `verify_scope` returns the configured values with `verified=True` and reads nothing back (`darwin.py:211-218`).
-- **Windows: the limits are self-certified.** Job Objects are created through C# P/Invoke in PowerShell. But `verify_scope` hardcodes `verified=True` without `QueryInformationJobObject` (`windows.py:274-281`), and the process is assigned to the job *after* it starts (`:177-178`), which leaves a window.
+- **macOS: the preflight could never pass.** `_profile_preflight` built a `python -c` program that placed `try:` after semicolon-joined statements on one line. Compiling it raises `SyntaxError`, confirmed for this review. The adapter therefore always failed closed with `isolated_profile_unavailable`.
+- **macOS: the limit probe tested nothing.** It ran Python without the launcher, so no rlimits applied. In Docker mode, `verify_scope` returns the configured values with `verified=True` and reads nothing back.
+- **Windows: the limits were self-certified.** The process was assigned to its Job Object *after* starting, the assignment result was ignored, and no `QueryInformationJobObject` read-back existed.
 - **Windows: no filesystem or network isolation.** Neither exists.
-- **Sandbox repair: Linux only.** `cli_check.py` states "Sandbox repair requires Linux with systemd and cgroup v2." The macOS/Windows CI job (`platform-smoke.yml`) smoke-tests the gate CLI, not isolation. [`MULTIPLATFORM_ISOLATION.md`](../MULTIPLATFORM_ISOLATION.md) itself says those paths "must be exercised on their own hosts."
 
-**Verdict: failed** as stated. The accurate claims are:
+**Rebuttal landed during this review:** commit `ef54542` (merged on `main` while this report was being written) addresses most of the list above. Its own [adversarial review](../../services/repair-orchestrator/app/isolation/ADVERSARIAL_REVIEW.md) records the changes:
+
+- **macOS preflight.** It now generates valid Python, and a regression test compiles it.
+- **macOS memory probe.** It applies the launcher's real rlimits first and rejects a missing `MemoryError`.
+- **macOS process control.** The profile denies `process-fork` and escapes profile strings.
+- **Windows job assignment.** The candidate is created `CREATE_SUSPENDED`, assigned with a checked `AssignProcessToJobObject`, then resumed.
+- **Windows read-back.** Memory, process-count, kill-on-close, and CPU limits are queried with `QueryInformationJobObject` before launch, and a mismatch fails closed.
+
+The same review is candid about what remains:
+
+- Windows Jobs are "resource containment, not a hostile-code security sandbox." The candidate keeps the host user's filesystem and network rights.
+- Native Darwin limits are not aggregate enforcement and stay `verified=False`.
+- The Docker fallback has no per-launch read-back.
+- "Linux mocks and source contracts cannot validate Seatbelt syntax, Windows P/Invoke ABI, enforcement, or forced wrapper death."
+
+The macOS/Windows CI job (`platform-smoke.yml`) still smoke-tests only the gate CLI. `cli_check.py` still states "Sandbox repair requires Linux with systemd and cgroup v2."
+
+**Verdict: failed → shaky.** The code defects are fixed, but no native execution evidence exists. The accurate claims are:
 
 - The **pre-flight gate CLI** runs natively on macOS, Linux, and Windows (CI-tested).
 - **Contained sandbox repair** is Linux-only.
-- macOS and Windows isolation adapters are scaffolded and fail closed, but are not validated.
+- macOS and Windows adapters are hardened and fail closed, but are unvalidated on their own hosts. Windows provides resource limits, not a security boundary.
 
 ### Objection 3.3: "Your own audit found eight backend isolation bugs. Are P01–P07 really fixed?"
 
@@ -199,13 +216,13 @@ The audit's edge probe (`docs/audits/probes/backend_perfection_edges.py`) **now 
 
 **Evidence:** The count was reproduced above on this revision. It does not double-count: isolated-runtime tests sit inside the 1,238 orchestrator count, and the 23 Windows skips are excluded. The suite is fast (orchestrator 81 s) and fails closed: `FAULTLINE_REQUIRE_ISOLATED_TESTS=1` turns unavailable prerequisites into failures.
 
-**Verdict: held.** Count is not coverage, though. The macOS/Windows adapter tests demonstrate that a high count can coexist with a non-functional path.
+**Verdict: held.** Count is not coverage, though. At `82c0b8e`, the macOS adapter's tests all passed while its preflight could not even compile. A high count can coexist with a non-functional path.
 
 **Technical depth score: 17/20 (Strong).** The Linux containment is genuinely Pinnacle-grade: kernel read-back plus adversarial probes. The score is held back by:
 
 - no seccomp filter
 - partial P06 and open P08
-- self-certified limits on non-Linux adapters
+- non-Linux adapters that have no native execution evidence
 - a broken audit probe
 
 ---
@@ -255,7 +272,7 @@ The storyboard and the voiceover also diverge. The storyboard includes a live Ap
 | --- | ---: | ---: | --- | --- |
 | Impact | 30 | **18** | Moderate | No users, no measured savings, one route, uncorroborated anecdote |
 | Meta AI tooling | 25 | **19** | Strong | 3/3 trials on one scenario; no Meta corpus run, behavioral retry, or Llama run |
-| Technical depth | 20 | **17** | Strong | No seccomp; P06 partial, P08 open; non-Linux adapters non-functional |
+| Technical depth | 20 | **17** | Strong | No seccomp; P06 partial, P08 open; non-Linux adapters unvalidated natively |
 | Demo & presentation | 25 | **18** | Strong | Narrated video not recorded; storyboard and voiceover diverge |
 | **Total** | **100** | **72** | | |
 
@@ -268,7 +285,7 @@ Ranked by points recoverable per hour:
 1. **Record and mux the voiceover** onto the rough cut, then link it on Devpost. Demo: up to +4.
 2. **Run Meta on the unfamiliar-defect corpus** (`make evaluate` with `META_API_KEY`). Even 2 trials × 10 cases would answer objection 2.1. Tooling: up to +3.
 3. **Fix `backend_perfection_edges.py`** to treat the P07 rejection as a pass and continue to the P04 stop probe. Commit the output as an evidence record. Technical: +1.
-4. **Fix or withdraw the macOS adapter preflight.** The `SyntaxError` is a one-line fix, but only a native macOS run can validate it. Until then, keep "Linux-only sandbox repair" in all copy.
+4. **Run the hardened adapters on real macOS and Windows hosts** and commit the probe output. `ef54542` fixed the code defects, but only a native run can validate Seatbelt syntax and the Job Object ABI. Until then, keep "Linux-only sandbox repair" in all copy.
 5. **Collect even two real user conversations** for `IMPACT_EVIDENCE.md`. Impact: up to +3.
 
 ## Documentation corrections
