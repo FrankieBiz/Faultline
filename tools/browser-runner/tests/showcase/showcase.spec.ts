@@ -137,7 +137,7 @@ test.describe("keyboard focus", () => {
     await fakeAudio(page, "running");
     const errors = await open(page);
     await page.keyboard.press("Tab");
-    const skip = page.getByRole("link", { name: "Skip to content" });
+    const skip = page.getByRole("link", { name: "Skip to main content" });
     await expect(skip).toBeFocused();
     await expect(skip).toBeInViewport();
 
@@ -283,6 +283,87 @@ test.describe("keyboard focus", () => {
     await expect(next).toBeFocused();
     await expect(next).toBeChecked();
     await expect(page.locator("#detail h3")).toHaveText("Catch the TypeError and keep a null discount");
+    expect(errors).toEqual([]);
+  });
+
+  test("the first Tab reveals a skip link that moves focus into main, past the banner", async ({ page }) => {
+    const errors = await open(page);
+    const skip = page.getByRole("link", { name: "Skip to main content" });
+    await expect(skip).not.toBeInViewport();
+    await page.keyboard.press("Tab");
+    await expect(skip).toBeFocused();
+    await expect(skip).toBeInViewport();
+    await expect(skip).toHaveAttribute("href", "#main-content");
+    await page.keyboard.press("Enter");
+    const main = page.getByRole("main");
+    await expect(main).toBeFocused();
+    await expect(main).toHaveAttribute("id", "main-content");
+    expect(new URL(page.url()).hash).toBe("#main-content");
+    // The next Tab lands inside main, never back in the banner's section links.
+    await page.keyboard.press("Tab");
+    expect(await page.evaluate(() => Boolean(document.activeElement?.closest("main")))).toBe(true);
+    expect(await page.evaluate(() => Boolean(document.activeElement?.closest("header")))).toBe(false);
+    expect(errors).toEqual([]);
+  });
+
+  test("the recorded journey ribbon takes Tab and Arrow keys, and picking a step keeps focus on it", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    const errors = await open(page);
+    const nodes = page.getByRole("list", { name: /Recorded journey/ }).getByRole("button");
+    await expect(nodes).toHaveCount(8);
+    // Tab walks every node in order.
+    await nodes.first().focus();
+    for (let i = 1; i < 8; i++) {
+      await page.keyboard.press("Tab");
+      await expect(nodes.nth(i)).toBeFocused();
+    }
+    // Arrows move one node at a time and wrap; Home and End jump to the ends.
+    await page.keyboard.press("ArrowRight");
+    await expect(nodes.first()).toBeFocused();
+    await page.keyboard.press("ArrowLeft");
+    await expect(nodes.last()).toBeFocused();
+    await page.keyboard.press("Home");
+    await expect(nodes.first()).toBeFocused();
+    for (let i = 0; i < 4; i++) await page.keyboard.press("ArrowRight");
+    const rupture = nodes.nth(4);
+    await expect(rupture).toHaveAccessibleName("HTTP 500");
+    await expect(rupture).toBeFocused();
+    // Enter scrolls the evidence into view but leaves focus on the node.
+    await page.keyboard.press("Enter");
+    await expect(rupture).toHaveAttribute("aria-current", "step");
+    await expect(rupture).toBeFocused();
+    await expect(page.locator("#side-before")).toHaveAttribute("data-focus", "");
+    await page.keyboard.press("End");
+    await expect(nodes.last()).toBeFocused();
+    expect(errors).toEqual([]);
+  });
+});
+
+test.describe("landmarks", () => {
+  test("one banner, one main, one contentinfo, with named navigation and a complementary repair core", async ({ page }) => {
+    const errors = await open(page);
+    await expect(page.getByRole("banner")).toHaveCount(1);
+    await expect(page.getByRole("main")).toHaveCount(1);
+    await expect(page.getByRole("contentinfo")).toHaveCount(1);
+    await expect(page.getByRole("banner").getByRole("navigation", { name: "Sections" })).toBeVisible();
+    await expect(page.getByRole("main").getByRole("navigation", { name: "The 3-minute judging tour" })).toBeVisible();
+    await expect(page.getByRole("contentinfo").getByRole("link", { name: "README" })).toBeVisible();
+    const core = page.getByRole("complementary");
+    await expect(core).toHaveCount(1);
+    await expect(core).toHaveAccessibleName("Repair core: Meta Model API");
+    await expect(page.getByRole("main").getByRole("complementary", { name: "Repair core: Meta Model API" })).toBeVisible();
+    // Landmarks sit side by side under body, never nested, and the skip link comes before them all.
+    expect(await page.evaluate(() => {
+      const pick = (selector: string) => document.querySelector(selector)!;
+      const [skip, banner, main, info] = [pick("a.skip"), pick("header[role=banner]"), pick("main"), pick("footer[role=contentinfo]")];
+      const before = (a: Node, b: Node) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+      return [[skip, banner, main, info].every((node) => node.parentElement === document.body),
+        document.body.querySelector("a, button, input, [tabindex]") === skip,
+        before(skip, banner), before(banner, main), before(main, info)];
+    })).toEqual([true, true, true, true, true]);
+    // Every in-page link that targets main still resolves after the rename.
+    expect(await page.evaluate(() => [...document.querySelectorAll("a[href^='#']")]
+      .map((a) => a.getAttribute("href")!.slice(1)).filter((id) => id && !document.getElementById(id)))).toEqual([]);
     expect(errors).toEqual([]);
   });
 });

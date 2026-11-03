@@ -84,6 +84,7 @@
     .shell { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
     .skip { position: absolute; left: -9999px; }
     .skip:focus { left: 16px; top: 12px; z-index: 30; padding: 8px 12px; background: var(--ink); color: var(--bg); }
+    #main-content:focus { outline: none; }
 
     /* Top bar */
     .top { position: sticky; top: 0; z-index: 20; background: linear-gradient(var(--bg), rgba(7, 8, 10, 0.9)); border-bottom: 1px solid var(--line); }
@@ -647,10 +648,10 @@
   </style>
 </head>
 <body>
-  <a class="skip" href="#main">Skip to content</a>
-  <header class="top">
+  <a class="skip" href="#main-content">Skip to main content</a>
+  <header class="top" role="banner">
     <div class="shell top-row">
-      <a class="wordmark" href="#main"><span class="glyph" aria-hidden="true"></span>FaultLine</a>
+      <a class="wordmark" href="#main-content"><span class="glyph" aria-hidden="true"></span>FaultLine</a>
       <nav aria-label="Sections">
         <a href="#gate" class="nav-gate"><span class="gate-lock" aria-hidden="true"></span>Agent gate</a>
         <a href="#repair">Meta repair</a>
@@ -664,7 +665,7 @@
     </div>
   </header>
 
-  <main id="main" class="shell">
+  <main id="main-content" class="shell" tabindex="-1">
     <div class="hero">
       <p class="context"><span class="glyph" aria-hidden="true"></span><span>Meta Global AI Developer Hackathon</span><span aria-hidden="true">·</span><span>Indie Developer track</span><span aria-hidden="true">·</span><span>Built by Francis Bisignano</span></p>
       <h1>
@@ -764,7 +765,7 @@
         A customer buys two Trail Mugs, leaves the coupon empty, and the store crashes. Meta's model got <strong>the business rules and the failure evidence, never the bug's name or its fix</strong>.
       </p>
 
-      <aside class="core" id="core" aria-labelledby="core-title">
+      <aside class="core" id="core" role="complementary" aria-labelledby="core-title">
         <div class="core-head">
           <h3 id="core-title"><span class="core-dot" aria-hidden="true"></span>Repair core: Meta Model API</h3>
           <p>The model reads the contract and the evidence, returns a <strong>schema-checked one-file diff</strong>, and gets the gates' findings back for <strong>one retry</strong>. Provider labels come from the endpoint host and are recorded only when that provider answered.</p>
@@ -1002,7 +1003,7 @@ FAULTLINE_INSPECTOR_URL=http://127.0.0.1:4400 ./scripts/rehearse-demo.sh</code><
     </section>
   </main>
 
-  <footer>
+  <footer role="contentinfo">
     <div class="shell">
       <p>FaultLine by Francis Bisignano (<a href="https://github.com/FrankieBiz">FrankieBiz</a>) for the Meta Global AI Developer Hackathon. Submissions are due November 4, 2026 at 9 PM ET per the <a href="https://events.cerebralvalley.ai/e/meta-ai-developer-hackathon">official event page</a> (retrieved October 27, 2026).</p>
       <p>Documents: <a href="https://github.com/FrankieBiz/Faultline#readme">README</a>, <a href="https://github.com/FrankieBiz/Faultline/blob/main/docs/EVALUATION.md">evaluation</a>, <a href="https://github.com/FrankieBiz/Faultline/blob/main/docs/QUALITY_REVIEW.md">quality review</a>, <a href="https://github.com/FrankieBiz/Faultline/blob/main/docs/SUBMISSION.md">technical dossier</a>, <a href="https://github.com/FrankieBiz/Faultline/blob/main/docs/PROJECT_STATUS.md">status</a>.</p>
@@ -1462,6 +1463,15 @@ FAULTLINE_INSPECTOR_URL=http://127.0.0.1:4400 ./scripts/rehearse-demo.sh</code><
       const li = el("li", { "data-state": "idle" }, button);
       document.getElementById("recorded-journey").append(li);
       return li;
+    });
+    // Arrow keys walk the ribbon's nodes, Home and End jump to its ends; Tab still stops at each one.
+    document.getElementById("recorded-journey").addEventListener("keydown", (event) => {
+      const nodes = journeyItems.map((li) => li.firstChild);
+      const from = nodes.indexOf(event.target);
+      const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+      if (from < 0 || (!step && event.key !== "Home" && event.key !== "End")) return;
+      event.preventDefault();
+      nodes[event.key === "Home" ? 0 : event.key === "End" ? nodes.length - 1 : (from + step + nodes.length) % nodes.length].focus();
     });
 
     /** A node's state, read from the recorded timeline's stage states. */
