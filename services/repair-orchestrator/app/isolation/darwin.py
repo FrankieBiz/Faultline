@@ -40,6 +40,23 @@ DARWIN_TASKS_MAX = 64
 DARWIN_DOCKER_IMAGE = "faultline-runtime:latest"
 
 
+def _safe_sandbox_path(path: Path) -> str:
+    """Render a profile path, rejecting characters that break the s-expression.
+
+    ``(subpath "...")`` is a double-quoted s-expression string with no backslash
+    escaping. A ``"`` terminates the string early and lets the remainder parse as
+    fresh directives; a newline or carriage return likewise starts a new line
+    that the profile reader consumes as a directive; a null byte truncates the
+    token. Each can rewrite a deny-by-default profile into a permissive one, so
+    they fail closed here. Pipes, semicolons, spaces, and Unicode are inert
+    literal characters inside the quoted form and are preserved.
+    """
+    text = str(path)
+    if any(character in text for character in ('"', "\n", "\r", "\0")):
+        raise RuntimeUnavailable("sandbox_path_unsafe")
+    return json.dumps(text, ensure_ascii=False)
+
+
 def sandbox_profile(
     *,
     python: Path,
@@ -67,7 +84,7 @@ def sandbox_profile(
         Path("/dev"),
     )
     lines = ["(version 1)", "(deny default)", '(import "system.sb")']
-    lines.extend(f"(allow file-read* (subpath {json.dumps(str(path))}))" for path in read_only)
+    lines.extend(f"(allow file-read* (subpath {_safe_sandbox_path(path)}))" for path in read_only)
     lines.extend(
         (
             "(allow file-read-metadata)",
@@ -199,7 +216,11 @@ class DarwinIsolatedRuntime(IsolatedRuntime):
         # Still validate the identity, mirroring the Linux path's fail-closed check.
         from uuid import UUID
 
-        if str(UUID(generation_id)) != generation_id:
+        try:
+            canonical = str(UUID(generation_id)) == generation_id
+        except ValueError:
+            canonical = False
+        if not canonical:
             raise RuntimeUnavailable("generation_identity_invalid")
         return None
 

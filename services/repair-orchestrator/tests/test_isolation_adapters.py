@@ -27,6 +27,7 @@ from app.isolated_runtime import AggregateLimits, IsolatedRuntime, ManagedProces
 from app.isolation import select_runtime
 from app.isolation.darwin import DARWIN_MEMORY_MAX_BYTES, DARWIN_TASKS_MAX, sandbox_profile
 from app.isolation.windows import windows_job_script
+from app.runtime import RuntimeUnavailable
 from shared.contracts.models import ResourceLimits
 
 GENERATION = "0b9c8d7e-6f5a-4b3c-9d2e-1f0a9b8c7d6e"
@@ -308,7 +309,7 @@ def test_darwin_fails_closed_without_sandbox_exec_or_docker() -> None:
     assert runtime.limits_mode == "docker"
 
 
-@pytest.mark.parametrize("name", ['quote"(allow default)', "back\\slash", "line\nbreak"])
+@pytest.mark.parametrize("name", ["back\\slash", "semi;colon", "dollar$name"])
 def test_darwin_profile_escapes_untrusted_snapshot_paths(tmp_path: Path, name: str) -> None:
     snapshot = tmp_path / name
     profile = sandbox_profile(
@@ -316,6 +317,15 @@ def test_darwin_profile_escapes_untrusted_snapshot_paths(tmp_path: Path, name: s
     )
     assert f"(allow file-read* (subpath {json.dumps(str(snapshot))}))" in profile
     assert len(profile.splitlines()) == 20
+
+
+@pytest.mark.parametrize("name", ['quote"(allow default)', "line\nbreak"])
+def test_darwin_profile_rejects_unsafe_snapshot_paths(tmp_path: Path, name: str) -> None:
+    snapshot = tmp_path / name
+    with pytest.raises(RuntimeUnavailable, match="sandbox_path_unsafe"):
+        sandbox_profile(
+            python=tmp_path / "python", packages=tmp_path, snapshot=snapshot, launcher=tmp_path
+        )
 
 
 def test_darwin_profile_denies_fork_escape(tmp_path: Path) -> None:
