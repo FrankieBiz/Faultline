@@ -29,6 +29,56 @@ GATE_GUIDANCE = (
     "Use faultline gate for mandatory CI/deployment gates; incomplete exploration returns exit 1."
 )
 
+# --- untrusted text sanitization ---------------------------------------------
+# A page under test controls button labels, console errors, response bodies,
+# stack traces, and error text. Echoing them verbatim lets a hostile page move
+# the cursor, clear the screen, set the terminal title (OSC), or forge GitHub
+# workflow commands (``::error`` / ``::set-output``) in CI logs and markdown.
+# _ANSI_ESCAPE_RE matches CSI, OSC (BEL or ST terminated), DCS/SOS/PM/APC, and
+# single-character ESC sequences. _CONTROL_RE then drops the remaining C0/C1
+# control bytes that carry no meaning in a report, keeping only \n and \t.
+_ANSI_ESCAPE_RE = re.compile(
+    r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b\x9c]*(?:\x07|\x1b\\|\x9c)|"
+    r"[PX^_][^\x1b\x9c]*(?:\x1b\\|\x9c)|[@-_])"
+)
+_CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\x80-\x9f]")
+
+# Bounds that stop a hostile or runaway report from ballooning while it is
+# materialized into a terminal, markdown, or CI document.
+MAX_TRAIL_STEPS = 200
+MAX_SCREENS = 200
+MAX_BREADCRUMBS = 200
+MAX_FIELD_CHARS = 4_000
+
+
+def sanitize_text(value: object) -> str:
+    """Render ``value`` as a string with ANSI/OSC sequences and control bytes removed.
+
+    Newlines and tabs are preserved (they are structural); carriage returns are
+    replaced with a space so they cannot overprint or hide content. Non-ASCII
+    text (emoji, accents) is left intact.
+    """
+    text = str(value)
+    text = _ANSI_ESCAPE_RE.sub("", text)
+    text = _CONTROL_RE.sub("", text)
+    return text.replace("\r", " ")
+
+
+def ci_text(value: object) -> str:
+    """A single log-line-safe string: sanitized, with no embedded newlines or tabs."""
+    return sanitize_text(value).replace("\n", " ").replace("\t", " ")
+
+
+def sanitize_report(report: Any) -> Any:
+    """Recursively sanitize every string in a report or runner event."""
+    if isinstance(report, str):
+        return sanitize_text(report)
+    if isinstance(report, list):
+        return [sanitize_report(item) for item in report]
+    if isinstance(report, dict):
+        return {key: sanitize_report(value) for key, value in report.items()}
+    return report
+
 
 def _incomplete_warning(report: dict[str, Any]) -> str | None:
     if report.get("status") == "clean" and report.get("stop_reason") != "exhausted":
@@ -43,12 +93,18 @@ def describe_signal(signal: dict[str, Any]) -> str:
     """Short description, e.g. ``HTTP 500 on POST /api/checkout``."""
     kind = signal.get("kind")
     if kind == "http_error":
-        return f"HTTP {signal.get('status')} on {signal.get('method')} {signal.get('endpoint')}"
+        return (
+            f"HTTP {sanitize_text(signal.get('status'))} on {sanitize_text(signal.get('method'))} "
+            f"{sanitize_text(signal.get('endpoint'))}"
+        )
     if kind == "request_failed":
-        return f"{signal.get('method')} {signal.get('endpoint')} failed: {signal.get('message')}"
+        return (
+            f"{sanitize_text(signal.get('method'))} {sanitize_text(signal.get('endpoint'))} "
+            f"failed: {sanitize_text(signal.get('message'))}"
+        )
     if kind == "page_error":
-        return f"Uncaught {signal.get('message')}"
-    return f"console.error: {signal.get('message')}"
+        return f"Uncaught {sanitize_text(signal.get('message'))}"
+    return f"console.error: {sanitize_text(signal.get('message'))}"
 
 
 def render_event(event: dict[str, Any], c: Palette) -> str | None:
@@ -58,7 +114,7 @@ def render_event(event: dict[str, Any], c: Palette) -> str | None:
     if kind == "launch":
         return prefix + "Launching Chromium..."
     if kind == "navigate":
-        return prefix + f"Navigating to {event.get('url')}..."
+        return prefix + f"Navigating to {sanitize_text(event.get('url'))}..."
     if kind == "discovered":
         screens = event.get("screens")
         if isinstance(screens, int):
@@ -78,7 +134,10 @@ def render_event(event: dict[str, Any], c: Palette) -> str | None:
             else f"{c.red}{c.bold}💥 {describe_signal(failure)}{c.reset}"
         )
         verb = _VERBS.get(action, action.capitalize())
-        return prefix + f"Step {event.get('step')}: {verb} {event.get('label')}{value} -> {result}"
+        return (
+            prefix + f"Step {event.get('step')}: {verb} {sanitize_text(event.get('label'))}"
+            f"{value} -> {result}"
+        )
     return None
 
 
@@ -89,29 +148,33 @@ def _clip(text: str, limit: int = MAX_BODY_CHARS) -> str:
 def _evidence_lines(failure: dict[str, Any], c: Palette) -> list[str]:
     lines: list[str] = []
     if failure.get("kind") in ("http_error", "request_failed"):
-        lines.append(f"  {c.dim}endpoint{c.reset}  {failure.get('method')} {failure.get('url')}")
+        lines.append(
+            f"  {c.dim}endpoint{c.reset}  "
+            f"{sanitize_text(failure.get('method'))} {sanitize_text(failure.get('url'))}"
+        )
     else:
-        lines.append(f"  {c.dim}message{c.reset}   {failure.get('message')}")
+        lines.append(f"  {c.dim}message{c.reset}   {sanitize_text(failure.get('message'))}")
     if failure.get("response_body"):
-        lines.append(f"  {c.dim}response{c.reset}  {_clip(str(failure['response_body']))}")
+        body = _clip(sanitize_text(failure["response_body"]))
+        lines.append(f"  {c.dim}response{c.reset}  {body}")
     if failure.get("stack"):
-        stack = str(failure["stack"]).splitlines()
+        stack = sanitize_text(failure["stack"]).splitlines()
         lines.append(f"  {c.dim}stack{c.reset}     {stack[0]}")
         lines.extend(f"            {frame.strip()}" for frame in stack[1:6])
     for message in failure.get("console_errors", [])[-3:]:
-        lines.append(f"  {c.dim}console{c.reset}   {_clip(str(message), 200)}")
+        lines.append(f"  {c.dim}console{c.reset}   {_clip(sanitize_text(message), 200)}")
     return lines
 
 
 def _breadcrumb_lines(report: dict[str, Any], c: Palette) -> list[str]:
     failing_step = (report.get("failure") or {}).get("step")
     lines: list[str] = []
-    for crumb in report.get("breadcrumbs", []):
+    for crumb in report.get("breadcrumbs", [])[:MAX_BREADCRUMBS]:
         action = crumb.get("action")
         if action == "navigate":
-            detail = str(crumb.get("url"))
+            detail = sanitize_text(crumb.get("url"))
         else:
-            detail = str(crumb.get("selector"))
+            detail = sanitize_text(crumb.get("selector"))
             if crumb.get("value") is not None and action != "check":
                 detail += f" = {json.dumps(crumb['value'])}"
         marker = f"  {c.red}<- fails here{c.reset}" if crumb.get("step") == failing_step else ""
@@ -127,11 +190,15 @@ def render_report(report: dict[str, Any], c: Palette) -> list[str]:
             f"{c.green}{c.bold}No defect found.{c.reset} "
             f"Explored {report.get('elements_explored')} elements with "
             f"{report.get('actions_taken')} actions across "
-            f"{len(report.get('pages_visited', []))} pages (stopped: {report.get('stop_reason')}).",
+            f"{len(report.get('pages_visited', []))} pages "
+            f"(stopped: {sanitize_text(report.get('stop_reason'))}).",
             _incomplete_warning(report) or f"Exploratory result. {GATE_GUIDANCE}",
         ]
     if status == "error":
-        return [f"{c.red}Crawl could not complete:{c.reset} {report.get('error')}", GATE_GUIDANCE]
+        return [
+            f"{c.red}Crawl could not complete:{c.reset} {sanitize_text(report.get('error'))}",
+            GATE_GUIDANCE,
+        ]
 
     failure: dict[str, Any] = report.get("failure", {})
     lines = ["", f"{c.red}{c.bold}{describe_signal(failure)}{c.reset}"]
@@ -528,11 +595,15 @@ def _trigger(report: dict[str, Any], failure: dict[str, Any]) -> str | None:
     verb = _GATE_VERBS.get(str(crumb.get("action")), str(crumb.get("action")))
     label = crumb.get("label")
     # Keep non-ASCII labels (emoji, accents) readable in a prompt meant for people and models.
-    target = json.dumps(label, ensure_ascii=False) if label else str(crumb.get("selector"))
+    target = (
+        json.dumps(sanitize_text(label), ensure_ascii=False)
+        if label
+        else sanitize_text(crumb.get("selector"))
+    )
     if label and crumb.get("selector"):
-        target += f" ({crumb['selector']})"
+        target += f" ({sanitize_text(crumb['selector'])})"
     page = urllib.parse.urlsplit(str(crumb.get("url", ""))).path or "/"
-    return f"{verb} {target} on {page}"
+    return f"{verb} {target} on {sanitize_text(page)}"
 
 
 def _fix_instruction(failure: dict[str, Any]) -> str:
@@ -577,10 +648,11 @@ def remediation_prompt(report: dict[str, Any], failure: dict[str, Any], url: str
         sentences.append(f"Triggered by {trigger}.")
     lines = [" ".join(sentences)]
     if failure.get("response_body"):
-        lines.append(f"Server response: {_clip(str(failure['response_body']), 300)}")
+        lines.append(f"Server response: {_clip(sanitize_text(failure['response_body']), 300)}")
     if failure.get("stack"):
-        lines.append(f"Stack: {' | '.join(str(failure['stack']).splitlines()[:4])}")
-    trail = [str(step) for step in report.get("reproduction_trail") or []]
+        stack = " | ".join(sanitize_text(failure["stack"]).splitlines()[:4])
+        lines.append(f"Stack: {stack}")
+    trail = [sanitize_text(step) for step in report.get("reproduction_trail") or []]
     if trail:
         lines.append("Reproduce:")
         lines.extend(f"  {step}" for step in trail)
@@ -592,10 +664,18 @@ def remediation_prompt(report: dict[str, Any], failure: dict[str, Any], url: str
 
 
 def _error_prompt(code: str, message: str, url: str, *, stop_reason: str | None = None) -> str:
+    message = sanitize_text(message)
+    url = sanitize_text(url)
     if code in _INPUT_ERRORS:
         return (
             f"The FaultLine gate rejected its input: {message} Re-run it against the running "
             "preview, e.g. `faultline gate http://127.0.0.1:3000 --json`."
+        )
+    if code == "unexpected_error":
+        return (
+            f"The FaultLine gate failed unexpectedly for {url}: {message} This is a FaultLine "
+            "bug, not a defect in the preview. Re-run `faultline gate "
+            f"{url} --json`; if it persists, report it. Do not deploy until the gate exits 0."
         )
     if code == "incomplete_crawl":
         if stop_reason == "screen_limit":
@@ -632,10 +712,13 @@ def _error_prompt(code: str, message: str, url: str, *, stop_reason: str | None 
 def gate_result(report: dict[str, Any], url: str) -> dict[str, Any]:
     """The gate verdict for a completed crawl, in the documented JSON contract."""
     summary = crawler_service.telemetry(report)
-    screens: list[Any] = summary["screens_visited"]
+    screens: list[Any] = summary["screens_visited"][:MAX_SCREENS]
     explored = int(summary.get("elements_explored") or 0)
-    target = str(summary.get("target_url") or url)
-    trail = [str(step) for step in summary["reproduction_trail"]]
+    target = sanitize_text(str(summary.get("target_url") or url))
+    trail = [
+        _clip(sanitize_text(step), MAX_FIELD_CHARS)
+        for step in summary["reproduction_trail"][:MAX_TRAIL_STEPS]
+    ]
     failure = summary["failure"]
     status = report.get("status")
     stop_reason = summary["stop_reason"]
@@ -653,8 +736,8 @@ def gate_result(report: dict[str, Any], url: str) -> dict[str, Any]:
         )
     elif status == "clean":
         message = (
-            f"Exploration stopped with {stop_reason or 'no completion reason'} after "
-            f"{_plural(summary['actions_taken'], 'action')}; completion was not established."
+            f"Exploration stopped with {sanitize_text(stop_reason) or 'no completion reason'} "
+            f"after {_plural(summary['actions_taken'], 'action')}; completion was not established."
         )
         error = {"code": "incomplete_crawl", "message": message}
         text = f"Gate inconclusive: {message}"
@@ -662,7 +745,7 @@ def gate_result(report: dict[str, Any], url: str) -> dict[str, Any]:
     elif isinstance(failure, dict):
         if not trail:
             # Reports from older runners carry breadcrumbs only.
-            trail = [line.strip() for line in _breadcrumb_lines(report, _plain())]
+            trail = [line.strip() for line in _breadcrumb_lines(report, _plain())][:MAX_TRAIL_STEPS]
         text = (
             f"Defect intercepted: {describe_signal(failure)} after "
             f"{_plural(summary['actions_taken'], 'action')} across "
@@ -670,7 +753,10 @@ def gate_result(report: dict[str, Any], url: str) -> dict[str, Any]:
         )
         prompt = remediation_prompt({**report, "reproduction_trail": trail}, failure, target)
     else:
-        message = str(report.get("error") or "the crawl ended without a verdict")
+        message = _clip(
+            sanitize_text(report.get("error") or "the crawl ended without a verdict"),
+            MAX_FIELD_CHARS,
+        )
         error = {"code": "crawl_error", "message": message}
         text = f"Gate could not complete the crawl: {message}"
         prompt = _error_prompt("crawl_error", message, target)
@@ -694,6 +780,8 @@ def gate_result(report: dict[str, Any], url: str) -> dict[str, Any]:
 def gate_error_result(code: str, message: str, url: str) -> dict[str, Any]:
     """The verdict when the crawl could not run: exit 2 for bad input, else 1."""
     exit_code = 2 if code in _INPUT_ERRORS else 1
+    message = sanitize_text(message)
+    url = sanitize_text(url)
     return {
         "gate_status": GATE_FAILED,
         "verdict": DEPLOYMENT_BLOCKED,
@@ -713,7 +801,11 @@ def gate_error_result(code: str, message: str, url: str) -> dict[str, Any]:
 
 def _screen_paths(result: dict[str, Any]) -> list[str]:
     return [
-        str(screen.get("path") or screen.get("url")) if isinstance(screen, dict) else str(screen)
+        (
+            sanitize_text(screen.get("path") or screen.get("url")).replace("`", "'")
+            if isinstance(screen, dict)
+            else sanitize_text(screen).replace("`", "'")
+        )
         for screen in result["screens_visited"]
     ]
 
@@ -726,7 +818,7 @@ def _fence(text: str) -> str:
 
 
 def _md_cell(value: object) -> str:
-    return str(value).replace("|", "\\|").replace("\n", " ")
+    return sanitize_text(value).replace("|", "\\|").replace("\n", " ")
 
 
 def render_gate_markdown(result: dict[str, Any]) -> str:
@@ -741,7 +833,7 @@ def render_gate_markdown(result: dict[str, Any]) -> str:
         f"![FaultLine gate: {result['verdict']}]"
         f"(https://img.shields.io/badge/FaultLine_gate-{badge_text}-{color})",
         "",
-        f"> {result['summary']}",
+        f"> {_md_cell(result['summary'])}",
         "",
         "| Target | Verdict | Elements explored | Screens visited |",
         "| --- | --- | --- | --- |",
@@ -760,7 +852,7 @@ def render_gate_markdown(result: dict[str, Any]) -> str:
             "",
             "### Gate error",
             "",
-            f"`{result['error']['code']}`: {result['error']['message']}",
+            f"`{_md_cell(result['error']['code'])}`: {_md_cell(result['error']['message'])}",
         ]
     if result.get("agent_remediation_prompt"):
         lines += [
@@ -781,8 +873,8 @@ def render_gate_agent(result: dict[str, Any]) -> str:
     lines = [
         f"FAULTLINE PRE-FLIGHT GATE: {result['gate_status']} "
         f"({result['verdict']}, exit {result['exit_code']})",
-        f"Target: {result['target_url']}",
-        f"Summary: {result['summary']}",
+        f"Target: {sanitize_text(result['target_url'])}",
+        f"Summary: {sanitize_text(result['summary'])}",
         f"Explored: {_plural(result['elements_explored'], 'element')} across "
         f"{_plural(len(screens), 'screen')}" + (f" ({', '.join(screens)})" if screens else ""),
     ]
@@ -792,7 +884,7 @@ def render_gate_agent(result: dict[str, Any]) -> str:
         lines += [line.rstrip() for line in _evidence_lines(failure, _plain())]
     if result.get("agent_remediation_prompt"):
         # The prompt already carries the reproduction trail.
-        lines += ["", "Required action:", result["agent_remediation_prompt"]]
+        lines += ["", "Required action:", sanitize_text(result["agent_remediation_prompt"])]
     else:
         lines += ["", "Required action: none. The explored flows are clean; proceed."]
     return "\n".join(lines)
@@ -807,22 +899,24 @@ def render_gate_ci(result: dict[str, Any], *, github: bool) -> str:
     """Terse log lines; with ``github``, an ``::error``/``::notice`` annotation too."""
     lines = [
         f"faultline gate: {result['gate_status']} ({result['verdict']})",
-        f"target:   {result['target_url']}",
+        f"target:   {ci_text(result['target_url'])}",
         f"explored: {_plural(result['elements_explored'], 'element')}, "
         f"{_plural(len(result['screens_visited']), 'screen')}",
     ]
     failure = result.get("failure")
     if isinstance(failure, dict):
-        lines.append(f"defect:   {describe_signal(failure)}")
+        lines.append(f"defect:   {ci_text(describe_signal(failure))}")
     if result.get("error"):
-        lines.append(f"error:    {result['error']['code']}: {result['error']['message']}")
+        lines.append(
+            f"error:    {ci_text(result['error']['code'])}: {ci_text(result['error']['message'])}"
+        )
     if result["reproduction_trail"]:
-        lines += ["reproduction:", *(f"  {step}" for step in result["reproduction_trail"])]
+        lines += ["reproduction:", *(f"  {ci_text(step)}" for step in result["reproduction_trail"])]
     if github:
         level = "notice" if result["exit_code"] == 0 else "error"
         lines.append(
             f"::{level} title=FaultLine gate {result['gate_status']}::"
-            + _annotation(result["summary"])
+            + _annotation(ci_text(result["summary"]))
         )
     return "\n".join(lines)
 
@@ -837,13 +931,17 @@ def render_gate_human(
         "",
         f"{c.bold}FaultLine Pre-Flight Gate{c.reset}  {tone}{c.bold}{icon} "
         f"{result['gate_status']} · {result['verdict']}{c.reset}",
-        f"{c.dim}{result['summary']}{c.reset}",
+        f"{c.dim}{sanitize_text(result['summary'])}{c.reset}",
     ]
     failure = result.get("failure")
     if isinstance(failure, dict) and report is not None:
         lines += render_journey({**report, "reproduction_trail": result["reproduction_trail"]}, c)
     if result.get("agent_remediation_prompt"):
-        lines += ["", f"{c.bold}Agent fix prompt{c.reset}", result["agent_remediation_prompt"]]
+        lines += [
+            "",
+            f"{c.bold}Agent fix prompt{c.reset}",
+            sanitize_text(result["agent_remediation_prompt"]),
+        ]
     return lines
 
 
@@ -856,18 +954,20 @@ def gate_command(args: argparse.Namespace, c: Palette) -> int:
 
     def progress(event: dict[str, Any]) -> None:
         # Markdown goes to stdout (e.g. $GITHUB_STEP_SUMMARY), so progress goes to the log.
-        line = render_event(event, c if fmt == "human" else _plain())
+        line = render_event(sanitize_report(event), c if fmt == "human" else _plain())
         if line is not None:
             print(line, file=sys.stderr if fmt == "markdown" else sys.stdout, flush=True)
 
     report: dict[str, Any] | None = None
     try:
-        report = crawler_service.run_crawl(
-            url,
-            max_actions=args.max_actions,
-            timeout_ms=round(args.timeout * 1000),
-            allow_commit_actions=args.allow_commit_actions,
-            on_event=progress if fmt in ("human", "ci", "markdown") else None,
+        report = sanitize_report(
+            crawler_service.run_crawl(
+                url,
+                max_actions=args.max_actions,
+                timeout_ms=round(args.timeout * 1000),
+                allow_commit_actions=args.allow_commit_actions,
+                on_event=progress if fmt in ("human", "ci", "markdown") else None,
+            )
         )
         result = gate_result(report, url)
     except crawler_service.CrawlError as exc:
@@ -875,6 +975,8 @@ def gate_command(args: argparse.Namespace, c: Palette) -> int:
     except KeyboardInterrupt:
         print("Interrupted", file=sys.stderr)
         return 130
+    except Exception as exc:  # the JSON contract must survive any surprise failure
+        result = gate_error_result("unexpected_error", str(exc) or type(exc).__name__, url)
 
     if fmt == "json":
         print(json.dumps(result, ensure_ascii=True))

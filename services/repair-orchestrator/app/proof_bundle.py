@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
@@ -33,6 +34,36 @@ DESCRIPTIONS = {
     "diff": "Patch the gates checked",
     "proposal": "Provider output as returned",
 }
+
+# Untrusted bytes that can arrive in a fingerprint, a proposed diff, or an
+# assertion's observed/expected text. They are stripped before any value is
+# rendered into the markdown review, so a hostile or model-generated string
+# cannot inject terminal control, markdown structure, or CI workflow commands.
+_ANSI_ESCAPE_RE = re.compile(
+    r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b\x9c]*(?:\x07|\x1b\\|\x9c)|"
+    r"[PX^_][^\x1b\x9c]*(?:\x1b\\|\x9c)|[@-_])"
+)
+_CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\x80-\x9f]")
+
+
+def _sanitize(value: object) -> str:
+    """Render ``value`` with ANSI/OSC escapes and control bytes removed."""
+    text = str(value)
+    text = _ANSI_ESCAPE_RE.sub("", text)
+    text = _CONTROL_RE.sub("", text)
+    return text.replace("\r", " ")
+
+
+def _cell(value: object) -> str:
+    """One markdown table cell or inline-code span: sanitized, pipes/newlines escaped."""
+    return _sanitize(value).replace("|", "\\|").replace("\n", " ")
+
+
+def _fence(text: str, lang: str = "") -> str:
+    """A code fence longer than any backtick run inside ``text``."""
+    longest = max((len(run) for run in re.findall(r"`+", text)), default=0)
+    fence = "`" * max(3, longest + 1)
+    return f"{fence}{lang}\n{text}\n{fence}"
 
 
 class EvidenceDigest(ContractModel):
@@ -232,32 +263,31 @@ class ProofBundleCompiler:
         """Render a review summary that states only recorded values."""
         failed = [item for item in verification.assertions if not item.passed]
         lines = [
-            f"# FaultLine candidate repair: {bundle.scenario_id}",
+            f"# FaultLine candidate repair: {_sanitize(bundle.scenario_id)}",
             "",
             "| Recorded value | Result |",
             "| --- | --- |",
-            f"| Job | `{bundle.job_id}` |",
-            f"| Baseline verdict | `{bundle.baseline_verdict}` |",
-            f"| Baseline failure | `{bundle.baseline_fingerprint or 'not recorded'}` |",
-            f"| Verification verdict | `{bundle.verification_verdict}` |",
+            f"| Job | `{_cell(bundle.job_id)}` |",
+            f"| Baseline verdict | `{_cell(bundle.baseline_verdict)}` |",
+            f"| Baseline failure | `{_cell(bundle.baseline_fingerprint or 'not recorded')}` |",
+            f"| Verification verdict | `{_cell(bundle.verification_verdict)}` |",
             f"| Assertions passed | {bundle.assertions_total - bundle.regressions_count} "
             f"of {bundle.assertions_total} |",
-            f"| Bundle status | `{bundle.status}` |",
+            f"| Bundle status | `{_cell(bundle.status)}` |",
             "| Final cleanup | `succeeded` |",
-            f"| Recorded containment | `{bundle.containment}` |",
-            f"| Bundle SHA-256 | `{bundle.bundle_digest}` |",
+            f"| Recorded containment | `{_cell(bundle.containment)}` |",
+            f"| Bundle SHA-256 | `{_cell(bundle.bundle_digest)}` |",
             "",
             "## Patch",
             "",
-            "```diff",
-            bundle.patch_diff.strip(),
-            "```",
+            _fence(_sanitize(bundle.patch_diff.strip()), "diff"),
             "",
         ]
         if failed:
             lines += ["## Failed assertions", ""]
             lines += [
-                f"- `{item.id}`: expected {item.expected}; observed {item.observed}"
+                f"- `{_cell(item.id)}`: expected {_cell(item.expected)}; "
+                f"observed {_cell(item.observed)}"
                 for item in failed
             ]
             lines.append("")
@@ -268,7 +298,8 @@ class ProofBundleCompiler:
             "| --- | --- | --- | ---: |",
         ]
         lines += [
-            f"| `{item.id}` | {item.role} | `{item.sha256}` | {item.size_bytes} |"
+            f"| `{_cell(item.id)}` | {_cell(item.role)} | `{_cell(item.sha256)}` | "
+            f"{item.size_bytes} |"
             for item in bundle.evidence_manifest
         ]
         lines += [
