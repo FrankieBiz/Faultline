@@ -485,16 +485,9 @@ class ManagedProcess:
         """Signal the supervisor, then confirm cleanup/reap of the whole tree."""
         self.request_stop()
         try:
-            async with asyncio.timeout(6):
+            async with asyncio.timeout(4):
                 await self.process.wait()
                 await asyncio.gather(*self.pumps)
-        except TimeoutError:
-            if self.process.returncode is None:
-                try:
-                    self.process.kill()
-                    await self.process.wait()
-                except (ProcessLookupError, OSError):
-                    pass
         finally:
             # Retain the request when the supervisor has not exited. A timeout
             # is not proof of cleanup, and deleting it could revoke the stop
