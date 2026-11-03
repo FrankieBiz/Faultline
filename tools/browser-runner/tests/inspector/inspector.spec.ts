@@ -1460,6 +1460,157 @@ test("a journey badge's focus ring is never clipped by the ribbon that scrolls i
   expect(fit).toEqual({ visible: true, inside: true });
 });
 
+/** What each system color resolves to under the media emulated now. */
+function systemColors(page: Page) {
+  return page.evaluate(() => {
+    const probe = document.body.appendChild(document.createElement("span"));
+    const resolve = (name: string) => { probe.style.color = name; return getComputedStyle(probe).color; };
+    const colors = { Canvas: resolve("Canvas"), CanvasText: resolve("CanvasText"), ButtonText: resolve("ButtonText"), Highlight: resolve("Highlight"), LinkText: resolve("LinkText") };
+    probe.remove();
+    return colors;
+  });
+}
+const css = (locator: Locator, property: string) => locator.evaluate((el, name) => getComputedStyle(el).getPropertyValue(name), property);
+
+/** The share of the seismograph's baseline row, across its unmasked middle, painted within `tolerance` of `rgb`. */
+async function baselineCoverage(page: Page, seis: Locator, rgb: string, tolerance = 48) {
+  const png = await seis.screenshot();
+  return page.evaluate(async ({ src, rgb, tolerance }) => {
+    const image = new Image();
+    image.src = src;
+    await image.decode();
+    const canvas = new OffscreenCanvas(image.width, image.height);
+    const context = canvas.getContext("2d")!;
+    context.drawImage(image, 0, 0);
+    const want = rgb.match(/\d+/g)!.slice(0, 3).map(Number);
+    const from = Math.ceil(image.width * 0.1), to = Math.floor(image.width * 0.9);
+    const row = context.getImageData(from, 20, to - from, 1).data;
+    let hits = 0;
+    for (let x = 0; x < row.length; x += 4) if (want.every((value, c) => Math.abs((row[x + c] ?? -255) - value) <= tolerance)) hits++;
+    return hits / (to - from);
+  }, { src: `data:image/png;base64,${png.toString("base64")}`, rgb, tolerance });
+}
+
+for (const [mode, media, focus, live] of [
+  ["forced colors", { forcedColors: "active" }, "Highlight", "Highlight"],
+  ["increased contrast", { contrast: "more" }, "CanvasText", "LinkText"],
+] as const) {
+  test(`with ${mode}, the mission HUD draws badge edges, focus rings, the live pulse, and the seismograph baseline in system colors`, async ({ page }) => {
+    await page.emulateMedia({ ...media, reducedMotion: "reduce" });
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    await mock(page, { crawl: caughtCrawl });
+    await page.route("**/api/faultline/crawl", async (route) => { await held; await route.fallback(); });
+    await page.goto("/");
+    const colors = await systemColors(page);
+    const field = page.getByRole("textbox", { name: "Target URL" });
+    await field.fill("http://127.0.0.1:3000");
+    // The URL field turns its own outline off, so its frame carries the focus ring.
+    const arena = page.locator(".arena-field");
+    expect([await css(arena, "outline-style"), await css(arena, "outline-color")]).toEqual(["solid", colors[focus]]);
+    await page.getByRole("button", { name: "Run Autonomous Exploration" }).click();
+    const hud = page.getByRole("complementary", { name: "Live Agent Mission · Playwright" });
+
+    // While the agent launches, its status pulse is live.
+    await expect(hud.getByRole("status")).toHaveText("Launching");
+    expect(await css(hud.locator(".hud-telemetry .hud-dot"), "background-color")).toBe(colors[live]);
+    if (mode === "forced colors") expect(await css(hud.locator(".seis"), "color")).toBe(colors.Highlight);
+    release();
+
+    await expect(hud.getByRole("status")).toHaveText("Defect caught");
+    const alert = hud.getByRole("alert");
+    const badges = alert.getByRole("list", { name: "User journey" }).getByRole("button");
+    await expect(badges).toHaveCount(4);
+    for (const edge of await badges.evaluateAll((els) => els.map((el) => getComputedStyle(el).borderTopColor))) expect(edge).toBe(colors.ButtonText);
+    expect(await css(badges.last(), "border-top-width")).toBe("2px");
+    for (const readout of [hud.locator(".hud-key"), alert.locator(".hud-defect-kicker"), alert.locator(".hud-code"), ...await alert.locator(".hud-trail li").all()]) {
+      expect([await css(readout, "border-top-style"), await css(readout, "border-top-color")]).toEqual(["solid", colors.CanvasText]);
+    }
+
+    // A badge reached by keyboard wears a 3 px ring in the focus color; the picked one, an edge in the live color.
+    await badges.nth(1).focus();
+    await page.keyboard.press("Shift+Tab");
+    await expect(badges.first()).toBeFocused();
+    expect(await badges.first().evaluate((el) => el.matches(":focus-visible"))).toBe(true);
+    const ring = badges.first();
+    expect([await css(ring, "outline-style"), await css(ring, "outline-width"), await css(ring, "outline-color")]).toEqual(["solid", "3px", colors[focus]]);
+    await page.keyboard.press("Enter");
+    await expect(ring).toHaveAttribute("aria-current", "step");
+    expect([await css(ring, "border-top-width"), await css(ring, "border-top-color")]).toEqual(["2px", colors[live]]);
+    const step = hud.getByRole("log", { name: "Agent steps" }).locator("li[data-focus]");
+    expect([await css(step, "outline-style"), await css(step, "outline-color")]).toEqual(["solid", colors[live]]);
+
+    // The baseline is painted in the text color across the band, between the trace's crossings.
+    const seis = hud.locator(".seis");
+    await expect(seis).toHaveAttribute("data-mode", "rupture");
+    if (mode === "forced colors") expect(await css(seis, "color")).toBe(colors.CanvasText);
+    expect(await baselineCoverage(page, seis, colors.CanvasText)).toBeGreaterThan(0.5);
+  });
+}
+
+/** A caught crawl whose labels, pages, and target are long enough to wrap on a phone. */
+const longCrawl = () => ({ status: 200, ndjson: [
+  { type: "scan", url: "http://127.0.0.1:3000", buttons: 6, forms: 1, links: 3 },
+  { type: "step", n: 1, action: "click", target: "Trail Mug Extra Large Ceramic Edition", page: "/", ok: true },
+  { type: "step", n: 2, action: "click", target: "Add to Cart", page: "/products/trail-mug-extra-large-ceramic-edition", ok: true },
+  { type: "step", n: 3, action: "submit", target: "Place order", page: "/checkout", ok: false, note: "HTTP 500" },
+  { type: "defect", method: "POST", path: "/api/checkout", status: 500, trigger: { kind: "Button", label: "Place order", page: "/checkout" }, fingerprint },
+  { type: "done", steps: 3, defect: true },
+] });
+
+for (const width of [320, 360, 414, 639]) {
+  test(`at ${width} px with a mouse, the mission HUD wraps its target, badges, and actions without scrolling sideways, and every button is a 44 px target`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await mock(page, { detail: verifiedDetail(), onCheck: (invariantId) => check(invariantId, "no_failure"), crawl: longCrawl });
+    await page.goto("/");
+    const url = "http://127.0.0.1:3000/collections/trail-gear?sort=price-ascending&utm_source=faultline-demo";
+    await page.getByRole("textbox", { name: "Target URL" }).fill(url);
+    await page.getByRole("button", { name: "Run Autonomous Exploration" }).click();
+    const hud = page.getByRole("complementary", { name: "Live Agent Mission · Playwright" });
+    await expect(hud.getByRole("status")).toHaveText("Defect caught");
+    await expect(hud.locator(".hud-target")).toHaveText(url);
+
+    // Nothing leaves the frame or the screen, and no badge, target, or reading is cut short.
+    const layout = () => hud.evaluate((aside) => {
+      const frame = aside.querySelector(".hud-frame")!.getBoundingClientRect();
+      const name = (el: Element) => `${el.tagName.toLowerCase()}.${el.getAttribute("class") ?? ""}: ${el.textContent?.slice(0, 32)}`;
+      const outside = [...aside.querySelectorAll(".hud-frame *")].filter((el) => {
+        const box = el.getBoundingClientRect();
+        return box.width > 0 && !el.closest(".seis, .sr-only") && (box.left < frame.left - 0.5 || box.right > frame.right + 0.5);
+      }).map(name);
+      const clipped = [...aside.querySelectorAll(".hud-target, .hud-ribbon, .hud-node > span, .hud-telemetry dd, .btn")]
+        .filter((el) => el.scrollWidth > el.clientWidth + 1).map(name);
+      return { overflow: document.documentElement.scrollWidth - innerWidth, outside, clipped };
+    });
+    const targets = async () => (await hitAreas(hud.getByRole("button"))).filter((area) => area.width < 44 || area.height < 44);
+    expect(await layout()).toEqual({ overflow: 0, outside: [], clipped: [] });
+    await expect(hud.getByRole("list", { name: "User journey" }).getByRole("button")).toHaveText(
+      ["🌐/", "🖱️Trail Mug Extra Large Ceramic Edition", "🛒Add to Cart", "📋Place order", "💥POST /api/checkout 500"]);
+    expect(await hud.getByRole("button").count()).toBe(8);
+    expect(await targets()).toEqual([]);
+
+    await hud.getByRole("button", { name: /Auto-repair \(Sandbox Verified\)/ }).click();
+    const apply = hud.getByRole("button", { name: "Apply Verified Fix to Demo Store" });
+    await expect(apply).toBeEnabled();
+    expect(await layout()).toEqual({ overflow: 0, outside: [], clipped: [] });
+    expect(await targets()).toEqual([]);
+
+    await apply.click();
+    await expect(hud.getByRole("status")).toHaveText("Fix applied");
+    expect(await layout()).toEqual({ overflow: 0, outside: [], clipped: [] });
+    // The applied sentence wraps as text: its period stays on the file name's last line.
+    const stranded = await hud.locator(".hud-applied").evaluate((line) => {
+      const code = line.querySelector("code")!;
+      const period = document.createRange();
+      period.setStart(code.nextSibling!, 0);
+      period.setEnd(code.nextSibling!, 1);
+      return Math.abs(period.getClientRects()[0]!.top - [...code.getClientRects()].at(-1)!.top) > 2;
+    });
+    expect(stranded).toBe(false);
+  });
+}
+
 test("retries show verifier feedback and non-Meta endpoints are never labeled Meta", async ({ page }) => {
   const attempt = (number: number, extra: object) => ({
     id: `00000000-0000-4000-8000-00000000001${number}`, attempt_number: number,

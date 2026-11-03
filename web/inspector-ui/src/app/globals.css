@@ -379,8 +379,8 @@ a.btn { display: inline-flex; align-items: center; text-decoration: none; }
 .hud-trail li[data-ok="false"] { border-color: rgba(255, 77, 106, 0.6); color: var(--red); }
 .hud-trail li[data-focus] { box-shadow: 0 0 0 1px var(--cyan); }
 /*
- * The journey ribbon: one badge per step, ending on the request that broke. Scrolls sideways on narrow screens,
- * so its padding holds a badge's whole focus ring, which the scroller would otherwise clip.
+ * The journey ribbon: one badge per step, ending on the request that broke. Scrolls sideways when a long trail
+ * outgrows the frame (phones wrap it instead), so its padding holds a badge's whole focus ring, which the scroller would otherwise clip.
  */
 .hud-ribbon { display: flex; align-items: center; margin: 6px -2px 0; padding: 4px 4px 8px; overflow-x: auto; list-style: none; scrollbar-width: thin; }
 .hud-ribbon li { display: flex; flex: none; align-items: center; }
@@ -1168,6 +1168,16 @@ details[open] > summary { margin-bottom: 16px; }
   .hud-telemetry > div:nth-child(odd) { border-left: 0; }
   .hud-telemetry > div:nth-child(n + 3) { border-top: 1px solid var(--line); }
   .hud-telemetry > .hud-clock { grid-column: 1 / -1; }
+  /* The mission wraps instead of scrolling or truncating: the whole target, every journey badge, and 44 px controls. */
+  .hud-key { border-radius: 14px; letter-spacing: 0.14em; }
+  .hud-target { white-space: normal; }
+  .hud-ribbon { flex-wrap: wrap; row-gap: 8px; overflow-x: visible; }
+  .hud-ribbon li { flex: 0 1 auto; min-width: 0; max-width: 100%; }
+  .hud-node { max-width: 100%; min-height: 44px; padding-block: 6px; text-align: left; }
+  .hud-node > :last-child { white-space: normal; overflow-wrap: anywhere; }
+  .hud-trail-copy .btn { min-width: 44px; min-height: 44px; }
+  /* Block flow, so the sentence wraps as text instead of stranding its period on a flex line of its own. */
+  .hud-applied { display: block; }
   .actions .btn { flex: 1 1 100%; }
   .hero-core, .hero-kicker, .gate-kicker, .result-kicker { border-radius: 14px; }
   .hero-kicker { align-items: flex-start; letter-spacing: 0.14em; }
@@ -1202,6 +1212,49 @@ details[open] > summary { margin-bottom: 16px; }
 }
 @media (hover: none) and (pointer: coarse) {
   .flow-hint { display: none; }
+}
+
+/*
+ * High contrast. When the system forces its own palette, or asks for more contrast, the edges and signals that
+ * carry state switch to system colors. Forced palettes are built so Highlight stands out on Canvas; Chromium's
+ * dark-scheme Highlight does not (about 2:1 on these wells), so increased contrast uses CanvasText and LinkText.
+ */
+@media (forced-colors: active), (prefers-contrast: more) {
+  :root { --hc-ink: CanvasText; --hc-control: ButtonText; --hc-focus: CanvasText; --hc-active: LinkText; }
+  :focus-visible { outline: 3px solid var(--hc-focus); }
+  /* The URL fields draw focus on their edge and turn off the input's own outline, so they get a real one back. */
+  :is(.arena-field, .gate-field):focus-within { outline: 3px solid var(--hc-focus); outline-offset: 2px; }
+  /* Listed with their toned variants, so these edges also win over each tone's colored border. */
+  :is(.hud-key, .hud-defect-kicker, .hud-trail li, .hud-trail li[data-ok], .readiness, .readiness[data-tone], .tag, .tag[data-tone], .hero-core) { border-color: var(--hc-ink); }
+  :is(.hud-node, .hud-node:hover, .hud-node[data-impact], .runtime-pill, .runtime-pill[data-tone]) { border-color: var(--hc-control); }
+  .hud-node[data-impact] { border-width: 2px; }
+  .hud-node[aria-current="step"] { border: 2px solid var(--hc-active); }
+  .hud-code { border: 1px solid var(--hc-ink); }
+  :is(.hud-trail, .hud-ticker) li[data-focus] { outline: 2px solid var(--hc-active); outline-offset: -2px; }
+  /* Live pulses: the newest step while the agent works, the agent's status while it is in flight, and the engine's. */
+  :is(.hud-ticker[data-running] li:last-child .hud-pulse, .hud-telemetry > [data-tone="active"] .hud-dot, .hero-live[data-tone="ok"]),
+  :is(.readiness, .runtime-pill, .sandbox-live)[data-tone="active"] .readiness-dot::before { forced-color-adjust: none; background: var(--hc-active); }
+  /*
+   * The seismograph's baseline, in the system's text color and two whole pixels on the trace's axis, so it never
+   * blurs across rows at half strength. Opted out of forcing, since forced palettes drop background images.
+   */
+  .seis { forced-color-adjust: none; background: linear-gradient(transparent 19px, var(--hc-ink) 19px 21px, transparent 21px); }
+}
+@media (forced-colors: active) {
+  :root { --hc-focus: Highlight; --hc-active: Highlight; }
+  /* Opted out of forcing, so each trace names its system color; the status line says the same in words. */
+  .seis { color: GrayText; }
+  :is(.seis, .seis[data-mode]) { background-color: Canvas; }
+  .seis[data-mode="hunt"] { color: Highlight; }
+  .seis[data-mode="rupture"] { color: CanvasText; }
+  .seis[data-mode="resonance"] { color: LinkText; }
+  /*
+   * Every other dot keeps a visible fill; each step's toned pulse is listed so its color gives way too, while the
+   * live pulses above still out-rank this. The tone stripes the palette strips become borders.
+   */
+  :is(.hud-pulse, .hud-ticker li[data-ok] .hud-pulse, .hud-dot, .hero-live) { forced-color-adjust: none; background: CanvasText; }
+  :is(.hud-pulse, .hud-ticker[data-running] li:last-child .hud-pulse, .hud-dot, .hero-live[data-tone]) { box-shadow: none; }
+  :is(.hud-defect, .hud-shield, .hud-repair-state) { border-left: 3px solid CanvasText; }
 }
 
 @media (prefers-reduced-motion: reduce) {
