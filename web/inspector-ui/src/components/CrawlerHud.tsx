@@ -418,7 +418,7 @@ export default function CrawlerHud(props: {
                   <CtaIcon kind="check" className="hud-seal" />Fix verified{repair.checks ? `: ${repair.checks.passed}/${repair.checks.total} assertions passed` : ""} in {repair.sandbox}
                 </p>
                 {repair.applied ? (
-                  <p className="hud-repair-line">
+                  <p className="hud-repair-line hud-applied">
                     Applied to <code>{repair.applied.file}</code>.{" "}
                     {repair.applying ? "Waiting for the store to reload…"
                       : repair.applied.live ? <span data-tone={repair.applied.live.tone}>{repair.applied.live.text}</span>
@@ -426,9 +426,15 @@ export default function CrawlerHud(props: {
                   </p>
                 ) : repair.canApply || repair.applying ? (
                   <div className="hud-defect-actions">
-                    <button type="button" className="btn primary hud-apply" onClick={props.onApply} disabled={!repair.canApply}>
-                      {repair.applying ? "Applying the verified fix…" : "Apply Verified Fix to Demo Store"}<CtaIcon kind="check" />
+                    <button type="button" className="btn primary hud-apply" onClick={props.onApply} disabled={!repair.canApply}
+                      aria-busy={repair.applying || undefined} aria-describedby="hud-apply-d">
+                      {/* Keyed so each label change cross-fades in instead of snapping. */}
+                      <span key={repair.applying ? "busy" : "idle"} className="btn-label">
+                        {repair.applying ? "Applying the verified fix…" : "Apply Verified Fix to Demo Store"}
+                      </span>
+                      {repair.applying ? <span className="btn-icon btn-spin" aria-hidden="true" /> : <CtaIcon kind="check" />}
                     </button>
+                    <span id="hud-apply-d" className="hud-apply-note">Writes only this verified diff, then re-checks checkout live. Revert store undoes it.</span>
                   </div>
                 ) : repair.applyNote ? <p className="hud-repair-line muted">{repair.applyNote}</p> : null}
               </>

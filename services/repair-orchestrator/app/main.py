@@ -6,6 +6,7 @@ import asyncio
 import hmac
 import logging
 import os
+import platform
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass, replace
@@ -391,6 +392,13 @@ def create_app(
             "model": asdict(probe) if probe else None,
             "probe_time": control.worker.probe_time,
             "resource_limits": resource_limits,
+            # Where candidates run: the controller's own kernel and the runtime that
+            # isolates them. Isolation claims stay in runtime_ready and resource_limits.
+            "host": {
+                "os": platform.system(),
+                "kernel": platform.release(),
+                "runtime_kind": getattr(control.worker.runtime, "kind", None),
+            },
             "reason": "cleanup_required"
             if lease.quarantined
             else (

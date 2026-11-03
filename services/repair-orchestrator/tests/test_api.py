@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import platform
 import time
 from collections.abc import Iterator
 from dataclasses import replace
@@ -148,6 +149,10 @@ def test_readiness_explicitly_labels_deterministic_mode(client: TestClient) -> N
     response = client.get("/api/faultline/readiness", headers=HEADERS).json()
     assert response["status"] == "ready"
     assert response["model"]["provider"] == "deterministic"
+    # The host names the controller's kernel; the test runtime declares no isolation kind.
+    assert response["host"]["os"] == platform.system()
+    assert response["host"]["kernel"] == platform.release()
+    assert response["host"]["runtime_kind"] is None
     assert TOKEN not in json.dumps(response)
     assert client.get("/api/faultline/scenarios", headers=HEADERS).status_code == 200
 

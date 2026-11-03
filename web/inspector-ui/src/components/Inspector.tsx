@@ -13,6 +13,7 @@ import JobResult, { summarizeJob } from "@/components/JobResult";
 import JudgeEvidence from "@/components/JudgeEvidence";
 import PackPanel from "@/components/PackPanel";
 import ProbeDialog, { type ProbeValues } from "@/components/ProbeDialog";
+import RuntimePill from "@/components/RuntimePill";
 import ScenarioRail, { type RailStatus, type Selection } from "@/components/ScenarioRail";
 import { playFailureAlarm, playResolutionChime, readSoundPreference, writeSoundPreference, type Cue } from "@/lib/audio-cues";
 import {
@@ -786,6 +787,7 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
               <span className="readiness-dot" aria-hidden="true" />
               <span className="readiness-key">Engine Status:</span> {engineLabel}
             </span>
+            <RuntimePill readiness={readiness} error={readinessError} />
             <button type="button" className="btn tool judge-open" onClick={() => setJudgeRequest((n) => n + 1)} aria-keyshortcuts="J" aria-haspopup="dialog">
               <span className="judge-mark" aria-hidden="true" />Judge evidence <kbd aria-hidden="true">J</kbd>
             </button>
