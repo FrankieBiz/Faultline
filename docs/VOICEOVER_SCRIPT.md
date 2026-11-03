@@ -1,6 +1,6 @@
 # FaultLine Hackathon Demo: Master Voiceover Scripts
 
-This document provides complete, cue-by-cue, word-for-word voiceover scripts for **both assembled video cuts** of FaultLine. All footage was recorded live on the demo stack and static showcase with lower-third provenance captions.
+This document provides complete, cue-by-cue, word-for-word voiceover scripts for **both assembled video cuts** of FaultLine. All footage was recorded on the demo stack and the static showcase, with lower-third provenance captions. The Meta segment plays back a retained job at its recorded timing; it is not a live run.
 
 Choose the version that fits your presentation format:
 - **Track A (Standard Cut · 2:13.8):** Fast-paced, concise walkthrough covering the storefront defect, Meta Model API repair, Linux kernel sandboxing, and the 5-of-6 wrong patch oracle proof.
@@ -18,6 +18,9 @@ Every figure spoken below comes from a committed record. Re-check this table bef
 | "44 independent checks, 27 of them business rules, on the first attempt" | Same job: one attempt; verification report = 16 checkout + 1 confirmation + 27 regression assertions, all passed. The checks run outside the sandbox, against the sandboxed build. |
 | "512 megabytes of RAM, 64 tasks, and one CPU" | cgroup v2 limits read back from the kernel ([submission](DEVPOST_SUBMISSION.md), [Inspector audit](audits/INSPECTOR_PERFECTION_AUDIT.md#confirmed-correct-no-change)) |
 | "accepts five of six plausible wrong repairs … reject all six" | Authored gauntlet ([evaluation](EVALUATION.md#what-verification-catches)); deterministic fallback and DeepSeek runs, not Meta |
+| "All 1,754 project tests pass" | Commit `82c0b8e`, November 3, 2026: `make check` 1,700 (328 backend/root, 1,238 orchestrator/CLI, 134 runner unit) plus `make browser` 54 (52 Inspector, 2 storefront) ([debate record](audits/ADVERSARIAL_JUDGING_DEBATE.md#verification-run-for-this-review)) |
+| "Pre-Flight Gate … on macOS, Linux, and Windows" | The gate CLI is CI-tested on all three (`platform-smoke.yml`). Sandbox *repair* and its kernel limits are Linux-only; do not narrate native macOS or Windows isolation. |
+| "thirty interactive elements" (Track B) | **Owner to confirm** against the recorded gate output in the local footage; no committed record yet. |
 
 The Inspector segment is a local deterministic-fallback run, not a Meta trial, and its caption says so.
 
@@ -33,7 +36,7 @@ The Inspector segment is a local deterministic-fallback run, not a Meta trial, a
 - **Voiceover Narration (speak from 0:01 to 0:24):**
   > "As autonomous coding agents increasingly build and deploy software, they often make quick patches that silence errors on the surface while silently breaking core business logic.
   >
-  > Here on BuggyShop, leaving the coupon field empty crashes checkout with an unhandled HTTP 500 error. The homepage is fine, so monitoring stays green—but real customer transactions are dead."
+  > Here on BuggyShop, leaving the coupon field empty crashes checkout with an unhandled HTTP 500 error. The homepage is fine, so monitoring stays green—but every checkout without a coupon fails."
 
 ---
 
@@ -51,7 +54,7 @@ The Inspector segment is a local deterministic-fallback run, not a Meta trial, a
 - **On-Screen Picture:** Public Judge Page playing back the retained `muse-spark-1.3` repair job (`3573b32b`) at recorded timing. Showing the baseline error, prompt containment, the one-line unified diff, and all 44 business assertions passing.
 - **Lower-Third Caption:** `Recorded Meta muse-spark-1.3 repair, played back at real timing · Job 3573b32b from October 28, 2026, replayed on the judge page · not a live run`
 - **Voiceover Narration (speak from 0:54 to 1:24):**
-  > "This is FaultLine: an autonomous immune system for web applications.
+  > "This is FaultLine: a verification layer for AI-written repairs.
   >
   > Here, Meta's `muse-spark-1.3` model receives the checkout's business contract and the failure evidence—never the bug or the fix.
   >
@@ -65,7 +68,7 @@ The Inspector segment is a local deterministic-fallback run, not a Meta trial, a
 - **Voiceover Narration (speak from 1:28 to 2:05):**
   > "In our local developer studio, the candidate executes inside Linux Bubblewrap namespaces under aggregate cgroup v2 limits—strictly enforcing 512 megabytes of RAM, 64 tasks, and one CPU quota, verified directly from the kernel with adversarial OOM-kill probes.
   >
-  > The sandbox confines the candidate, but our independent business oracles decide if it's correct. 44 assertions verify the fix, and an offline checksummed evidence bundle is generated."
+  > The sandbox confines the candidate, but our independent business oracles decide if it's correct. 44 assertions verify the fix, and an offline checksummed evidence bundle is generated. All 1,754 project tests pass."
 
 ---
 
@@ -97,7 +100,7 @@ The Inspector segment is a local deterministic-fallback run, not a Meta trial, a
 - **Voiceover Narration (speak from 0:01 to 0:24):**
   > "As autonomous coding agents increasingly build and deploy software, they often make quick patches that silence errors on the surface while silently breaking core business logic.
   >
-  > Here on BuggyShop, leaving the coupon field empty crashes checkout with an unhandled HTTP 500 error. The homepage is fine, so monitoring stays green—but real customer transactions are dead."
+  > Here on BuggyShop, leaving the coupon field empty crashes checkout with an unhandled HTTP 500 error. The homepage is fine, so monitoring stays green—but every checkout without a coupon fails."
 
 ---
 
@@ -105,7 +108,7 @@ The Inspector segment is a local deterministic-fallback run, not a Meta trial, a
 - **On-Screen Picture:** Public Judge Page playing back the retained `muse-spark-1.3` repair job (`3573b32b`) at recorded timing. Showing the baseline error, prompt containment, the one-line unified diff, and all 44 business assertions passing.
 - **Lower-Third Caption:** `Recorded Meta muse-spark-1.3 repair, played back at real timing · Job 3573b32b from October 28, 2026, replayed on the judge page · not a live run`
 - **Voiceover Narration (speak from 0:29 to 0:59):**
-  > "This is FaultLine: an autonomous immune system for web applications.
+  > "This is FaultLine: a verification layer for AI-written repairs.
   >
   > Here, Meta's `muse-spark-1.3` model receives the checkout's business contract and the failure evidence—never the bug or the fix.
   >
@@ -119,7 +122,7 @@ The Inspector segment is a local deterministic-fallback run, not a Meta trial, a
 - **Voiceover Narration (speak from 1:03 to 1:40):**
   > "In our local developer studio, the candidate executes inside Linux Bubblewrap namespaces under aggregate cgroup v2 limits—strictly enforcing 512 megabytes of RAM, 64 tasks, and one CPU quota, verified directly from the kernel with adversarial OOM-kill probes.
   >
-  > The sandbox confines the candidate, but our independent business oracles decide if it's correct. 44 assertions verify the fix, and an offline checksummed evidence bundle is generated."
+  > The sandbox confines the candidate, but our independent business oracles decide if it's correct. 44 assertions verify the fix, and an offline checksummed evidence bundle is generated. All 1,754 project tests pass."
 
 ---
 

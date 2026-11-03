@@ -4,6 +4,8 @@ Date: 2026-11-02. Audited revision: `0288183daf11d92197c5a70b40a07a6725db26a1`.
 
 Follow-up, 2026-11-03: **P01, P02, P03, and P05 have been remediated**, with regression tests and [verification evidence](../evidence/2026-11-03-backend-security-hardening.json). The report below preserves the original audit observations; P04, P06, P07, and P08 remain open.
 
+Follow-up, 2026-11-03 (later): commit `26b032e` fixes **P04** (scope release in `finally`; independent cleanup of every owned resource) and **P07** (whole-root snapshot allowlist), each with regression tests, and **partly** fixes **P06** (project-mode browser scope and bounded artifacts; the fixture-path frontend and runner remain unscoped). No probe re-run for these three has been recorded: `probes/backend_perfection_edges.py` now stops at `snapshot_nonapplication_file` because the P07 fix rejects its planted file. **P08 remains open.** See the [adversarial judging debate](ADVERSARIAL_JUDGING_DEBATE.md#objection-33-your-own-audit-found-eight-backend-isolation-bugs-are-p01p07-really-fixed).
+
 Before publication, the audit branch incorporated `c9ed4e850c4288f8754e6078a9dffb28de01ef39`, an independently completed Inspector fix. The audited backend/orchestrator files and Makefile remained unchanged.
 
 The current checks pass, but the backend execution stack does not meet an unconditional isolation or cleanup guarantee. This review records **eight findings: two High, four Medium, and two Low**. Most urgently, the supported browser fallback still sends WebRTC traffic outside the permitted application origin, and a persistence failure immediately before cleanup prevents teardown from being attempted. No host code execution or kernel escape was demonstrated.
