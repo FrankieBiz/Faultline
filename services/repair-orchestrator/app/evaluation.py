@@ -735,8 +735,16 @@ def _write(out: Path, report: dict[str, Any]) -> None:
 async def _main(arguments: argparse.Namespace) -> int:
     launcher = IsolatedBackendLauncher()
     await launcher.preflight(allow_disabled_limits=arguments.allow_disabled_limits)
-    adapter = MetaRepairAdapter(ModelSettings.from_environment())
-    out = Path(arguments.out).resolve()
+    # An unqualified run is reproducible even on a host with provider credentials.
+    adapter = MetaRepairAdapter(
+        ModelSettings.from_environment() if arguments.suite else ModelSettings()
+    )
+    evaluations = REPOSITORY_ROOT / "data/evaluations"
+    out = (
+        Path(arguments.out).resolve()
+        if arguments.out
+        else evaluations / f"{datetime.now(UTC):%Y%m%dT%H%M%S%fZ}"
+    )
     out.mkdir(parents=True, exist_ok=False)
     work_root = out / "work"
     try:
@@ -744,7 +752,9 @@ async def _main(arguments: argparse.Namespace) -> int:
             launcher=launcher,
             adapter=adapter,
             work_root=work_root,
-            suites={"holdout", "patches"} if arguments.suite == "all" else {arguments.suite},
+            suites={"holdout", "patches"}
+            if arguments.suite in (None, "all")
+            else {arguments.suite},
             case_ids=set(arguments.cases.split(",")) if arguments.cases else None,
             repeat=arguments.repeat,
             attempts=arguments.attempts,
@@ -755,6 +765,11 @@ async def _main(arguments: argparse.Namespace) -> int:
         await adapter.close()
         shutil.rmtree(work_root, ignore_errors=True)
     _write(out, report)
+    if not arguments.out:
+        # Publish only complete runs; keep the previous report if evaluation fails.
+        latest = evaluations / f".latest-{uuid4()}"
+        latest.symlink_to(out.name, target_is_directory=True)
+        latest.replace(evaluations / "latest")
     print(f"Wrote {out / 'results.json'} and {out / 'summary.md'}")
     return 0
 
@@ -762,11 +777,17 @@ async def _main(arguments: argparse.Namespace) -> int:
 def main() -> None:
     """Run the evaluation from the command line with the isolated runtime only."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--suite", choices=("holdout", "patches", "all"), default="all")
+    parser.add_argument(
+        "--suite",
+        choices=("holdout", "patches", "all"),
+        help="Use the configured provider for this suite; default: both suites, deterministic",
+    )
     parser.add_argument("--cases", help="Comma-separated case IDs; default: every case")
     parser.add_argument("--repeat", type=int, choices=range(1, 11), default=1)
     parser.add_argument("--attempts", type=int, choices=(1, 2), default=2)
-    parser.add_argument("--out", required=True, help="New directory for results.json/summary.md")
+    parser.add_argument(
+        "--out", help="New results directory; default: timestamped run and evaluations/latest link"
+    )
     parser.add_argument(
         "--allow-disabled-limits",
         action="store_true",

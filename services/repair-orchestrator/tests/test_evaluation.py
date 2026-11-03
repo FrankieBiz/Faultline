@@ -18,15 +18,18 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
 
+from app import evaluation
 from app.evaluation import (
     BackendSession,
     classify,
     render_markdown,
     run_evaluation,
+    summarize_patches,
 )
 from app.model_adapter import (
     MetaRepairAdapter,
@@ -171,6 +174,10 @@ async def test_gates_reject_every_wrong_patch_that_a_symptom_check_accepts(
     assert null_only["symptom_check_accepts"] is True
     assert null_only["failing"] == ["regression.empty_coupon", "regression.whitespace_coupon"]
     assert report["classification"] == "deterministic_fallback_no_model_call"
+    markdown = render_markdown(report)
+    assert "accepted 5 of 6 incorrect patches. FaultLine accepted 0." in markdown
+    assert "FaultLine accepted 2 of 2 correct patches; policy rejected 3 of 3" in markdown
+    assert "| `null_coupon_only` | wrong | pass | accept | reject | 2 |" in markdown
 
 
 async def test_holdout_baselines_match_and_deterministic_mode_does_not_generalize(
@@ -190,10 +197,121 @@ async def test_holdout_baselines_match_and_deterministic_mode_does_not_generaliz
     assert {case["attempts"][0]["outcome"] for case in unfamiliar} == {
         "unsupported_fallback_source"
     }
+    # Unsupported sources are terminal provider errors, not crashes or pointless retries.
+    assert all(len(case["attempts"]) == 1 for case in unfamiliar)
+    seeded_attempt = cases["seeded_missing_coupon"]["attempts"][0]
+    assert seeded_attempt["policy"]["is_valid"] is True
+    assert seeded_attempt["failing_after"] == []
+    assert seeded_attempt["provider"] == "deterministic"
+    assert report["complete"] is True
     summary = report["holdout"]["summary"]
     assert (summary["runs"], summary["verified"], summary["verified_first_attempt"]) == (10, 1, 1)
     markdown = render_markdown(report)
     assert "makes no model call" in markdown and "Meta" not in markdown
+
+
+def test_gate_comparison_counts_acceptance_independently() -> None:
+    cases = [
+        {
+            "kind": kind,
+            "symptom_check_accepts": symptom,
+            "faultline_accepts": faultline,
+            "policy": {"is_valid": kind != "out_of_policy"},
+            "matches_corpus": True,
+        }
+        for kind, symptom, faultline in (
+            ("correct", True, True),
+            ("correct", False, True),
+            ("wrong", True, False),
+            ("wrong", True, False),
+            ("wrong", False, False),
+            ("out_of_policy", None, False),
+        )
+    ]
+    assert summarize_patches(cases) == {
+        "correct": 2,
+        "correct_accepted_by_faultline": 2,
+        "correct_accepted_by_symptom_check": 1,
+        "wrong": 3,
+        "wrong_accepted_by_faultline": 0,
+        "wrong_accepted_by_symptom_check": 2,
+        "out_of_policy": 1,
+        "out_of_policy_rejected_by_policy": 1,
+        "all_match_corpus": True,
+    }
+
+
+def test_default_command_runs_both_suites_and_refreshes_unified_latest(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    launcher = HostLauncher()
+    monkeypatch.setattr(launcher, "preflight", AsyncMock(), raising=False)
+    monkeypatch.setattr(evaluation, "IsolatedBackendLauncher", lambda: launcher)
+    monkeypatch.setattr(evaluation, "REPOSITORY_ROOT", tmp_path)
+    # Even an invalid configured provider must not affect an unqualified run.
+    monkeypatch.setenv("META_API_KEY", "test-unused")
+    monkeypatch.setenv("META_BASE_URL", "invalid-provider-url")
+    monkeypatch.setattr(sys, "argv", ["evaluation"])
+    with pytest.raises(SystemExit) as exit_status:
+        evaluation.main()
+    assert exit_status.value.code == 0
+    latest = tmp_path / "data/evaluations/latest"
+    first_run = latest.resolve()
+    report = json.loads((latest / "results.json").read_text())
+    assert report["complete"] is True
+    assert report["classification"] == "deterministic_fallback_no_model_call"
+    assert report["holdout"]["summary"]["runs"] == 10
+    assert len(report["patches"]["cases"]) == 11
+    assert (latest / "summary.md").read_text() == render_markdown(report)
+
+    monkeypatch.setattr(sys, "argv", ["evaluation", "--cases", "seeded_missing_coupon"])
+    with pytest.raises(SystemExit) as exit_status:
+        evaluation.main()
+    assert exit_status.value.code == 0
+    assert latest.resolve() != first_run and (first_run / "results.json").is_file()
+    refreshed = json.loads((latest / "results.json").read_text())
+    assert refreshed["holdout"]["summary"]["runs"] == 1
+    assert refreshed["patches"]["cases"] == []
+    previous_run = latest.resolve()
+    monkeypatch.setattr(
+        evaluation, "run_evaluation", AsyncMock(side_effect=RuntimeError("stopped"))
+    )
+    with pytest.raises(RuntimeError, match="stopped"):
+        evaluation.main()
+    assert latest.resolve() == previous_run
+    assert json.loads((latest / "results.json").read_text()) == refreshed
+
+
+def test_explicit_suite_preserves_provider_selection_and_custom_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    launcher = HostLauncher()
+    monkeypatch.setattr(launcher, "preflight", AsyncMock(), raising=False)
+    monkeypatch.setattr(evaluation, "IsolatedBackendLauncher", lambda: launcher)
+    monkeypatch.setattr(evaluation, "REPOSITORY_ROOT", tmp_path)
+    settings_reads: list[bool] = []
+
+    def settings_from_environment(cls: type[ModelSettings]) -> ModelSettings:
+        settings_reads.append(True)
+        return cls()
+
+    monkeypatch.setattr(ModelSettings, "from_environment", classmethod(settings_from_environment))
+    out = tmp_path / "custom"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["evaluation", "--suite=patches", "--cases", "null_coupon_only", "--out", str(out)],
+    )
+    with pytest.raises(SystemExit) as exit_status:
+        evaluation.main()
+    assert exit_status.value.code == 0
+    report = json.loads((out / "results.json").read_text())
+    assert settings_reads == [True]
+    assert "holdout" not in report
+    assert len(report["patches"]["cases"]) == 1
+    assert not (tmp_path / "data/evaluations/latest").exists()
 
 
 async def test_failed_verification_feeds_measured_checks_to_the_second_attempt(

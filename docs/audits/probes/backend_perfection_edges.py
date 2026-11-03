@@ -11,7 +11,10 @@ import asyncio
 import difflib
 import json
 import logging
+import os
+import shlex
 import sqlite3
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -37,6 +40,106 @@ from shared.contracts.models import CleanupStatus, JobStage, TerminalOutcome
 
 logging.disable(logging.CRITICAL)
 results = {}
+
+
+def build_coverage_probe():
+    """Exercise Make's ordering and integration environment without running candidates."""
+    prerequisites = next(
+        line.partition(":")[2].split()
+        for line in (ROOT / "Makefile").read_text().splitlines()
+        if line.startswith("test:")
+    )
+    with tempfile.TemporaryDirectory(prefix="faultline-audit-make-") as directory:
+        root = Path(directory)
+        recorder = root / "record.py"
+        recorder.write_text(
+            "import json, os, sys, time\n"
+            "from pathlib import Path\n"
+            "root = Path(__file__).parent\n"
+            "mode = sys.argv[1]\n"
+            "if mode in ('frontend', 'runner', 'inspector'):\n"
+            "    time.sleep(0.05)\n"
+            "    (root / mode).touch()\n"
+            "elif mode == 'test':\n"
+            "    ready = all((root / name).exists() "
+            "for name in ('frontend', 'runner', 'inspector'))\n"
+            "    (root / 'ordering.json').write_text(json.dumps(ready))\n"
+            "    sys.exit(0 if ready else 1)\n"
+            "elif mode == 'integration':\n"
+            "    (root / 'integration.json').write_text(json.dumps({\n"
+            "        'required_flag': os.environ.get('FAULTLINE_REQUIRE_ISOLATED_TESTS'),\n"
+            "        'arguments': sys.argv[2:],\n"
+            "    }))\n"
+        )
+        command = f"{shlex.quote(sys.executable)} {shlex.quote(str(recorder))}"
+        overrides = root / "overrides.mk"
+        overrides.write_text(
+            "".join(
+                f"{target}:\n\t@{command} {target}\n"
+                for target in ("frontend", "runner", "inspector", "test")
+            )
+        )
+        make = [
+            "make",
+            "--no-print-directory",
+            "-f",
+            str(ROOT / "Makefile"),
+            "-f",
+            str(overrides),
+            "-j8",
+        ]
+        ordering = subprocess.run(
+            [*make, "test"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        # Deliberately conflict with the recipe: it must force required isolation.
+        integration = subprocess.run(
+            [*make, "integration", f"ORCHESTRATOR_UV={command} integration"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=15,
+            env={**os.environ, "FAULTLINE_REQUIRE_ISOLATED_TESTS": "0"},
+        )
+        ordering_path, integration_path = (
+            root / "ordering.json",
+            root / "integration.json",
+        )
+        builds_ready = json.loads(ordering_path.read_text()) if ordering_path.exists() else False
+        observed = json.loads(integration_path.read_text()) if integration_path.exists() else {}
+        files = [
+            f"services/repair-orchestrator/tests/{name}.py"
+            for name in (
+                "test_isolated_runtime",
+                "test_resource_limits_cgroup",
+                "test_repro_browser",
+                "test_project_run",
+            )
+        ]
+        all_files = all(name in observed.get("arguments", []) for name in files)
+        required = observed.get("required_flag") == "1"
+        dependency_edge = {"frontend", "runner", "inspector"} <= set(prerequisites)
+        results["build.P08"] = {
+            "method": "Parallel build markers and integration recipe interception",
+            "test_prerequisites": prerequisites,
+            "dependency_edge_present": dependency_edge,
+            "parallel_test_exit_code": ordering.returncode,
+            "parallel_builds_ready_before_tests": builds_ready,
+            "integration_exit_code": integration.returncode,
+            "integration_inherited_required_flag": "0",
+            "integration_observed_required_flag": observed.get("required_flag"),
+            "integration_arguments": observed.get("arguments", []),
+            "all_four_integration_files_present": all_files,
+            "resolved": dependency_edge
+            and builds_ready
+            and required
+            and all_files
+            and ordering.returncode == 0
+            and integration.returncode == 0,
+        }
 
 
 def policy_probes():
@@ -238,6 +341,7 @@ async def stop_probe():
 
 
 async def main():
+    build_coverage_probe()
     policy_probes()
     await worker_probe("transition")
     await worker_probe("update")

@@ -1,4 +1,27 @@
 {
+  "build.P08": {
+    "method": "Parallel build markers and integration recipe interception",
+    "test_prerequisites": [
+      "frontend",
+      "runner",
+      "inspector"
+    ],
+    "dependency_edge_present": true,
+    "parallel_test_exit_code": 0,
+    "parallel_builds_ready_before_tests": true,
+    "integration_exit_code": 0,
+    "integration_inherited_required_flag": "0",
+    "integration_observed_required_flag": "1",
+    "integration_arguments": [
+      "pytest",
+      "services/repair-orchestrator/tests/test_isolated_runtime.py",
+      "services/repair-orchestrator/tests/test_resource_limits_cgroup.py",
+      "services/repair-orchestrator/tests/test_repro_browser.py",
+      "services/repair-orchestrator/tests/test_project_run.py"
+    ],
+    "all_four_integration_files_present": true,
+    "resolved": true
+  },
   "policy.loop_shadow": {
     "bytes": 90,
     "result": [
@@ -25,7 +48,11 @@
   },
   "policy.alias_recursion": {
     "bytes": 12234,
-    "result": "RecursionError"
+    "result": [
+      true,
+      false,
+      "Exception analysis exceeded recursion limits"
+    ]
   },
   "policy.full_patch_shadow": false,
   "policy.full_patch_recursion": {

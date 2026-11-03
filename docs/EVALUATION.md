@@ -82,8 +82,9 @@ Two earlier complete development runs used intermediate code: one before hunk re
 
 ```bash
 make provenance                                   # corpus hashes
+make evaluate                                     # both suites, deterministic; evaluations/latest/
 ./scripts/evaluate.sh --suite all                 # deterministic unless a provider is configured
 META_API_KEY=… ./scripts/evaluate.sh --suite holdout --repeat 2   # or set it in an ignored .env
 ```
 
-Each run writes `results.json` and `summary.md` under `data/evaluations/`, checkpointing after every case. Reports record the provider and model that answered, tokens, generation time, every attempt's diff, any recounted hunk headers alongside the model's original diff, failing checks before and after, the feedback each retry received, and the aggregate limits of every session.
+Each run writes unified `results.json` and `summary.md` under a new timestamped directory in `data/evaluations/`, checkpointing after every case. Completed runs update `data/evaluations/latest/` atomically; `--out` instead selects a new directory without updating that link. With no `--suite`, both suites use the deterministic fallback regardless of configured credentials. An explicit `--suite` uses the configured provider. Reports record the provider and model that answered, tokens, generation time, every attempt's diff, any recounted hunk headers alongside the model's original diff, failing checks before and after, the feedback each retry received, and the aggregate limits of every session.

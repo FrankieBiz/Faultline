@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
-# Evaluate the configured provider and the gates on the authored corpus.
+# Run both suites deterministically by default; --suite selects the configured provider.
 # Candidate code runs only in the isolated runtime; results are retained under data/.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-if [ -f "$ROOT/.env" ]; then
+explicit_suite=false
+for argument in "$@"; do
+  case "$argument" in
+    --suite|--suite=*) explicit_suite=true ;;
+  esac
+done
+if "$explicit_suite" && [ -f "$ROOT/.env" ]; then
   # Read .env defaults without clobbering existing environment overrides
   while IFS= read -r line || [ -n "$line" ]; do
     [[ "$line" =~ ^[[:space:]]*# ]] && continue
@@ -15,10 +21,5 @@ if [ -f "$ROOT/.env" ]; then
     fi
   done < "$ROOT/.env"
 fi
-arguments=("$@")
-case " ${arguments[*]-} " in
-  *" --out "*|*" --out="*) ;;
-  *) arguments+=(--out "$ROOT/data/evaluations/$(date -u +%Y%m%dT%H%M%SZ)") ;;
-esac
 cd "$ROOT/services/repair-orchestrator"
-exec env PYTHONPATH="$ROOT" uv run --python 3.13 --locked python -m app.evaluation "${arguments[@]}"
+exec env PYTHONPATH="$ROOT" uv run --python 3.13 --locked python -m app.evaluation "$@"
