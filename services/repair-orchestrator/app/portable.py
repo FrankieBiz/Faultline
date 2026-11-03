@@ -18,6 +18,7 @@ its own containment before readiness.
 from __future__ import annotations
 
 import os
+import shutil
 import socket
 import sys
 import tempfile
@@ -117,3 +118,146 @@ def backend_endpoint(generation_id: str, *, runtime_dir: Path | None = None) -> 
 def is_portable_runtime() -> bool:
     """Whether this host can use a native (non-container) isolation adapter."""
     return IS_LINUX or IS_MACOS or IS_WINDOWS
+
+
+def detect_host() -> Host:
+    """Return the host tag by reading the interpreter's platform at call time.
+
+    ``current_host`` freezes its answer at import via ``IS_WINDOWS`` /
+    ``IS_MACOS``. The CLI and tests call this instead, so a reassigned
+    ``sys.platform`` (or a simulated host) is honored.
+    """
+    if os.name == "nt" or sys.platform == "win32":
+        return "windows"
+    if sys.platform == "darwin":
+        return "darwin"
+    return "linux"
+
+
+def _which(name: str) -> str | None:
+    """Locate a binary, treating a broken platform shim as simply "absent".
+
+    ``shutil.which`` branches on ``sys.platform``; on a host whose platform
+    module is inconsistent with the running interpreter (for example a
+    simulated ``win32`` on POSIX, where the ``_winapi`` extension cannot load)
+    it can raise ``AttributeError``. Capability reporting must never crash the
+    CLI, so a failed lookup is reported as the tool not being present.
+    """
+    try:
+        return shutil.which(name)
+    except (AttributeError, OSError):
+        return None
+
+
+@dataclass(frozen=True)
+class PlatformCapabilities:
+    """The isolation engine this host will use and what it can enforce.
+
+    ``engine`` names the adapter ``select_runtime`` picks; ``mode`` is the
+    ``ResourceLimits.mode`` that engine reports. ``native`` is True when the
+    platform's own mechanism (bwrap, sandbox-exec, or a PowerShell Job Object)
+    is installed; ``docker`` is True when a Docker/Podman fallback exists.
+    ``missing`` lists the absent native tools. This record is a capability
+    description only: it never launches a process or claims enforcement.
+    """
+
+    host: str
+    engine: str
+    mode: str
+    summary: str
+    native: bool
+    docker: bool
+    missing: tuple[str, ...] = ()
+
+
+def platform_capabilities(host: Host | None = None) -> PlatformCapabilities:
+    """Describe the active isolation engine and this host's capabilities.
+
+    Only the binaries each adapter needs are located; nothing is executed, so
+    this is safe to call from the CLI before any Linux-only runtime module is
+    imported.
+    """
+    current = host or detect_host()
+    if current == "darwin":
+        sandbox_exec = _which("sandbox-exec")
+        docker = _which("docker") or _which("podman")
+        if sandbox_exec:
+            return PlatformCapabilities(
+                host="darwin",
+                engine="sandbox-exec",
+                mode="rlimits",
+                summary="sandbox-exec + setrlimit"
+                + ("; Docker fallback available" if docker else "; no Docker fallback"),
+                native=True,
+                docker=docker is not None,
+            )
+        if docker:
+            return PlatformCapabilities(
+                host="darwin",
+                engine="docker",
+                mode="docker",
+                summary="Docker container (sandbox-exec unavailable)",
+                native=False,
+                docker=True,
+                missing=("sandbox-exec",),
+            )
+        return PlatformCapabilities(
+            host="darwin",
+            engine="sandbox-exec",
+            mode="rlimits",
+            summary="no isolation backend available (sandbox-exec and Docker both missing)",
+            native=False,
+            docker=False,
+            missing=("sandbox-exec", "docker"),
+        )
+    if current == "windows":
+        pwsh = _which("pwsh") or _which("powershell.exe") or _which("powershell")
+        if pwsh:
+            return PlatformCapabilities(
+                host="windows",
+                engine="windows-job",
+                mode="windows-job",
+                summary="Windows Job Objects (PowerShell wrapper)",
+                native=True,
+                docker=False,
+            )
+        return PlatformCapabilities(
+            host="windows",
+            engine="windows-job",
+            mode="windows-job",
+            summary="no isolation backend available (PowerShell missing)",
+            native=False,
+            docker=False,
+            missing=("pwsh",),
+        )
+    # Linux: bubblewrap is the native engine; Docker is the fallback.
+    bwrap = _which("bwrap")
+    docker = _which("docker") or _which("podman")
+    if bwrap:
+        return PlatformCapabilities(
+            host="linux",
+            engine="bubblewrap",
+            mode="cgroup-v2-scope",
+            summary="bubblewrap + cgroup v2 (systemd user scope)",
+            native=True,
+            docker=docker is not None,
+        )
+    if docker:
+        return PlatformCapabilities(
+            host="linux",
+            engine="docker",
+            mode="docker",
+            summary="Docker container (bubblewrap unavailable)",
+            native=False,
+            docker=True,
+            missing=("bwrap",),
+        )
+    return PlatformCapabilities(
+        host="linux",
+        engine="bubblewrap",
+        mode="cgroup-v2-scope",
+        summary="no isolation backend available (bubblewrap and Docker both missing)",
+        native=False,
+        docker=False,
+        missing=("bwrap", "docker"),
+    )

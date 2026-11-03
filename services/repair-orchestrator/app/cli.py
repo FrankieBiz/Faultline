@@ -195,6 +195,8 @@ def _api_request(
 
 def cmd_version(args: argparse.Namespace) -> int:
     """Print FaultLine CLI and engine version details."""
+    from app.portable import platform_capabilities
+
     c = _palette(args)
     commit = "unknown"
     try:
@@ -206,10 +208,13 @@ def cmd_version(args: argparse.Namespace) -> int:
         ).strip()
     except Exception:
         pass
+
     print(f"{c.bold}FaultLine Developer Platform CLI{c.reset} v0.2.0 ({commit})")
     print(f"  Python:   {sys.version.split()[0]}")
     print(f"  Root:     {REPOSITORY_ROOT}")
     print(f"  Platform: {sys.platform}")
+    capabilities = platform_capabilities()
+    print(f"  Isolation: {capabilities.engine} ({capabilities.mode})")
     return 0
 
 
@@ -217,12 +222,16 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     """Check local preflight tools, Linux isolation prerequisites, and optional services."""
     from app.cli_check import sandbox_readiness
     from app.crawler_service import RUNNER_ENVIRONMENT
+    from app.portable import platform_capabilities
 
     c = _palette(args)
     orchestrator_port, store_port = _orchestrator_port(args), _store_api_port(args)
     readiness = sandbox_readiness()
     print(f"\n{c.bold}FaultLine Doctor: System Diagnostic Report{c.reset}\n")
     print(f"Platform: {sys.platform}\n")
+    capabilities = platform_capabilities()
+    engine = f"{capabilities.engine} ({capabilities.mode}) — {capabilities.summary}"
+    print(f"Isolation engine: {engine}\n")
 
     checks: list[tuple[str, bool, str]] = []
 
@@ -365,6 +374,8 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
 def cmd_status(args: argparse.Namespace) -> int:
     """Check live orchestrator status, sandbox limits, and readiness."""
+    from app.portable import platform_capabilities
+
     c = _palette(args)
     port = _orchestrator_port(args)
     res = _api_request("/api/faultline/readiness", port=port)
@@ -376,7 +387,10 @@ def cmd_status(args: argparse.Namespace) -> int:
     status_str = (
         f"{c.green if res.get('status') == 'ready' else c.yellow}{res.get('status')}{c.reset}"
     )
+    capabilities = platform_capabilities()
     print(f"\n{c.bold}FaultLine Orchestrator Status{c.reset}")
+    print(f"  Platform:        {sys.platform}")
+    print(f"  Isolation:       {capabilities.engine} ({capabilities.mode})")
     print(f"  Status:          {status_str}")
     print(f"  Runtime Ready:   {res.get('runtime_ready')}")
     print(f"  Quarantined:     {res.get('quarantined')}")
@@ -1837,9 +1851,14 @@ def cmd_demo(args: argparse.Namespace) -> int:
 def cmd_run(args: argparse.Namespace) -> int:
     """Execute an operator-selected reproduction with durable sandbox evidence."""
     if sys.platform != "linux":
+        from app.portable import platform_capabilities
+
+        capabilities = platform_capabilities()
         print(
-            "faultline run: Sandbox repair requires Linux with systemd and cgroup v2. "
-            "WSL2 is unverified; check, test, scan, init, gate run natively.",
+            f"faultline run: full sandbox repair is not available on {capabilities.host}. "
+            f"Active isolation engine: {capabilities.engine} ({capabilities.mode}). "
+            f"{capabilities.summary}. "
+            "check, test, scan, init, and gate run natively on this platform.",
             file=sys.stderr,
         )
         return 30
