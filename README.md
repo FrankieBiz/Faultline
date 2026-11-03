@@ -2,7 +2,7 @@
 
 [![Meta Global AI Hackathon](https://img.shields.io/badge/Meta_Global_AI_Hackathon-2026-0668E1?style=flat-square&logo=meta&logoColor=white)](https://dev.meta.ai/events/global-hackathon)
 [![Live Showcase](https://img.shields.io/badge/Live_Showcase-frankiebiz.github.io%2FFaultline-success?style=flat-square&logo=githubpages&logoColor=white)](https://frankiebiz.github.io/Faultline/)
-[![Automated Tests](https://img.shields.io/badge/tests-2%2C735%20passing-brightgreen?style=flat-square)](https://github.com/FrankieBiz/Faultline/actions)
+[![Automated Tests](https://img.shields.io/badge/tests-2%2C775%20passing-brightgreen?style=flat-square)](https://github.com/FrankieBiz/Faultline/actions)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.13-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![Node.js](https://img.shields.io/badge/node-24%2B-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org/)
@@ -39,7 +39,7 @@
 - [📊 Evidence and Evaluation](#evidence-and-evaluation)
   - [Live Meta Trial Series (3 of 3 Verified)](#live-meta-trial-series-3-of-3-verified)
   - [10-Defect Evaluation Corpus](#10-defect-evaluation-corpus)
-  - [Automated Test Scorecard (1,530 tests)](#test-scorecard)
+  - [Automated Test Scorecard (2,949 tests)](#test-scorecard)
 - [🗺️ Repository Map & Submission Dossier](#repository-map)
 
 ---
@@ -510,16 +510,18 @@ These results describe an authored corpus for one checkout route, not arbitrary 
 
 | Suite | Tests |
 | --- | ---: |
-| Backend, scripts, fixtures, and setup bootstrap (pytest) | 345 |
-| Repair orchestrator and CLI (pytest) | 1,008 |
-| Browser runner unit tests | 132 |
-| **Unit and integration total** (`make check`) | **1,485** |
-| Inspector browser tests (Playwright) | 43 |
+| Backend, scripts, fixtures, and setup bootstrap (pytest) | 340 |
+| Repair orchestrator and CLI (pytest) | 2,291 |
+| Browser runner unit tests (Playwright unit) | 144 |
+| **Fast automated total** (`make check`) | **2,775** |
+| Inspector browser tests (Playwright) | 78 |
 | Storefront browser tests (Playwright) | 2 |
-| **Browser total** (`make browser`) | **45** |
-| **All automated tests** | **1,530** |
+| Showcase browser tests (Playwright) | 17 |
+| **Browser total** (`make browser`) | **97** |
+| Contained runtime integration tests (`make integration`) | 77 |
+| **All automated tests passing** | **2,949** |
 
-The 11 PowerShell bootstrap tests skip on machines without `pwsh`, and 2 native Windows demo tests skip outside Windows. `make check` also runs Ruff lint and format checks, strict mypy, fixture and corpus provenance, the storefront, runner, and Inspector builds, and both Python distribution builds. `make integration` exercises real isolated Chromium and cgroup enforcement, and `make evaluate` runs the corpus.
+The 21 PowerShell bootstrap tests skip on machines without `pwsh`, and 2 native Windows demo tests skip outside Windows (3 skipped on Linux in the orchestrator suite, 23 skipped in backend/setup). `make check` also runs Ruff lint and format checks, strict mypy (0 errors across 115 source files), fixture and corpus provenance, the storefront, runner, and Inspector builds, and both Python distribution builds. `make integration` exercises real isolated Chromium and cgroup enforcement, and `make evaluate` runs the corpus.
 
 ---
 
