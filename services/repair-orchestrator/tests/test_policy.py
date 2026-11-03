@@ -361,3 +361,139 @@ def test_unresolved_handler_types_fail_closed(handler: str) -> None:
     source = f"first = second\nsecond = first\ntry:\n    pass\nexcept {handler}:\n    pass\n"
     syntax, safe, error = validate_ast(source)
     assert syntax and not safe and error
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        (
+            "for ValueError in [Exception]:\n"
+            "    try:\n"
+            "        pass\n"
+            "    except ValueError:\n"
+            "        pass\n"
+        ),
+        (
+            "def f(ValueError=Exception):\n"
+            "    try:\n"
+            "        pass\n"
+            "    except ValueError:\n"
+            "        pass\n"
+        ),
+        (
+            "def f(*ValueError, **TypeError):\n"
+            "    try:\n"
+            "        pass\n"
+            "    except TypeError:\n"
+            "        pass\n"
+        ),
+        (
+            "[ValueError for ValueError in [Exception]]\n"
+            "try:\n"
+            "    pass\n"
+            "except ValueError:\n"
+            "    pass\n"
+        ),
+        (
+            "with factory() as ValueError:\n"
+            "    try:\n"
+            "        pass\n"
+            "    except ValueError:\n"
+            "        pass\n"
+        ),
+        (
+            "match value:\n"
+            "    case {'error': ValueError}:\n"
+            "        try:\n"
+            "            pass\n"
+            "        except ValueError:\n"
+            "            pass\n"
+        ),
+        "def ValueError():\n    pass\ntry:\n    pass\nexcept ValueError:\n    pass\n",
+        "class ValueError:\n    pass\ntry:\n    pass\nexcept ValueError:\n    pass\n",
+        (
+            "try:\n"
+            "    pass\n"
+            "except TypeError as ValueError:\n"
+            "    try:\n"
+            "        pass\n"
+            "    except ValueError:\n"
+            "        pass\n"
+        ),
+        "ValueError, *rest = values\ntry:\n    pass\nexcept ValueError:\n    pass\n",
+        (
+            "from app.orders import Order as ValueError\n"
+            "try:\n"
+            "    pass\n"
+            "except ValueError:\n"
+            "    pass\n"
+        ),
+        (
+            "def f():\n"
+            "    try:\n"
+            "        pass\n"
+            "    except Exception:\n"
+            "        raise\n"
+            "    finally:\n"
+            "        return 1\n"
+        ),
+        (
+            "def f():\n"
+            "    try:\n"
+            "        try:\n"
+            "            pass\n"
+            "        except Exception:\n"
+            "            raise\n"
+            "    finally:\n"
+            "        return 1\n"
+        ),
+        (
+            "for x in [1]:\n"
+            "    try:\n"
+            "        pass\n"
+            "    except Exception:\n"
+            "        raise\n"
+            "    finally:\n"
+            "        break\n"
+        ),
+        (
+            "for x in [1]:\n"
+            "    try:\n"
+            "        pass\n"
+            "    except Exception:\n"
+            "        raise\n"
+            "    finally:\n"
+            "        continue\n"
+        ),
+        (
+            "for outer in [1]:\n"
+            "    try:\n        pass\n    except Exception:\n        raise\n"
+            "    finally:\n        for inner in []:\n            pass\n"
+            "        else:\n            break\n"
+        ),
+    ],
+)
+def test_non_assignment_bindings_and_finally_suppression_fail_closed(
+    source: str, seeded_source: str
+) -> None:
+    syntax, safe, error = validate_ast(source)
+    assert syntax and not safe and error
+    result = PatchPolicy().validate(
+        patch(seeded_source, seeded_source + "\n" + source), seeded_source
+    )
+    assert not result.is_valid and not result.ast_safe
+
+
+@pytest.mark.parametrize(
+    "suite",
+    [
+        "def nested():\n    return 1",
+        "for x in [1]:\n    break",
+        "for x in [1]:\n    continue",
+        "print('cleanup')",
+    ],
+)
+def test_finally_local_control_flow_and_diagnostics_remain_allowed(suite: str) -> None:
+    source = "try:\n    pass\nexcept Exception:\n    raise\nfinally:\n"
+    source += "\n".join("    " + line for line in suite.splitlines()) + "\n"
+    assert validate_ast(source) == (True, True, None)

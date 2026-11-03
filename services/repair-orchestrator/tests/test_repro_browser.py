@@ -21,13 +21,18 @@ async def test_browser_preflight_falls_back_with_sandbox_and_webrtc_policy(
     playwright.write_text(
         "import assert from 'node:assert/strict';\n"
         "let attempts = 0;\n"
-        "export const chromium = { async launch(options) {\n"
+        "export const chromium = { executablePath() { return '/trusted/chromium'; },\n"
+        "async launch(options) {\n"
         "  attempts++;\n"
         "  assert.equal(options.headless, true);\n"
         "  assert.equal(options.chromiumSandbox, true);\n"
         "  assert.deepEqual(options.args, ['--disable-webrtc',\n"
-        "    '--webrtc-ip-handling-policy=disable_non_proxied_udp']);\n"
+        "    '--webrtc-ip-handling-policy=disable_non_proxied_udp',\n"
+        "    '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',\n"
+        "    '--disable-features=WebRtcHideLocalIpsWithMdns,WebRTC']);\n"
         "  assert.equal(options.channel, attempts === 1 ? 'chromium' : undefined);\n"
+        "  assert.equal(options.executablePath,\n"
+        "    attempts === 1 ? undefined : '/trusted/chromium');\n"
         f"  if (attempts === 1 && {json.dumps(not channel_available)}) {{\n"
         "    throw new Error('Chromium channel unavailable');\n"
         "  }\n"
@@ -50,10 +55,20 @@ async def test_browser_preflight_falls_back_with_sandbox_and_webrtc_policy(
     assert json.loads(stdout) == {"ready": True}
 
 
-async def test_project_browser_webrtc_cannot_send_stun_udp(tmp_path: Path) -> None:
+@pytest.mark.parametrize("fallback", [False, True])
+async def test_project_browser_webrtc_cannot_send_stun_udp(tmp_path: Path, fallback: bool) -> None:
     driver = Path(project_runtime.__file__).with_name("repro_browser.mjs")
     repository = driver.parents[3]
     playwright = repository / "tools/browser-runner/node_modules/playwright/index.mjs"
+    if fallback:
+        wrapper = tmp_path / "fallback.mjs"
+        wrapper.write_text(
+            "import { chromium as real } from " + json.dumps(playwright.as_uri()) + ";\n"
+            "export const chromium = { executablePath: () => real.executablePath(),\n"
+            "launch(options) { if (options.channel) throw new Error('force fallback');\n"
+            "return real.launch(options); } };\n"
+        )
+        playwright = wrapper
     node = shutil.which("node")
     assert node is not None and playwright.is_file(), "Build the browser runner first"
     preflight = await asyncio.create_subprocess_exec(
@@ -163,3 +178,26 @@ async def test_project_browser_webrtc_cannot_send_stun_udp(tmp_path: Path) -> No
                 except TimeoutError:
                     process.kill()
                     await process.wait()
+
+
+async def test_browser_aborts_when_isolated_launches_are_unavailable(tmp_path: Path) -> None:
+    driver = Path(project_runtime.__file__).with_name("repro_browser.mjs")
+    playwright = tmp_path / "unavailable.mjs"
+    playwright.write_text(
+        "export const chromium = { executablePath: () => '/missing/chromium',\n"
+        "async launch() { throw new Error('sandbox unavailable'); } };\n"
+    )
+    node = shutil.which("node")
+    assert node is not None
+    process = await asyncio.create_subprocess_exec(
+        node,
+        str(driver),
+        str(playwright),
+        "--preflight",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await process.communicate()
+    assert process.returncode != 0
+    assert not stdout
+    assert b"sandboxed_browser_isolation_unavailable" in stderr

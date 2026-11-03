@@ -266,13 +266,18 @@ def _exception_aliases(tree: ast.AST) -> dict[str, list[ast.expr]]:
     """Collect possible bindings conservatively across scopes and reassignments."""
     aliases: dict[str, list[ast.expr]] = {}
 
+    assigned: set[int] = set()
+    unknown = ast.Constant(value=None)
+
     def bind(target: ast.expr, value: ast.expr) -> None:
         if isinstance(target, ast.Name):
+            assigned.add(id(target))
             aliases.setdefault(target.id, []).append(value)
         elif isinstance(target, (ast.Tuple, ast.List)):
             if isinstance(value, (ast.Tuple, ast.List)) and len(target.elts) == len(value.elts):
                 for left, right in zip(target.elts, value.elts, strict=True):
                     bind(left, right)
+            # Unresolved unpacking is collected as an unknown Store below.
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Assign):
@@ -280,6 +285,31 @@ def _exception_aliases(tree: ast.AST) -> dict[str, list[ast.expr]]:
                 bind(target, node.value)
         elif isinstance(node, (ast.AnnAssign, ast.NamedExpr)) and node.value is not None:
             bind(node.target, node.value)
+    for node in ast.walk(tree):
+        name = None
+        if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
+            if id(node) not in assigned:
+                name = node.id
+        elif isinstance(node, ast.arg):
+            name = node.arg
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            name = node.name
+        elif isinstance(node, ast.ExceptHandler):
+            name = node.name
+        elif isinstance(node, (ast.MatchAs, ast.MatchStar)):
+            name = node.name
+        elif isinstance(node, ast.MatchMapping):
+            name = node.rest
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            for symbol in node.names:
+                if not (
+                    isinstance(node, ast.ImportFrom)
+                    and node.module == "fastapi"
+                    and symbol.name == "HTTPException"
+                ):
+                    aliases.setdefault(symbol.asname or symbol.name, []).append(unknown)
+        if name is not None:
+            aliases.setdefault(name, []).append(unknown)
     return aliases
 
 
@@ -334,6 +364,31 @@ def _reraises(handler: ast.ExceptHandler) -> bool:
     )
 
 
+def _finally_suppresses(statements: list[ast.stmt], *, in_loop: bool = False) -> bool:
+    """Reject transfers that can discard an exception escaping a finally suite."""
+    for node in statements:
+        if isinstance(node, ast.Return):
+            return True
+        if isinstance(node, (ast.Break, ast.Continue)) and not in_loop:
+            return True
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        for field, value in ast.iter_fields(node):
+            # A loop's else suite runs outside that loop's break/continue target.
+            nested_loop = in_loop or (
+                isinstance(node, (ast.For, ast.AsyncFor, ast.While)) and field == "body"
+            )
+            children = value if isinstance(value, list) else [value]
+            for child in children:
+                if isinstance(child, ast.stmt):
+                    if _finally_suppresses([child], in_loop=nested_loop):
+                        return True
+                elif isinstance(child, ast.ExceptHandler):
+                    if _finally_suppresses(child.body, in_loop=in_loop):
+                        return True
+    return False
+
+
 def validate_ast(source: str) -> tuple[bool, bool, str | None]:
     """Parse without executing and reject forbidden capabilities and aliases."""
     try:
@@ -378,6 +433,8 @@ def validate_ast(source: str) -> tuple[bool, bool, str | None]:
                 )
             if catches_all and not _reraises(node):
                 return True, False, "Catch-all exception handlers are forbidden; handle the failure"
+        elif isinstance(node, (ast.Try, ast.TryStar)) and _finally_suppresses(node.finalbody):
+            return True, False, "Exception suppression by finally control flow is forbidden"
         elif isinstance(node, ast.MatchClass):
             if any(
                 name.startswith("__") or name in _DANGEROUS_ATTRIBUTES for name in node.kwd_attrs

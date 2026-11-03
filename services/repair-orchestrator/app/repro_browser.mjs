@@ -8,14 +8,25 @@ const output = process.argv[4];
 const launchOptions = {
   headless: true,
   chromiumSandbox: true,
-  args: ['--disable-webrtc', '--webrtc-ip-handling-policy=disable_non_proxied_udp'],
+  args: [
+    '--disable-webrtc',
+    '--webrtc-ip-handling-policy=disable_non_proxied_udp',
+    '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
+    '--disable-features=WebRtcHideLocalIpsWithMdns,WebRTC',
+  ],
 };
 let browser;
 try {
   // Prefer full Chromium: the headless shell may ignore WebRTC preferences.
   browser = await chromium.launch({ ...launchOptions, channel: 'chromium' });
 } catch {
-  browser = await chromium.launch(launchOptions);
+  // The default headless shell does not enforce the same network policy.
+  // Require full Chromium on fallback too; never retry with weaker isolation.
+  try {
+    browser = await chromium.launch({ ...launchOptions, executablePath: chromium.executablePath() });
+  } catch (cause) {
+    throw new Error('sandboxed_browser_isolation_unavailable', { cause });
+  }
 }
 process.once("SIGTERM", async () => { await browser.close(); process.exit(143); });
 if (origin === '--preflight') {

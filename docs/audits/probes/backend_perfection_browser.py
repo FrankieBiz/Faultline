@@ -29,7 +29,8 @@ async def probe(fallback):
             wrapper.write_text(
                 "import { chromium as real } from "
                 + json.dumps(playwright.as_uri())
-                + ";\nexport const chromium = { launch(options) {\n"
+                + ";\nexport const chromium = { executablePath: () => real.executablePath(),\n"
+                + "launch(options) {\n"
                 + 'if(options.channel) throw new Error("force fallback");\n'
                 + "return real.launch(options); } };\n"
             )

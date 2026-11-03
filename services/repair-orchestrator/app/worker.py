@@ -821,14 +821,50 @@ class RepairWorker:
         )
         return final
 
+    async def _cleanup_job(self, installation: str, job_id: str, started: float) -> bool:
+        """Attempt independent teardown actions within the reserved cleanup budget."""
+        deadline = asyncio.get_running_loop().time() + max(
+            0, min(self.budgets.cleanup, started + self.budgets.overall - time.monotonic())
+        )
+        clean = True
+        try:
+            async with asyncio.timeout_at(deadline):
+                await self.runtime.cleanup(installation, job_id)
+        except (Exception, asyncio.CancelledError):
+            logger.exception("Runtime cleanup for job %s was not confirmed", job_id)
+            clean = False
+        finally:
+            try:
+                async with asyncio.timeout_at(deadline):
+                    await self.snapshots.cleanup(job_id)
+            except (Exception, asyncio.CancelledError):
+                logger.exception("Snapshot cleanup for job %s was not confirmed", job_id)
+                clean = False
+        return clean
+
     async def run_job(self, job_id: str) -> OrchestratorJob:
         """Run the seven-stage machine, always attempting cleanup before terminal state."""
         async with self._job_lock:
+            # Capture ownership before any workflow side effects or logging faults.
+            installation = self.database.get_lease().installation_id
             if not self.database.claim_job(job_id):
                 return self.database.get_job(job_id)
-            started = time.monotonic()
-            outcome = TerminalOutcome.INFRASTRUCTURE_ERROR
-            details: dict[str, Any] | None = None
+            try:
+                return await self._run_claimed_job(job_id, installation)
+            except (Exception, asyncio.CancelledError):
+                self._supervision_failed = True
+                try:
+                    self.database.quarantine_runtime()
+                except Exception:
+                    logger.exception("Job finalization could not persist quarantine")
+                raise
+
+    async def _run_claimed_job(self, job_id: str, installation: str) -> OrchestratorJob:
+        """Keep resource disposal independent of workflow and persistence failures."""
+        started = time.monotonic()
+        outcome = TerminalOutcome.INFRASTRUCTURE_ERROR
+        details: dict[str, Any] | None = None
+        try:
             try:
                 outcome = await self._workflow(job_id, started)
             except JobAbort as exc:
@@ -870,65 +906,63 @@ class RepairWorker:
                 outcome = TerminalOutcome.CANCELLED
             self.database.transition(job_id, JobStage.CLEANUP)
             self.database.update_job(job_id, cleanup_status=CleanupStatus.IN_PROGRESS)
-            clean = False
-            try:
-                async with asyncio.timeout(
-                    max(
-                        0,
-                        min(
-                            self.budgets.cleanup,
-                            started + self.budgets.overall - time.monotonic(),
-                        ),
-                    )
-                ):
-                    await self.runtime.cleanup(self.database.get_lease().installation_id, job_id)
-                    await self.snapshots.cleanup(job_id)
-                    clean = True
-            except Exception:
-                logger.exception("Cleanup for job %s was not confirmed", job_id)
-                details = {**(details or {}), "cleanup_error": "resource_cleanup_unconfirmed"}
-            # Keep failed-attempt details unless a more specific outer failure exists.
-            if (
-                self.database.get_job(job_id).cancel_requested
-                and outcome != TerminalOutcome.TIMEOUT
-            ):
-                outcome = TerminalOutcome.CANCELLED
-            details = details or self.database.get_job(job_id).error_details
-            if clean and outcome == TerminalOutcome.VERIFIED:
-                saved_proofs: list[Artifact] = []
+        finally:
+            # Teardown owns its deadline and task. Incoming (even repeated)
+            # cancellation must not cancel resource disposal or skip bookkeeping.
+            cleanup = asyncio.create_task(self._cleanup_job(installation, job_id, started))
+            while True:
                 try:
-                    # Re-read durable provenance after disposal, never a stale
-                    # pre-cleanup job or a fabricated completed job object.
-                    self.database.update_job(job_id, cleanup_status=CleanupStatus.SUCCEEDED)
+                    clean = await asyncio.shield(cleanup)
+                    break
+                except asyncio.CancelledError:
+                    outcome = (
+                        TerminalOutcome.INTERRUPTED if self._stopping else TerminalOutcome.CANCELLED
+                    )
+                    details = {**(details or {}), "code": outcome.value}
+                    if cleanup.cancelled():
+                        clean = False
+                        break
+            if not clean:
+                details = {**(details or {}), "cleanup_error": "resource_cleanup_unconfirmed"}
+        # Keep failed-attempt details unless a more specific outer failure exists.
+        if self.database.get_job(job_id).cancel_requested and outcome != TerminalOutcome.TIMEOUT:
+            outcome = TerminalOutcome.CANCELLED
+        details = details or self.database.get_job(job_id).error_details
+        if clean and outcome == TerminalOutcome.VERIFIED:
+            saved_proofs: list[Artifact] = []
+            try:
+                # Re-read durable provenance after disposal, never a stale
+                # pre-cleanup job or a fabricated completed job object.
+                self.database.update_job(job_id, cleanup_status=CleanupStatus.SUCCEEDED)
 
-                    def publish(job: OrchestratorJob) -> None:
-                        executions = self.database.list_executions(job_id)
-                        attempt = self.database.list_attempts(job_id)[-1]
-                        validation = attempt.validation_result or {}
-                        baseline = next(
-                            e.report
-                            for e in executions
-                            if e.report.execution_id == job.baseline_execution_id
+                def publish(job: OrchestratorJob) -> None:
+                    executions = self.database.list_executions(job_id)
+                    attempt = self.database.list_attempts(job_id)[-1]
+                    validation = attempt.validation_result or {}
+                    baseline = next(
+                        e.report
+                        for e in executions
+                        if e.report.execution_id == job.baseline_execution_id
+                    )
+                    verification = next(
+                        e.report
+                        for e in executions
+                        if e.report.execution_id == validation.get("verification_execution_id")
+                    )
+                    self.evidence.verify_job(job_id)
+                    saved_proofs.extend(
+                        self._save_bundle(
+                            job, baseline, verification, attempt.parsed_diff or "", attempt.id
                         )
-                        verification = next(
-                            e.report
-                            for e in executions
-                            if e.report.execution_id == validation.get("verification_execution_id")
-                        )
-                        self.evidence.verify_job(job_id)
-                        saved_proofs.extend(
-                            self._save_bundle(
-                                job, baseline, verification, attempt.parsed_diff or "", attempt.id
-                            )
-                        )
+                    )
 
-                    return self.database.finalize_verified(job_id, publish)
-                except Exception:
-                    logger.exception("Final proof for job %s failed", job_id)
-                    self._discard_proof_files(saved_proofs)
-                    outcome = TerminalOutcome.ARTIFACT_ERROR
-                    details = {"code": "artifact_error", "failed_stage": JobStage.CLEANUP.value}
-            return self.database.finish_job(job_id, outcome, clean=clean, error_details=details)
+                return self.database.finalize_verified(job_id, publish)
+            except Exception:
+                logger.exception("Final proof for job %s failed", job_id)
+                self._discard_proof_files(saved_proofs)
+                outcome = TerminalOutcome.ARTIFACT_ERROR
+                details = {"code": "artifact_error", "failed_stage": JobStage.CLEANUP.value}
+        return self.database.finish_job(job_id, outcome, clean=clean, error_details=details)
 
     async def reconcile(self) -> None:
         """Abandon interrupted jobs; never resume midway through a candidate mutation."""

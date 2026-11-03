@@ -2,6 +2,7 @@
 
 import asyncio
 import sqlite3
+import time
 from dataclasses import replace
 from unittest.mock import AsyncMock, Mock
 
@@ -23,6 +24,7 @@ from shared.contracts.models import (
     JobMode,
     JobStage,
     JobState,
+    OrchestratorJob,
     TerminalOutcome,
 )
 
@@ -789,3 +791,113 @@ async def test_cancellation_at_final_publication_boundary_wins_without_proof(
     assert not any(
         a.role.startswith("proof_bundle") for a in harness.database.list_artifacts(job.id)
     )
+
+
+@pytest.mark.parametrize("operation", ["transition", "update_job", "get_job"])
+async def test_cleanup_survives_cleanup_entry_database_faults(
+    harness: Harness, monkeypatch: pytest.MonkeyPatch, operation: str
+) -> None:
+    job = harness.database.create_job(submission())
+    original = getattr(harness.database, operation)
+    workflow = harness.worker._workflow
+    failed = False
+
+    async def arm_fault(*args: object) -> TerminalOutcome:
+        nonlocal failed
+        outcome = await workflow(job.id, time.monotonic())
+
+        def fault(*args: object, **kwargs: object) -> object:
+            nonlocal failed
+            if not failed:
+                failed = True
+                raise sqlite3.OperationalError("cleanup entry fault")
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(harness.database, operation, fault)
+        return outcome
+
+    monkeypatch.setattr(harness.worker, "_workflow", arm_fault)
+    with pytest.raises(sqlite3.OperationalError, match="cleanup entry fault"):
+        await harness.worker.run_job(job.id)
+    assert "prepare" in harness.runtime.calls
+    assert "cleanup" in harness.runtime.calls
+    assert not harness.snapshots._job_root(job.id).exists()
+    assert harness.database.get_lease().quarantined
+    assert not harness.worker.healthy
+
+
+@pytest.mark.parametrize("shutdown", [False, True])
+async def test_repeated_cancellation_waits_for_cleanup_and_finalization(
+    harness: Harness, monkeypatch: pytest.MonkeyPatch, shutdown: bool
+) -> None:
+    entered, release = asyncio.Event(), asyncio.Event()
+    original = harness.runtime.cleanup
+
+    async def cleanup(installation: str, job_id: str) -> None:
+        entered.set()
+        await release.wait()
+        await original(installation, job_id)
+
+    monkeypatch.setattr(harness.runtime, "cleanup", cleanup)
+    if shutdown:
+        await harness.worker.start()
+    job = harness.database.create_job(submission())
+    task: asyncio.Task[OrchestratorJob | None]
+    if shutdown:
+        harness.worker.notify()
+        worker_task = harness.worker._task
+        assert worker_task is not None
+        task = worker_task
+    else:
+        task = asyncio.create_task(harness.worker.run_job(job.id))
+    await asyncio.wait_for(entered.wait(), 5)
+    stopper = asyncio.create_task(harness.worker.stop()) if shutdown else None
+    if not shutdown:
+        task.cancel()
+    await asyncio.sleep(0)
+    task.cancel()
+    await asyncio.sleep(0)
+    assert not task.done()
+    release.set()
+    await asyncio.wait_for(stopper if stopper else task, 5)
+    done = harness.database.get_job(job.id)
+    assert done.outcome == (TerminalOutcome.INTERRUPTED if shutdown else TerminalOutcome.CANCELLED)
+    assert done.cleanup_status == CleanupStatus.SUCCEEDED
+    assert not harness.snapshots._job_root(job.id).exists()
+    assert harness.database.get_lease().owner_id is None
+    assert not any(
+        a.role.startswith("proof_bundle") for a in harness.database.list_artifacts(job.id)
+    )
+
+
+async def test_runtime_cleanup_failure_still_attempts_snapshot_cleanup(
+    harness: Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    harness.runtime.cleanup_failed = True
+    cleanup = AsyncMock(wraps=harness.snapshots.cleanup)
+    monkeypatch.setattr(harness.snapshots, "cleanup", cleanup)
+    done = await harness.run()
+    cleanup.assert_awaited_once_with(done.id)
+    assert done.outcome == TerminalOutcome.CLEANUP_FAILED
+
+
+async def test_cleanup_timeout_quarantines_after_attempting_snapshot_cleanup(
+    harness: Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stopped = asyncio.Event()
+
+    async def cleanup(*args: str) -> None:
+        try:
+            await asyncio.Event().wait()
+        finally:
+            stopped.set()
+
+    monkeypatch.setattr(harness.runtime, "cleanup", cleanup)
+    snapshots = AsyncMock(wraps=harness.snapshots.cleanup)
+    monkeypatch.setattr(harness.snapshots, "cleanup", snapshots)
+    harness.worker.budgets = replace(Budgets(), cleanup=0.02)
+    done = await harness.run()
+    assert stopped.is_set()
+    snapshots.assert_awaited_once_with(done.id)
+    assert done.outcome == TerminalOutcome.CLEANUP_FAILED
+    assert harness.database.get_lease().quarantined
