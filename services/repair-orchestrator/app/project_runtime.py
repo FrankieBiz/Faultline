@@ -256,13 +256,29 @@ class ProjectRuntime(IsolatedRuntime):
             raise RuntimeUnavailable("playwright_driver_unavailable_run_make_setup")
         # Exercise the driver's actual Chromium sandbox profile. Backend-only
         # readiness cannot establish host browser capabilities (e.g. userns).
+        probe_unit = (
+            f"faultline-preflight-{uuid4()}.scope"
+            if (self.systemd_run and self.bwrap and self.node)
+            else None
+        )
         try:
+            preflight_cmd = (
+                [
+                    *self._browser_command(probe_unit),
+                    str(self.driver),
+                    str(self.playwright),
+                    "--preflight",
+                ]
+                if probe_unit is not None
+                else [self.node, str(self.driver), str(self.playwright), "--preflight"]
+            )
+            preflight_env = {
+                **self._trusted_environment(),
+                **(self.scope_environment(probe_unit) if probe_unit is not None else {}),
+            }
             browser = await ManagedProcess.start(
-                self.node,
-                str(self.driver),
-                str(self.playwright),
-                "--preflight",
-                env=self._trusted_environment(),
+                *preflight_cmd,
+                env=preflight_env,
             )
             if await browser.wait(10) != 0 or bytes(browser.stdout).strip() != b'{"ready":true}':
                 raise RuntimeUnavailable("sandboxed_browser_unavailable")
@@ -270,6 +286,9 @@ class ProjectRuntime(IsolatedRuntime):
             raise RuntimeUnavailable("sandboxed_browser_timeout") from None
         except OSError:
             raise RuntimeUnavailable("sandboxed_browser_unavailable") from None
+        finally:
+            if probe_unit is not None:
+                await self.release_scope(probe_unit, grace=0)
         self._preflight = True
 
     async def prepare(self, installation_id: str, job_id: str, snapshot: Snapshot) -> None:
