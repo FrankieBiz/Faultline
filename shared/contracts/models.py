@@ -247,20 +247,14 @@ class ResourceLimits(ContractModel):
             self.tasks_max,
             self.cpu_quota_percent,
         )
-        if self.mode == "disabled" and (
-            self.verified or any(v is not None for v in values)
-        ):
-            raise ValueError(
-                "Disabled aggregate limits cannot report values or verification"
-            )
+        if self.mode == "disabled" and (self.verified or any(v is not None for v in values)):
+            raise ValueError("Disabled aggregate limits cannot report values or verification")
         if self.mode == "cgroup-v2-scope" and any(value is None for value in values):
             raise ValueError("A cgroup v2 scope must report every aggregate limit")
         if self.mode in {"rlimits", "windows-job", "docker"} and (
             self.memory_max_bytes is None or self.tasks_max is None
         ):
-            raise ValueError(
-                f"{self.mode} limits must report memory_max_bytes and tasks_max"
-            )
+            raise ValueError(f"{self.mode} limits must report memory_max_bytes and tasks_max")
         return self
 
 
