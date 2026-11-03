@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { crawlCompleted, stopReasonOf } from "@/lib/agent-gate";
+import { crawlCompleted, stopReasonOf, trailAction } from "@/lib/agent-gate";
 import type { CheckRecord, CrawlEvent, CrawlTelemetry, Tone } from "@/lib/faultline-api";
 import { checkVerdict } from "@/lib/faultline-api";
 import { CtaIcon } from "@/components/CtaIcon";
+import { CopyButton, useAnnouncer } from "@/components/CopyButton";
 
 type Defect = Extract<CrawlEvent, { type: "defect" }>;
 
@@ -175,6 +176,14 @@ export function crawlSummary(state: CrawlState) {
   return { steps, actions, screens, trail };
 }
 
+/** The click trail as numbered steps, in the `reproduction_trail` format of `faultline gate --json`. */
+export function reproductionTrail(state: CrawlState): string[] {
+  const d = state.defect;
+  return crawlSummary(state).trail.map((line, i) => `${i + 1}. ${trailAction(line)}`
+    + (line.page && line.kind !== "visit" && line.kind !== "session" ? ` on ${line.page}` : "")
+    + (!line.ok && d ? ` -> ${d.status ? `HTTP ${d.status}` : "no response"} on ${d.method} ${d.path}` : ""));
+}
+
 /** The agent's status once a repair takes over from the hunt. */
 function missionStatus(state: CrawlState, repair: MissionRepair | null): { label: string; tone: Tone | "active" } {
   if (repair?.applied) return { label: "Fix applied", tone: "ok" };
@@ -271,6 +280,7 @@ export default function CrawlerHud(props: {
   onRepair: () => void; onApply: () => void; onDismiss: () => void;
 }) {
   const { state, repairLabel, repairBlocked, repair } = props;
+  const [copied, announceCopy] = useAnnouncer();
   const tickerRef = useRef<HTMLOListElement>(null);
   /** The journey badge last picked, for the mission it was picked in. */
   const [picked, setPicked] = useState<{ mission: number; node: number } | null>(null);
@@ -395,6 +405,13 @@ export default function CrawlerHud(props: {
                 {trail.map((line, i) => <li key={i} data-ok={line.ok} data-focus={focus === at(line) || undefined}>{line.kind === "visit" || line.kind === "session" ? line.label : `“${line.label}”`}</li>)}
               </ol>
             )}
+            {trail.length > 0 && (
+              <p className="hud-trail-copy">
+                <span>{plural(trail.length, "step")} to reproduce</span>
+                <CopyButton text={(state.telemetry?.reproduction_trail?.length ? state.telemetry.reproduction_trail : reproductionTrail(state)).join("\n")}
+                  label="the click trail" onCopied={announceCopy} />
+              </p>
+            )}
             {defect.fingerprint && <p className="hud-defect-fp"><code>{defect.fingerprint}</code></p>}
             {!repair && (
               <div className="hud-defect-actions">
@@ -443,6 +460,8 @@ export default function CrawlerHud(props: {
             ) : null}
           </div>
         )}
+        {/* Outside the defect alert, so copy feedback is spoken politely instead of re-raising the alert. */}
+        <p className="sr-only" aria-live="polite" aria-atomic="true">{copied}</p>
       </div>
     </section>
   );

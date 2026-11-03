@@ -634,6 +634,19 @@ test("the chaos crawler streams its scan and steps, intercepts the defect, and r
   await expect.poll(() => calls.jobBodies).toEqual([expect.objectContaining({ scenario_id: pack.id, mode: "repair" })]);
 });
 
+/**
+ * Records every text a polite live region holds from now on, so a test can see a repeated message
+ * cleared and spoken again rather than left unchanged (which a screen reader would not repeat).
+ */
+async function recordLive(region: Locator) {
+  await region.evaluate((node) => {
+    const log: string[] = [];
+    (window as unknown as { __live: string[] }).__live = log;
+    new MutationObserver(() => log.push(node.textContent ?? "")).observe(node, { childList: true, characterData: true, subtree: true });
+  });
+  return () => region.page().evaluate(() => (window as unknown as { __live: string[] }).__live);
+}
+
 test("the mission HUD traces a seismograph, clocks the agent, and maps the journey to the defect", async ({ page }) => {
   let release!: () => void;
   const held = new Promise<void>((resolve) => { release = resolve; });
@@ -676,6 +689,57 @@ test("the mission HUD traces a seismograph, clocks the agent, and maps the journ
   await expect(log.nth(3)).toHaveAttribute("data-focus", "true");
   await expect(log.nth(3)).toBeInViewport();
   await expect(hud.locator(".hud-ticker li[data-focus]")).toHaveCount(1);
+});
+
+test("the mission HUD copies the click trail and says so politely, outside the defect alert, without moving focus", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await mock(page, { crawl: () => ({ status: 200, ndjson: [
+    { type: "scan", url: "http://127.0.0.1:3000", buttons: 6, forms: 1, links: 3 },
+    { type: "step", n: 1, action: "click", target: "Trail Mug", page: "/", ok: true },
+    { type: "step", n: 2, action: "click", target: "Add to Cart", page: "/products/trail-mug", ok: true },
+    { type: "step", n: 3, action: "submit", target: "Place order", page: "/checkout", ok: false, note: "HTTP 500" },
+    { type: "defect", method: "POST", path: "/api/checkout", status: 500, trigger: { kind: "Button", label: "Place order", page: "/checkout" }, fingerprint },
+    { type: "done", steps: 3, defect: true },
+  ] }) });
+  await page.goto("/");
+  await page.getByRole("textbox", { name: "Target URL" }).fill("http://127.0.0.1:3000");
+  await page.getByRole("button", { name: "Run Autonomous Exploration" }).click();
+  const hud = page.getByRole("region", { name: "Live Agent Mission · Playwright" });
+  const alert = hud.getByRole("alert");
+  await expect(alert).toContainText("Defect intercepted");
+  await expect(alert).toContainText("3 steps to reproduce");
+
+  // The region is mounted before anything is copied, and sits outside the assertive alert.
+  const live = hud.locator("p.sr-only[aria-live='polite']");
+  await expect(live).toHaveCount(1);
+  await expect(live).toHaveText("");
+  await expect(alert.locator("[aria-live]")).toHaveCount(0);
+  const spoken = await recordLive(live);
+
+  const copy = alert.getByRole("button", { name: "Copy the click trail" });
+  await copy.focus();
+  await page.keyboard.press("Enter");
+  await expect(live).toHaveText("Copied the click trail");
+  await expect(copy).toBeFocused();
+  await expect(copy).toHaveText("Copied");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe([
+    '1. Click "Trail Mug" on /',
+    '2. Click "Add to Cart" on /products/trail-mug',
+    '3. Click "Place order" on /checkout -> HTTP 500 on POST /api/checkout',
+  ].join("\n"));
+
+  // A second press is cleared and spoken again, not left as unchanged text a screen reader skips.
+  await page.keyboard.press("Enter");
+  await expect.poll(spoken).toEqual(["Copied the click trail", "", "Copied the click trail"]);
+  await expect(copy).toBeFocused();
+  await expect(copy).toHaveText("Copy", { timeout: 4000 });
+
+  // A refused clipboard is announced too, and the button does not claim it copied.
+  await page.evaluate(() => { Object.defineProperty(navigator, "clipboard", { value: { writeText: () => Promise.reject(new Error("denied")) } }); });
+  await page.keyboard.press("Enter");
+  await expect(live).toHaveText("The clipboard is unavailable here. Select the text to copy it.");
+  await expect(copy).toHaveText("Copy");
+  await expect(copy).toBeFocused();
 });
 
 test("a crawl defect no sandbox repair covers is detection only", async ({ page }) => {
@@ -820,6 +884,13 @@ test("the pre-flight gate blocks with the CLI's exact fix prompt, clears a clean
     "04Fill “Full Name”, “Work Email”, “Organization Identifier”, “Cluster Name” on /signup",
     "05Click “🚀 Provision Dedicated Cluster” on /signup → HTTP 500 on POST /api/provision-cluster",
   ]);
+  // The trail copies as the crawler's own reproduction_trail, and the gate's polite region says so.
+  const trailCopy = gate.getByRole("button", { name: "Copy the reproduction trail" });
+  await trailCopy.focus();
+  await page.keyboard.press("Enter");
+  await expect(trailCopy).toBeFocused();
+  await expect(gate.locator("[role=status][aria-live=polite]")).toHaveText("Copied the reproduction trail");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(AURASCALE_TELEMETRY.reproduction_trail.join("\n"));
   const payload = gate.getByRole("figure");
   await expect(payload.locator("pre")).toHaveText(AURASCALE_PROMPT);
   await payload.getByRole("button", { name: "Copy the agent fix prompt" }).click();
@@ -1910,6 +1981,66 @@ test("a verified run puts its patch first: copy it, download it as a .patch, and
 
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test("the proof export's curl command, patch copy, and patch download are announced politely while focus stays put", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  const verified = verifiedDetail();
+  const artifacts = [
+    { id: "bundle", execution_id: null, attempt_id: null, role: "proof_bundle", content_type: "application/json", size_bytes: 2048, sha256: "feedc0ffee00112233" },
+    { id: "summary", execution_id: null, attempt_id: null, role: "proof_bundle_md", content_type: "text/markdown", size_bytes: 100, sha256: "abc123abc123abc123" },
+  ];
+  await mock(page, { detail: { ...verified, artifacts } });
+  await page.goto("/");
+  await inspectPastRun(page);
+  const proof = page.getByRole("region", { name: "Verified patch" });
+  const status = proof.getByRole("status");
+  await expect(status).toHaveAttribute("aria-live", "polite");
+  await expect(status).toHaveText("");
+  const spoken = await recordLive(status);
+
+  // The curl command fetches the JSON bundle from this origin and checks the SHA-256 the run recorded.
+  const file = `faultline-${id.slice(0, 8)}-evidence.json`;
+  const origin = new URL(page.url()).origin;
+  const curl = `curl -fsSL -o ${file} '${origin}/api/faultline/artifacts/bundle' && echo 'feedc0ffee00112233  ${file}' | sha256sum -c -`;
+  await expect(proof.locator(".proof-curl code")).toHaveText(curl);
+  const copyCurl = proof.getByRole("button", { name: "Copy the curl command" });
+  await copyCurl.focus();
+  await page.keyboard.press("Enter");
+  await expect(status).toHaveText("Copied the curl command");
+  await expect(copyCurl).toBeFocused();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(curl);
+
+  // Copy patch twice: each press is spoken, because the region is cleared between them.
+  const copyPatch = proof.getByRole("button", { name: "Copy patch" });
+  await copyPatch.focus();
+  await page.keyboard.press("Enter");
+  await expect(status).toHaveText("Patch copied to the clipboard");
+  await page.keyboard.press("Enter");
+  await expect.poll(spoken).toEqual(["Copied the curl command", "", "Patch copied to the clipboard", "", "Patch copied to the clipboard"]);
+  await expect(copyPatch).toBeFocused();
+
+  const downloadButton = proof.getByRole("button", { name: "Download .patch" });
+  await downloadButton.focus();
+  const downloading = page.waitForEvent("download");
+  await page.keyboard.press("Enter");
+  expect((await downloading).suggestedFilename()).toBe(`faultline-${id.slice(0, 8)}.patch`);
+  await expect(status).toHaveText(`Downloading faultline-${id.slice(0, 8)}.patch`);
+  await expect(downloadButton).toBeFocused();
+  // The sighted echo of the same message is hidden from assistive technology, so it is not read twice.
+  await expect(proof.locator(".proof-copied")).toHaveAttribute("aria-hidden", "true");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test("a proof export with no evidence bundle offers no curl command", async ({ page }) => {
+  await mock(page, { detail: { ...verifiedDetail(), artifacts: [] } });
+  await page.goto("/");
+  await inspectPastRun(page);
+  const proof = page.getByRole("region", { name: "Verified patch" });
+  await expect(proof.getByRole("button", { name: "Copy patch" })).toBeVisible();
+  await expect(proof.getByRole("button", { name: "Copy the curl command" })).toHaveCount(0);
 });
 
 test("sound cues are opt-in, persist, and sound an alarm for a reproduced failure and a resolution for a pass", async ({ page }) => {

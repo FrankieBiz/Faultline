@@ -173,6 +173,29 @@ test.describe("keyboard focus", () => {
     expect(errors).toEqual([]);
   });
 
+  test("a focused tour card shows the same cue as hover, and the selected patch keeps a 3:1 rim", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    const errors = await open(page);
+    const background = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+    const tour = page.getByRole("link", { name: /Block a broken deploy/ });
+    const badge = () => tour.evaluate((node) => getComputedStyle(node, "::before").backgroundColor);
+    const resting = await badge();
+    await tour.focus();
+    await expect(tour).toBeFocused();
+    expect(await tour.evaluate((node) => node.matches(":focus-visible"))).toBe(true);
+    expect(await badge()).not.toBe(resting);
+    expect(await badge()).toBe(INK);
+
+    // The checked patch is told apart by a rim, not only by a slightly lighter fill.
+    const checked = page.locator("label.option", { has: page.getByRole("radio", { name: /^null_coupon_only/ }) });
+    await expect(checked.getByRole("radio")).toBeChecked();
+    const rim = await checked.evaluate((node) => getComputedStyle(node).borderTopColor);
+    expect(contrast(rim, background)).toBeGreaterThanOrEqual(3);
+    const unchecked = page.locator("label.option", { has: page.getByRole("radio", { name: /^silence_type_error/ }) });
+    expect(await unchecked.evaluate((node) => getComputedStyle(node).borderTopColor)).not.toBe(rim);
+    expect(errors).toEqual([]);
+  });
+
   test("the integration tabs are one tab stop with arrow, Home, and End keys", async ({ page }) => {
     const errors = await open(page);
     const tabs = page.getByRole("tablist", { name: "Integrations" }).getByRole("tab");
@@ -296,6 +319,85 @@ test.describe("pointer and copy feedback", () => {
       expect(await look(control), name).not.toBe(resting);
       await page.mouse.up();
     }
+    expect(errors).toEqual([]);
+  });
+
+  test("a held press draws an ink rim at 3:1 or better on every interactive card, not only a scale", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await fakeAudio(page, "running");
+    const errors = await open(page);
+    const background = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+    await page.getByRole("button", { name: /Test Broken Site/ }).click();
+    const rimmed: [string, Locator][] = [
+      ["gate run pill", page.getByRole("button", { name: /Test Broken Site/ })],
+      ["journey node", page.getByRole("list", { name: /Recorded journey/ }).getByRole("button", { name: "HTTP 500" })],
+      ["patch option", page.locator("label.option", { has: page.getByRole("radio", { name: /^round_percentages/ }) })],
+      ["selected patch option", page.locator("label.option", { has: page.getByRole("radio", { name: /^null_coupon_only/ }) })],
+      ["screenshot card", page.locator("a.shot").first()],
+      ["sound toggle", page.getByRole("button", { name: "Sound cues" })],
+      ["integration tab", page.getByRole("tab", { name: "CLI Pre-Flight" })],
+      ["trail copy", page.getByRole("button", { name: "Copy the reproduction trail" })],
+      ["command copy", page.getByRole("button", { name: "Copy", exact: true })],
+    ];
+    // Held, then released away from the control, so no press lands as a click.
+    const hold = async (control: Locator, read: (node: Element) => string) => {
+      await control.scrollIntoViewIfNeeded();
+      await control.hover();
+      await page.mouse.down();
+      const held = await control.evaluate(read);
+      await page.mouse.move(1, 1);
+      await page.mouse.up();
+      return held;
+    };
+    for (const [name, control] of rimmed) {
+      const rim = await hold(control, (node) => getComputedStyle(node).borderTopColor);
+      expect(rim, name).toBe(INK);
+      expect(contrast(rim, background), name).toBeGreaterThanOrEqual(3);
+    }
+
+    // A tour card is a cell of a grid with no border of its own, so its press is an inset ring.
+    const ring = await hold(page.getByRole("link", { name: /Try to fool the gates/ }), (node) => getComputedStyle(node).boxShadow);
+    const ringColor = ring.match(/rgba?\([^)]+\)/)?.[0] ?? "";
+    expect(ring).toContain("inset");
+    expect(contrast(ringColor, background)).toBeGreaterThanOrEqual(3);
+
+    // The light primary call to action dims when held and keeps its dark label legible.
+    const primary = page.getByRole("button", { name: "Play the recorded run" });
+    const [fill, label] = (await hold(primary, (node) => `${getComputedStyle(node).backgroundColor}|${getComputedStyle(node).color}`)).split("|") as [string, string];
+    expect(fill).not.toBe(INK);
+    expect(contrast(fill, label)).toBeGreaterThanOrEqual(4.5);
+    expect(errors).toEqual([]);
+  });
+
+  test("copying the reproduction trail is spoken politely, names what was copied, and repeats on a second press", async ({ page }) => {
+    const errors = await open(page);
+    await page.getByRole("button", { name: /Test Broken Site/ }).click();
+    const announce = page.locator("#copy-announce");
+    await expect(announce).toHaveAttribute("aria-live", "polite");
+    await announce.evaluate((node) => {
+      const log: string[] = [];
+      Object.assign(window, { __live: log });
+      new MutationObserver(() => log.push(node.textContent ?? "")).observe(node, { childList: true, characterData: true, subtree: true });
+    });
+    const writes = () => page.evaluate(() => (window as unknown as { __clipboard: { writes: string[] } }).__clipboard.writes);
+
+    const copy = page.getByRole("button", { name: "Copy the reproduction trail" });
+    await copy.focus();
+    await page.keyboard.press("Enter");
+    await expect(announce).toHaveText("Copied the reproduction trail to the clipboard.");
+    await expect(copy).toBeFocused();
+    await expect(copy).toHaveText("Copied");
+    const [trail] = await writes();
+    const lines = trail!.split("\n");
+    expect(lines).toHaveLength(8);
+    expect(lines[0]).toBe("1. Open http://127.0.0.1:5050/");
+    expect(lines[7]).toMatch(/^8\. Click button .+ -> HTTP 500 on POST \/api\/provision-cluster$/);
+
+    await page.keyboard.press("Enter");
+    await expect.poll(() => page.evaluate(() => (window as unknown as { __live: string[] }).__live))
+      .toEqual(["Copied the reproduction trail to the clipboard.", "", "Copied the reproduction trail to the clipboard."]);
+    await expect(copy).toBeFocused();
+    expect(await writes()).toHaveLength(2);
     expect(errors).toEqual([]);
   });
 

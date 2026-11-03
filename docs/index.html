@@ -526,6 +526,7 @@
     .gate-stats dt { color: var(--ink-3); font: 500 10.5px var(--mono); letter-spacing: 0.07em; text-transform: uppercase; }
     .gate-stats dd { margin: 0; color: var(--ink); font: 600 20px/1.25 var(--mono); font-feature-settings: "tnum" 1; }
     .gate-stats .ok dd { color: var(--green); }
+    .gate-trail-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: -6px; color: var(--ink-3); font: 500 10.5px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
     .gate-trail { display: grid; gap: 2px; margin: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: rgba(0, 0, 0, 0.25); list-style: none; font: 12.5px/1.6 var(--mono); color: var(--ink-2); }
     .gate-trail li { display: grid; grid-template-columns: 3ch minmax(0, 1fr); gap: 10px; overflow-wrap: anywhere; }
     .gate-trail .n { color: var(--ink-3); }
@@ -556,6 +557,23 @@
     .gate-file { background: var(--raised); }
     .gate-file code { min-width: 0; color: var(--ink-2); font-size: 12px; }
     .gate-code { max-height: 360px; }
+
+    /*
+     * Interactive cards. The keyboard ring is the 2px ink outline above, about 17:1 on the page.
+     * A held press draws an ink rim as well as the scale, so it reads at 3:1 or better with motion
+     * reduced, and a selected patch keeps a rim brighter than the hairline. Declared after each
+     * control's own states so a press outranks its resting, selected, or verdict color.
+     */
+    .tour li a:focus-visible { background: rgba(255, 255, 255, 0.025); }
+    .tour li a:focus-visible::before { border-color: var(--ink); background: var(--ink); color: var(--bg); }
+    .tour li a:focus-visible .tour-go .btn-icon { background: var(--ink); color: var(--bg); }
+    .tour li a:active { box-shadow: inset 0 0 0 2px var(--ink-2); }
+    .picker .option:has(input:checked):not(:active) { border-color: var(--ink-2); }
+    .picker .option:active, .shot:active, .gate-pill:active, .journey .node:active, .sound-toggle:active, .gate-tab:active,
+    .btn:not(.primary):active:not(:disabled), .copy:active { border-color: var(--ink); }
+    .btn.primary:active:not(:disabled) { background: var(--ink-2); border-color: var(--ink-2); }
+    .gate-views button[aria-pressed="true"] { box-shadow: inset 0 0 0 1px rgba(45, 212, 255, 0.6); }
+    .gate-views button:active { box-shadow: inset 0 0 0 1px var(--ink); }
 
     footer { padding: 40px 0 64px; border-top: 1px solid var(--line); color: var(--ink-3); font-size: 13px; }
     footer p { margin: 0 0 8px; max-width: 90ch; }
@@ -1159,8 +1177,15 @@ FAULTLINE_INSPECTOR_URL=http://127.0.0.1:4400 ./scripts/rehearse-demo.sh</code><
     }
 
     // The label is read once, so a second press while "Copied" shows cannot make "Copied" the label.
-    // Buttons named by aria-label never voice their new text, so the outcome is announced as well.
+    // Buttons named by aria-label never voice their new text, so the outcome is announced as well,
+    // naming what was copied. The region is emptied first, so a second press is heard again.
     const copyAnnounce = document.getElementById("copy-announce");
+    let announceTimer = 0;
+    function announceCopy(message) {
+      clearTimeout(announceTimer);
+      copyAnnounce.textContent = "";
+      announceTimer = setTimeout(() => { copyAnnounce.textContent = message; }, 100);
+    }
     function wireCopy(button) {
       const label = button.textContent;
       let restore = 0;
@@ -1173,7 +1198,8 @@ FAULTLINE_INSPECTOR_URL=http://127.0.0.1:4400 ./scripts/rehearse-demo.sh</code><
         } catch {}
         button.dataset.state = copied ? "copied" : "failed";
         button.textContent = copied ? "Copied" : "Select and copy";
-        copyAnnounce.textContent = copied ? "Copied to the clipboard." : "Copy was blocked. Select the text and copy it.";
+        const what = (button.getAttribute("aria-label") ?? "").replace(/^Copy /, "");
+        announceCopy(copied ? `Copied ${what ? what + " " : ""}to the clipboard.` : "Copy was blocked. Select the text and copy it.");
         restore = setTimeout(() => {
           button.textContent = label;
           delete button.dataset.state;
@@ -2214,11 +2240,14 @@ jobs:
         if (step.bad) what.append(el("strong", {}, ` → HTTP ${f.status} on ${f.method} ${f.endpoint}`));
         trail.append(el("li", step.bad ? { class: "bad" } : {}, el("span", { class: "n", "aria-hidden": "true" }, String(i + 1).padStart(2, "0")), what));
       });
+      const trailCopy = el("button", { class: "copy", type: "button", "data-copy": v.reproduction_trail.join("\n"), "aria-label": "Copy the reproduction trail" }, "Copy");
+      wireCopy(trailCopy);
       return el("div", { class: "gate-result" },
         el("p", { class: "gate-badge bad" }, el("span", { "aria-hidden": "true" }, "\u{1F6E1}\u{FE0F} "), "Verdict: Deployment blocked"),
         el("p", { class: "gate-intercept" }, "Defect intercepted before going live"),
         el("p", { class: "gate-defect" }, el("span", { class: "gate-code-pill" }, `HTTP ${f.status}`), el("span", { class: "sr-only" }, " on "), el("span", {}, `${f.method} ${f.endpoint}`)),
         el("p", { class: "gate-confirm" }, v.summary),
+        el("p", { class: "gate-trail-head" }, el("span", {}, "Reproduction trail"), trailCopy),
         trail,
         gatePayloadFigure(v),
         gateSource(run));

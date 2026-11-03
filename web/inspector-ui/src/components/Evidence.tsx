@@ -3,6 +3,7 @@ import {
   STAGE_LABEL, TERMINAL, providerName,
   type Artifact, type Attempt, type Execution, type JobDetail, type JobEvent, type JobStage, type Tone,
 } from "@/lib/faultline-api";
+import { CopyButton, useAnnouncer } from "@/components/CopyButton";
 
 export const artifactUrl = (id: string) => `/api/faultline/artifacts/${encodeURIComponent(id)}`;
 const clock = (iso: string) => new Date(iso).toLocaleTimeString([], { hour12: false });
@@ -267,27 +268,37 @@ function Policy({ result }: { result: Record<string, unknown> | null }) {
 const BUNDLES = ["proof_bundle", "proof_bundle_md"] as const;
 const bundleLabel = (role: string) => role === "proof_bundle_md" ? "Download review summary" : "Download evidence bundle";
 
+/** A shell command that fetches a bundle and checks it against the SHA-256 the run recorded. */
+export function bundleCurl(bundle: Artifact, jobId: string, origin: string) {
+  const file = `faultline-${jobId.slice(0, 8)}-evidence.${bundle.content_type.includes("markdown") ? "md" : "json"}`;
+  return `curl -fsSL -o ${file} '${origin}${artifactUrl(bundle.id)}' && echo '${bundle.sha256}  ${file}' | sha256sum -c -`;
+}
+
 /**
  * The verified patch and its proof, first in line: the diff to copy or save as a .patch file,
- * and the checksummed evidence bundle beside it.
+ * and the checksummed evidence bundle beside it, with a curl command that fetches and checks it.
  */
 export function ProofExport({ jobId, attempt, artifacts }: { jobId: string; attempt: Attempt & { parsed_diff: string }; artifacts: Artifact[] }) {
-  const [copied, setCopied] = useState("");
+  const [copied, announce] = useAnnouncer();
   const target = typeof attempt.validation_result?.target_file === "string" ? attempt.validation_result.target_file : null;
   const bundles = BUNDLES.flatMap((role) => artifacts.filter((a) => a.role === role));
   const patch = attempt.parsed_diff.endsWith("\n") ? attempt.parsed_diff : `${attempt.parsed_diff}\n`;
+  const patchFile = `faultline-${jobId.slice(0, 8)}.patch`;
+  // Only rendered once a run's detail has loaded in the browser, so the page origin is known.
+  const curl = bundles[0] ? bundleCurl(bundles[0], jobId, typeof window === "undefined" ? "" : window.location.origin) : null;
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(patch);
-      setCopied("Patch copied to the clipboard");
+      announce("Patch copied to the clipboard");
     } catch {
-      setCopied("The clipboard is unavailable here. Download the patch instead.");
+      announce("The clipboard is unavailable here. Download the patch instead.");
     }
   };
   const download = () => {
     const url = URL.createObjectURL(new Blob([patch], { type: "text/x-diff" }));
-    Object.assign(document.createElement("a"), { href: url, download: `faultline-${jobId.slice(0, 8)}.patch` }).click();
+    Object.assign(document.createElement("a"), { href: url, download: patchFile }).click();
     setTimeout(() => URL.revokeObjectURL(url), 0);
+    announce(`Downloading ${patchFile}`);
   };
   return (
     <section className="block proof" aria-labelledby="proof-h">
@@ -308,7 +319,15 @@ export function ProofExport({ jobId, attempt, artifacts }: { jobId: string; atte
       </div>
       <Diff text={attempt.parsed_diff} label={`Verified patch from attempt ${attempt.attempt_number}`} />
       <div className="proof-foot">
-        <p className="proof-apply"><span className="judge-key">From the repository root</span><code>git apply faultline-{jobId.slice(0, 8)}.patch</code></p>
+        <div className="proof-commands">
+          <p className="proof-apply"><span className="judge-key">From the repository root</span><code>git apply {patchFile}</code></p>
+          {curl && (
+            <div className="proof-apply proof-curl">
+              <span className="judge-key">Fetch and verify the evidence bundle</span>
+              <p className="proof-cmd"><code>{curl}</code><CopyButton text={curl} label="the curl command" onCopied={announce} /></p>
+            </div>
+          )}
+        </div>
         {bundles.length > 0 && (
           <p className="evidence-actions">
             {bundles.map((a) => (

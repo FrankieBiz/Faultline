@@ -1,10 +1,11 @@
 "use client";
 
 import { useId, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import { crawlInFlight, crawlSummary, plural, Seismograph, type CrawlState, type Seismic } from "@/components/CrawlerHud";
+import { crawlInFlight, crawlSummary, plural, reproductionTrail, Seismograph, type CrawlState, type Seismic } from "@/components/CrawlerHud";
 import { agentSnippets, crawlCompleted, DEFAULT_GATE_URL, gateErrorResult, gateResult, trailAction, type GateResult } from "@/lib/agent-gate";
 import type { CrawlTelemetry } from "@/lib/faultline-api";
 import { CtaIcon } from "@/components/CtaIcon";
+import { CopyButton, useAnnouncer } from "@/components/CopyButton";
 
 type Verdict = "idle" | "running" | "safe" | "blocked" | "inconclusive";
 
@@ -33,31 +34,12 @@ const portOf = (url: string, fallback: string) => {
   }
 };
 
-function CopyButton({ text, label, onCopied }: { text: string; label: string; onCopied: (message: string) => void }) {
-  const [done, setDone] = useState(false);
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setDone(true);
-      onCopied(`Copied ${label}`);
-      setTimeout(() => setDone(false), 1600);
-    } catch {
-      onCopied("The clipboard is unavailable here. Select the text to copy it.");
-    }
-  };
-  return (
-    <button type="button" className="btn quiet gate-copy" data-done={done || undefined} onClick={copy} aria-label={`Copy ${label}`}>
-      {done ? "Copied" : "Copy"}
-    </button>
-  );
-}
-
 /**
  * What the gate can say without the crawler's final report (a direct HTTP check, or an engine that
  * predates telemetry): the run's own steps and defect, in the report's shape.
  */
 function telemetryFromState(state: CrawlState): CrawlTelemetry {
-  const { actions, trail } = crawlSummary(state);
+  const { actions } = crawlSummary(state);
   const d = state.defect;
   let origin = "";
   try {
@@ -73,9 +55,7 @@ function telemetryFromState(state: CrawlState): CrawlTelemetry {
     failure: !d ? null : d.status
       ? { kind: "http_error", method: d.method, url: origin + d.path, endpoint: d.path, status: d.status }
       : { kind: "request_failed", method: d.method, url: origin + d.path, endpoint: d.path, message: "no response" },
-    reproduction_trail: trail.map((line, i) => `${i + 1}. ${trailAction(line)}`
-      + (line.page && line.kind !== "visit" && line.kind !== "session" ? ` on ${line.page}` : "")
-      + (!line.ok && d ? ` -> ${d.status ? `HTTP ${d.status}` : "no response"} on ${d.method} ${d.path}` : "")),
+    reproduction_trail: reproductionTrail(state),
   };
 }
 
@@ -132,7 +112,7 @@ export default function AgentGatePanel(props: {
   const [url, setUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState(0);
-  const [copied, setCopied] = useState("");
+  const [copied, setCopied] = useAnnouncer();
 
   const verdict = verdictOf(state);
   const summary = state ? crawlSummary(state) : null;
@@ -299,6 +279,10 @@ export default function AgentGatePanel(props: {
                   <p className="gate-defect">
                     <span className="hud-code">{defect.status ? `HTTP ${defect.status}` : "No response"}</span>
                     <span className="sr-only"> on </span><span>{defect.method} {defect.path}</span>
+                  </p>
+                  <p className="gate-trail-head">
+                    <span>Reproduction trail</span>
+                    <CopyButton text={(result?.reproduction_trail ?? reproductionTrail(state)).join("\n")} label="the reproduction trail" onCopied={setCopied} />
                   </p>
                   <ol className="gate-trail" aria-label="Reproduction trail">
                     {summary.trail.map((line, i) => (
