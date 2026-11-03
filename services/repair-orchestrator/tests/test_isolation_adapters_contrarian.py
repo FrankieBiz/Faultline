@@ -174,7 +174,7 @@ def windows_runtime(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Any:
         "two\\\\back",
         'back\\"quote',
         '\\\\"',
-        "a\"b\"c",
+        'a"b"c',
     ],
 )
 def test_csharp_quote_round_trips_through_windows_argv_parser(value: str) -> None:
@@ -214,10 +214,20 @@ def test_windows_command_json_is_the_single_injection_path(
     application = tmp_path / "apps/buggyshop-backend/app"
     application.mkdir(parents=True)
     argv = runtime._backend_launch_argv(endpoint, application)
-    assert argv == ["-CommandJson", json.dumps(
-        [str(runtime.host_python), "-I", "-u", str(runtime.launcher),
-         endpoint.address, str(runtime.packages), str(application)]
-    )]
+    assert argv == [
+        "-CommandJson",
+        json.dumps(
+            [
+                str(runtime.host_python),
+                "-I",
+                "-u",
+                str(runtime.launcher),
+                endpoint.address,
+                str(runtime.packages),
+                str(application),
+            ]
+        ),
+    ]
 
 
 # -- 2. process tree kill (taskkill /T /F) -------------------------------------
@@ -364,8 +374,8 @@ def test_profile_is_strictly_deny_by_default(tmp_path: Path) -> None:
     assert lines[0] == "(version 1)"
     assert lines[1] == "(deny default)"
     assert "(allow process*)" not in profile
-    assert "(allow file-write* (subpath \"/tmp\") (subpath \"/private/tmp\"))" in profile
-    assert "(allow network* (remote ip \"127.0.0.1:*\") (local ip \"127.0.0.1:*\"))" in profile
+    assert '(allow file-write* (subpath "/tmp") (subpath "/private/tmp"))' in profile
+    assert '(allow network* (remote ip "127.0.0.1:*") (local ip "127.0.0.1:*"))' in profile
 
 
 def test_profile_never_grants_fork_or_write_outside_tmp(tmp_path: Path) -> None:
