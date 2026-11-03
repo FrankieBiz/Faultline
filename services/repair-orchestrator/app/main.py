@@ -266,9 +266,9 @@ def create_app(
             if snapshots is None:
                 snapshot_impl = ProjectSnapshots(configuration.data_dir, project_root, project)
         elif runtime is None and os.environ.get("FAULTLINE_RUNTIME") == "isolated":
-            from app.isolated_runtime import IsolatedRuntime
+            from app.isolation import select_runtime
 
-            runtime_impl = IsolatedRuntime()
+            runtime_impl = select_runtime()
 
         worker = RepairWorker(
             db,

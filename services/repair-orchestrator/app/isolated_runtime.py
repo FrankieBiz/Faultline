@@ -1,14 +1,17 @@
 """Linux bubblewrap backend isolation with an external trusted browser oracle.
 
-Only candidate Python executes in the private namespace. Trusted HTTP regression,
-the frontend proxy, Chromium, and the fixed browser CLI execute outside it. This
-is process/filesystem/network isolation, not a VM or a production deployer.
-
-By default each candidate namespace also runs inside a transient systemd user
-scope whose cgroup v2 memory, swap, task, and CPU limits apply to all of its
-tasks together. Those limits are read back from the kernel after launch and
+This module is the Linux engine: only candidate Python executes in a private
+namespace, and each candidate namespace also runs inside a transient systemd
+user scope whose cgroup v2 memory, swap, task, and CPU limits apply to all of
+its tasks together. Those limits are read back from the kernel after launch and
 their enforcement is probed before readiness; they are accounting limits on a
 shared kernel, not hardware isolation.
+
+The macOS (``sandbox-exec`` + ``setrlimit`` + Docker fallback) and Windows (Job
+Objects + ``taskkill``) engines live in ``app.isolation`` and override the same
+platform seam (``_sandbox``, aggregate-limit lifecycle, and the backend
+transport). ``app.isolation.select_runtime`` picks the engine for the host;
+``select_runtime`` returns this class unchanged on Linux.
 """
 
 from __future__ import annotations
@@ -38,6 +41,7 @@ from fastapi import FastAPI, Request, Response
 
 from app.database import utcnow
 from app.http_regression import regression
+from app.portable import IS_WINDOWS, BackendEndpoint, backend_endpoint, current_host, portable_pipe
 from app.runtime import (
     CandidateRejected,
     Phase,
@@ -285,11 +289,11 @@ def probe_verdict(
     return None if memory_enforced and tasks_enforced else "aggregate_limits_not_enforced"
 
 
-class BoundedUDSTransport(httpx.AsyncBaseTransport):
+class BoundedBackendTransport(httpx.AsyncBaseTransport):
     """Bound every untrusted backend response before HTTPX buffers or decodes it."""
 
-    def __init__(self, uds: str) -> None:
-        self.inner: httpx.AsyncBaseTransport = httpx.AsyncHTTPTransport(uds=uds)
+    def __init__(self, inner: httpx.AsyncBaseTransport) -> None:
+        self.inner = inner
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         async with asyncio.timeout(3):
@@ -320,6 +324,21 @@ class BoundedUDSTransport(httpx.AsyncBaseTransport):
         await self.inner.aclose()
 
 
+class BoundedUDSTransport(BoundedBackendTransport):
+    """Bounded transport over a Unix domain socket (abstract or filesystem path)."""
+
+    def __init__(self, uds: str) -> None:
+        super().__init__(httpx.AsyncHTTPTransport(uds=uds))
+
+
+class BoundedTCPTransport(BoundedBackendTransport):
+    """Bounded transport over loopback TCP, used where no Unix socket exists."""
+
+    def __init__(self, port: str) -> None:
+        super().__init__(httpx.AsyncHTTPTransport())
+        self.port = int(port)
+
+
 @dataclass
 class ManagedProcess:
     """Own every process and pipe task until an observed, reaped exit."""
@@ -330,6 +349,7 @@ class ManagedProcess:
     stderr: bytearray = field(default_factory=bytearray)
     overflow: bool = False
     liveness_fd: int | None = None
+    stop_file: Path | None = None
 
     @classmethod
     async def start(
@@ -340,7 +360,28 @@ class ManagedProcess:
         pass_fds: tuple[int, ...] = (),
         interactive: bool = False,
     ) -> ManagedProcess:
-        read_fd, write_fd = os.pipe2(os.O_CLOEXEC)
+        """Launch through the trusted supervisor on every host.
+
+        POSIX uses a close-on-exec liveness pipe and ``pass_fds``; Windows has
+        neither, so it uses a stop-file the supervisor polls, tearing the tree
+        down with ``taskkill /T /F`` (see ``process_supervisor.py``).
+        """
+        if IS_WINDOWS:
+            return await cls._start_windows(*args, cwd=cwd, env=env, interactive=interactive)
+        return await cls._start_posix(
+            *args, cwd=cwd, env=env, pass_fds=pass_fds, interactive=interactive
+        )
+
+    @classmethod
+    async def _start_posix(
+        cls,
+        *args: str,
+        cwd: Path | None,
+        env: dict[str, str] | None,
+        pass_fds: tuple[int, ...],
+        interactive: bool,
+    ) -> ManagedProcess:
+        read_fd, write_fd = portable_pipe()
         supervisor = Path(__file__).with_name("process_supervisor.py")
         spawn = asyncio.create_task(
             asyncio.create_subprocess_exec(
@@ -371,8 +412,50 @@ class ManagedProcess:
                 os.close(read_fd)
             raise
         os.close(read_fd)
-        owned = cls(process, liveness_fd=write_fd)
+        return cls._bind_pumps(cls(process, liveness_fd=write_fd), process, interactive)
 
+    @classmethod
+    async def _start_windows(
+        cls,
+        *args: str,
+        cwd: Path | None,
+        env: dict[str, str] | None,
+        interactive: bool,
+    ) -> ManagedProcess:
+        stop_dir = Path(tempfile.mkdtemp(prefix="faultline-stop-"))
+        stop_file = stop_dir / "stop"
+        supervisor = Path(__file__).with_name("process_supervisor.py")
+        spawn = asyncio.create_task(
+            asyncio.create_subprocess_exec(
+                sys.executable,
+                "-I",
+                str(supervisor),
+                str(stop_file),
+                *args,
+                cwd=cwd,
+                env=env,
+                stdin=asyncio.subprocess.PIPE if interactive else asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                limit=2 * 1024 * 1024 if interactive else 65536,
+                start_new_session=True,
+            )
+        )
+        try:
+            process = await asyncio.shield(spawn)
+        except BaseException:
+            try:
+                process = await spawn
+                await process.communicate()
+            finally:
+                shutil.rmtree(stop_dir, ignore_errors=True)
+            raise
+        return cls._bind_pumps(cls(process, stop_file=stop_file), process, interactive)
+
+    @classmethod
+    def _bind_pumps(
+        cls, owned: ManagedProcess, process: asyncio.subprocess.Process, interactive: bool
+    ) -> ManagedProcess:
         async def drain(stream: asyncio.StreamReader, target: bytearray) -> None:
             while chunk := await stream.read(8192):
                 remaining = LOG_LIMIT - len(target)
@@ -389,16 +472,25 @@ class ManagedProcess:
         return owned
 
     def request_stop(self) -> None:
+        if self.stop_file is not None:
+            try:
+                self.stop_file.touch()
+            except OSError:
+                pass
         if self.liveness_fd is not None:
             os.close(self.liveness_fd)
             self.liveness_fd = None
 
     async def stop(self) -> None:
-        """Close the sole liveness writer, then confirm supervisor cleanup/reap."""
+        """Signal the supervisor, then confirm cleanup/reap of the whole tree."""
         self.request_stop()
-        async with asyncio.timeout(4):
-            await self.process.wait()
-            await asyncio.gather(*self.pumps)
+        try:
+            async with asyncio.timeout(4):
+                await self.process.wait()
+                await asyncio.gather(*self.pumps)
+        finally:
+            if self.stop_file is not None:
+                shutil.rmtree(self.stop_file.parent, ignore_errors=True)
 
     async def wait(self, timeout: float) -> int:
         try:
@@ -465,6 +557,10 @@ class IsolatedRuntime:
 
     def __init__(self, repository_root: Path = REPOSITORY_ROOT) -> None:
         self.root = repository_root.resolve()
+        self.host = current_host()
+        # The ResourceLimits mode reported for this host's aggregate mechanism;
+        # Linux subclasses/tests keep the cgroup v2 scope default.
+        self.limits_mode = "cgroup-v2-scope"
         self.launcher = Path(__file__).with_name("isolated_backend.py")
         self.python = Path(sys.base_prefix).resolve()
         self.packages = Path(sysconfig.get_path("purelib")).resolve()
@@ -510,7 +606,7 @@ class IsolatedRuntime:
         requested = self.aggregate_mode if self.aggregate_mode in AGGREGATE_MODES else "invalid"
         return {
             "requested": requested,
-            "mode": {"required": "cgroup-v2-scope", "disabled": "disabled"}.get(requested),
+            "mode": {"required": self.limits_mode, "disabled": "disabled"}.get(requested),
             "configured": asdict(self.limits) if requested == "required" else None,
             "enforcement_preflight": self._limits_preflight,
             "probe": self._limits_probe,
@@ -1007,29 +1103,15 @@ class IsolatedRuntime:
         confirm every part, including a scope that was named but never created.
         Readiness failure is the candidate's; unverifiable limits are not.
         """
-        # Abstract sockets avoid Linux's 108-byte filesystem pathname limit
-        # and cannot be redirected with an untrusted filesystem symlink.
-        socket_name = "\0faultline-" + generation_id
-        listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        backend.listener = listener
-        listener.bind(socket_name)
-        listener.listen(16)
+        endpoint = self._backend_endpoint(generation_id)
+        backend.listener = endpoint.socket
         backend.process = await ManagedProcess.start(
             *self._sandbox(application, unit=backend.unit),
-            "/python/bin/python3.13",
-            "-I",
-            "-u",
-            "/trusted_backend.py",
-            str(listener.fileno()),
+            *self._backend_launch_argv(endpoint, application),
             env=self.scope_environment(backend.unit),
-            pass_fds=(listener.fileno(),),
+            pass_fds=self._backend_pass_fds(endpoint),
         )
-        backend.client = httpx.AsyncClient(
-            transport=BoundedUDSTransport(socket_name),
-            base_url="http://isolated-backend",
-            timeout=3,
-            follow_redirects=False,
-        )
+        backend.client = self._backend_client(endpoint)
         if backend.unit is not None:
             await self._await_scope(backend.unit, backend.process)
         await self._wait_backend(backend)
@@ -1162,6 +1244,39 @@ class IsolatedRuntime:
         with socket.socket() as listener:
             listener.bind(("127.0.0.1", 0))
             return int(listener.getsockname()[1])
+
+    def _backend_endpoint(self, generation_id: str) -> BackendEndpoint:
+        """Create the candidate listener and its dial address for this host.
+
+        Linux keeps the abstract-namespace Unix socket (immune to filesystem
+        symlinks and the 108-byte path limit); macOS uses a filesystem Unix
+        socket (no abstract namespace); Windows reserves a loopback TCP port the
+        child binds itself (no descriptor inheritance across processes).
+        """
+        return backend_endpoint(generation_id)
+
+    def _backend_launch_argv(self, endpoint: BackendEndpoint, application: Path) -> list[str]:
+        """The interpreter and trusted launcher argv appended to the sandbox prefix."""
+        fd = endpoint.socket.fileno() if endpoint.socket is not None else int(endpoint.address)
+        return ["/python/bin/python3.13", "-I", "-u", "/trusted_backend.py", str(fd)]
+
+    def _backend_pass_fds(self, endpoint: BackendEndpoint) -> tuple[int, ...]:
+        """Descriptors the trusted launcher inherits; empty on Windows."""
+        if endpoint.socket is None:
+            return ()
+        return (endpoint.socket.fileno(),)
+
+    def _backend_client(self, endpoint: BackendEndpoint) -> httpx.AsyncClient:
+        """A bounded client for the candidate's private transport address."""
+        if endpoint.kind == "tcp":
+            transport: httpx.AsyncBaseTransport = BoundedTCPTransport(endpoint.address)
+            base_url = f"http://127.0.0.1:{endpoint.address}"
+        else:
+            transport = BoundedUDSTransport(endpoint.address)
+            base_url = "http://isolated-backend"
+        return httpx.AsyncClient(
+            transport=transport, base_url=base_url, timeout=3, follow_redirects=False
+        )
 
     async def _wait_backend(self, backend: BackendResources) -> None:
         assert backend.client is not None and backend.process is not None
