@@ -37,6 +37,43 @@ REQUIRED = {
     "bundle_digest",
 }
 
+# An artifact is read in fixed chunks and refused beyond this cap so a corrupt
+# or hostile bundle cannot drive the verifier to materialize an unbounded file.
+CHUNK_BYTES = 1 << 20
+MAX_ARTIFACT_BYTES = 256 * (1 << 20)
+
+# Bundle-controlled strings are stripped of ANSI/OSC escapes and control bytes
+# before any message is printed, so a hostile bundle JSON cannot inject terminal
+# control sequences through the verifier's own output.
+_ANSI_ESCAPE_RE = re.compile(
+    r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b\x9c]*(?:\x07|\x1b\\|\x9c)|"
+    r"[PX^_][^\x1b\x9c]*(?:\x1b\\|\x9c)|[@-_])"
+)
+_CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\x80-\x9f]")
+
+
+def _safe(value: object) -> str:
+    """Render ``value`` with ANSI/OSC escapes and control bytes removed."""
+    text = str(value)
+    text = _ANSI_ESCAPE_RE.sub("", text)
+    text = _CONTROL_RE.sub("", text)
+    return text.replace("\r", " ")
+
+
+def _sha256_file(path: Path) -> tuple[bool, str]:
+    """Return ``(within_cap, sha256)``, streaming so memory stays bounded."""
+    hasher = hashlib.sha256()
+    total = 0
+    with path.open("rb") as handle:
+        while True:
+            chunk = handle.read(CHUNK_BYTES)
+            if not chunk:
+                return True, hasher.hexdigest()
+            total += len(chunk)
+            if total > MAX_ARTIFACT_BYTES:
+                return False, ""
+            hasher.update(chunk)
+
 
 def bundle_digest(fields: dict[str, Any]) -> str:
     """Must match ``app.proof_bundle.bundle_digest`` exactly."""
@@ -47,13 +84,19 @@ def bundle_digest(fields: dict[str, Any]) -> str:
 
 
 def _artifact_file(directory: Path, artifact_id: str) -> Path | None:
-    """Return the single file named for this artifact ID, or None if absent or ambiguous."""
+    """Return the single file named for this artifact ID, or None if absent or ambiguous.
+
+    Symlinks are excluded: a link can point outside the exported directory or to
+    a device/FIFO, which a content-addressed check should never follow.
+    """
     if not artifact_id or "/" in artifact_id or artifact_id.startswith("."):
         return None
     matches = [
         path
         for path in directory.iterdir()
-        if path.is_file() and (path.name == artifact_id or path.stem == artifact_id)
+        if path.is_file()
+        and not path.is_symlink()
+        and (path.name == artifact_id or path.stem == artifact_id)
     ]
     return matches[0] if len(matches) == 1 else None
 
@@ -242,7 +285,7 @@ def verify_bundle(
     """Fail closed on malformed input as well as inconsistent recorded claims."""
     try:
         return _verify_bundle(bundle, artifacts_dir)
-    except (AttributeError, KeyError, TypeError, ValueError, OSError) as exc:
+    except (AttributeError, KeyError, TypeError, ValueError, OSError, RecursionError, OverflowError) as exc:  # noqa: E501
         return False, [f"Invalid bundle metadata or unreadable artifacts: {type(exc).__name__}"]
 
 
@@ -269,7 +312,7 @@ def _verify_bundle(
     if bundle_digest(bundle) != bundle["bundle_digest"]:
         errors.append("Bundle digest does not match its recorded fields")
     else:
-        notes.append(f"[OK] Bundle digest matches: {bundle['bundle_digest']}")
+        notes.append(f"[OK] Bundle digest matches: {_safe(bundle['bundle_digest'])}")
     if hashlib.sha256(bundle["patch_diff"].encode()).hexdigest() != bundle["patch_diff_sha256"]:
         errors.append("Patch diff does not match its recorded SHA-256")
     else:
@@ -286,8 +329,8 @@ def _verify_bundle(
     if not verified:
         errors.append(
             "Bundle does not record a verified candidate: "
-            f"status={bundle['status']}, baseline={bundle['baseline_verdict']}, "
-            f"verification={bundle['verification_verdict']}, "
+            f"status={_safe(bundle['status'])}, baseline={_safe(bundle['baseline_verdict'])}, "
+            f"verification={_safe(bundle['verification_verdict'])}, "
             f"failed assertions={bundle['regressions_count']} of {bundle['assertions_total']}"
         )
     else:
@@ -297,19 +340,27 @@ def _verify_bundle(
         )
     if artifacts_dir is not None:
         if not artifacts_dir.is_dir():
-            errors.append(f"Artifacts directory not found: {artifacts_dir}")
+            errors.append(f"Artifacts directory not found: {_safe(artifacts_dir)}")
         else:
             checked = 0
             for item in bundle["evidence_manifest"]:
+                if not isinstance(item, dict):
+                    errors.append("Artifact manifest entry is not an object")
+                    continue
                 path = _artifact_file(artifacts_dir, str(item.get("id", "")))
                 if path is None:
-                    errors.append(f"Artifact {item.get('id')} ({item.get('role')}) not found")
+                    errors.append(
+                        f"Artifact {_safe(item.get('id'))} ({_safe(item.get('role'))}) not found"
+                    )
                     continue
-                content = path.read_bytes()
-                if len(content) != item.get("size_bytes") or (
-                    hashlib.sha256(content).hexdigest() != item.get("sha256")
-                ):
-                    errors.append(f"Artifact {path.name} does not match its recorded hash")
+                within_cap, digest = _sha256_file(path)
+                if not within_cap:
+                    errors.append(
+                        f"Artifact {_safe(path.name)} exceeds the {MAX_ARTIFACT_BYTES}-byte cap"
+                    )
+                    continue
+                if digest != item.get("sha256"):
+                    errors.append(f"Artifact {_safe(path.name)} does not match its recorded hash")
                     continue
                 checked += 1
             if checked == len(bundle["evidence_manifest"]):
@@ -327,8 +378,8 @@ def main() -> None:
     arguments = parser.parse_args()
     try:
         data = json.loads(arguments.bundle_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
-        print(f"Cannot read bundle: {exc}", file=sys.stderr)
+    except (OSError, ValueError, RecursionError, OverflowError) as exc:
+        print(f"Cannot read bundle: {_safe(exc)}", file=sys.stderr)
         raise SystemExit(1) from None
     if not isinstance(data, dict):
         print("Bundle must be a JSON object", file=sys.stderr)
