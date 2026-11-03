@@ -207,17 +207,23 @@ class OrchestratorJob(Job):
 
 
 class ResourceLimits(ContractModel):
-    """Aggregate candidate limits read back from the kernel, or an explicit opt-out.
+    """Aggregate candidate limits per host, read back where the host can prove them.
 
     ``cgroup-v2-scope`` values come from the cgroup v2 files of the transient
-    systemd user scope that contained every candidate backend task. ``verified``
-    is true only when those values matched configuration and the scope's process
-    membership was confirmed. ``disabled`` records an operator opt-out: no
-    aggregate quota applied, so it can report neither values nor verification.
-    Per-process rlimits inside the namespace are separate and not represented.
+    systemd user scope that contained every candidate backend task (Linux).
+    ``rlimits`` records per-process ``setrlimit`` bounds applied by the trusted
+    launcher (macOS ``sandbox-exec``); it is reported with ``verified=False``
+    because macOS offers no kernel counter to read the applied bound back.
+    ``windows-job`` records a Windows Job Object's memory and task caps, read
+    back through the job's own accounting handle. ``docker`` records a container
+    runtime's ``--memory``/``--pids-limit``/``--cpus`` flags.
+
+    ``verified`` is true only when the reported values were read back from the
+    enforcing mechanism and matched configuration. ``disabled`` records an
+    operator opt-out: no aggregate quota applied, so it reports nothing.
     """
 
-    mode: Literal["cgroup-v2-scope", "disabled"]
+    mode: Literal["cgroup-v2-scope", "rlimits", "windows-job", "docker", "disabled"]
     memory_max_bytes: Annotated[int, Field(ge=0)] | None
     memory_swap_max_bytes: Annotated[int, Field(ge=0)] | None
     tasks_max: Annotated[int, Field(ge=1)] | None
@@ -226,7 +232,15 @@ class ResourceLimits(ContractModel):
 
     @model_validator(mode="after")
     def require_honest_mode(self) -> Self:
-        """Disabled limits claim nothing; a scope must report every aggregate limit."""
+        """Each mode claims exactly what its host can establish.
+
+        ``disabled`` claims nothing. ``cgroup-v2-scope`` (unchanged) must report
+        every aggregate limit because a cgroup v2 scope sets all five. The newer
+        modes enforce a memory ceiling and a task cap as their floor, so those
+        two are always required; swap and CPU quota stay optional where the host
+        cannot enforce them (swap is cgroup-only, and ``rlimits`` has no CPU
+        rate — only a total CPU-seconds budget).
+        """
         values = (
             self.memory_max_bytes,
             self.memory_swap_max_bytes,
@@ -237,6 +251,10 @@ class ResourceLimits(ContractModel):
             raise ValueError("Disabled aggregate limits cannot report values or verification")
         if self.mode == "cgroup-v2-scope" and any(value is None for value in values):
             raise ValueError("A cgroup v2 scope must report every aggregate limit")
+        if self.mode in {"rlimits", "windows-job", "docker"} and (
+            self.memory_max_bytes is None or self.tasks_max is None
+        ):
+            raise ValueError(f"{self.mode} limits must report memory_max_bytes and tasks_max")
         return self
 
 

@@ -219,7 +219,6 @@ class ProofBundleCompiler:
             and all(
                 e.runtime_kind == "isolated-browser"
                 and e.resource_limits is not None
-                and e.resource_limits.mode == "cgroup-v2-scope"
                 and e.resource_limits.verified
                 for e in executions
             )

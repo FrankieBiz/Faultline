@@ -198,13 +198,16 @@ def verify_final_metadata(bundle: dict[str, Any]) -> tuple[list[str], list[str]]
                         type(v) is int and v < 1 for v in values[2:]
                     ):
                         errors.append("Incomplete cgroup resource-limit observations")
+                elif limits.get("mode") in {"rlimits", "windows-job", "docker"}:
+                    if limits.get("memory_max_bytes") is None or limits.get("tasks_max") is None:
+                        errors.append("Incomplete resource-limit observations")
                 else:
                     errors.append("Unknown resource-limit mode")
         isolated = isolated and (
             execution.get("runtime_kind") == "isolated-browser"
             and isinstance(limits, dict)
-            and limits.get("mode") == "cgroup-v2-scope"
             and limits.get("verified") is True
+            and limits.get("mode") in {"cgroup-v2-scope", "windows-job", "docker"}
         )
     baseline = recorded.get(generation["baseline_execution_id"], {})
     verification = recorded.get(generation["verification_execution_id"], {})
@@ -226,7 +229,7 @@ def verify_final_metadata(bundle: dict[str, Any]) -> tuple[list[str], list[str]]
         errors.append("Invalid containment claim for the recorded runtime and resource limits")
     notes = ["[OK] Final lifecycle recorded: verified; cleanup succeeded"]
     notes.append(
-        "[OK] Recorded isolated browser execution and verified cgroup limits (not authenticated)"
+        "[OK] Recorded isolated browser execution and verified aggregate limits (not authenticated)"
         if isolated
         else "[--] Containment not established: runtime or verified limits absent/disabled"
     )

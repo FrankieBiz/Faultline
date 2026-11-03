@@ -179,6 +179,43 @@ def test_disabled_limits_remain_consistent_without_containment(tmp_path: Path) -
     assert any("Containment not established" in message for message in messages)
 
 
+def test_verified_windows_job_limits_establish_containment(tmp_path: Path) -> None:
+    bundle, _ = exported(tmp_path)
+    for execution in bundle["executions"]:
+        execution["runtime_kind"] = "isolated-browser"
+        execution["resource_limits"] = {
+            "mode": "windows-job",
+            "verified": True,
+            "memory_max_bytes": 536870912,
+            "memory_swap_max_bytes": 0,
+            "tasks_max": 64,
+            "cpu_quota_percent": 100,
+        }
+    bundle["containment"] = "recorded-isolated"
+    bundle["bundle_digest"] = bundle_digest(bundle)
+    consistent, messages = verify_bundle(bundle)
+    assert consistent, messages
+    assert any("verified aggregate limits" in message for message in messages)
+
+
+def test_unverified_rlimits_do_not_establish_containment(tmp_path: Path) -> None:
+    bundle, _ = exported(tmp_path)
+    for execution in bundle["executions"]:
+        execution["runtime_kind"] = "isolated-browser"
+        execution["resource_limits"] = {
+            "mode": "rlimits",
+            "verified": False,
+            "memory_max_bytes": 768 * 1024 * 1024,
+            "memory_swap_max_bytes": None,
+            "tasks_max": 64,
+            "cpu_quota_percent": None,
+        }
+    bundle["bundle_digest"] = bundle_digest(bundle)
+    consistent, messages = verify_bundle(bundle)
+    assert consistent, messages
+    assert any("Containment not established" in message for message in messages)
+
+
 def test_retained_schema_two_is_explicitly_consistency_only() -> None:
     replay = Path(__file__).parents[3] / "docs/replay/3573b32b-09bd-4f14-897d-cf6dccf9b118"
     job = json.loads((replay / "job.json").read_text())
