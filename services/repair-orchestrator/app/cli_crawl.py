@@ -135,8 +135,7 @@ def render_event(event: dict[str, Any], c: Palette) -> str | None:
         )
         verb = _VERBS.get(action, action.capitalize())
         return (
-            prefix
-            + f"Step {event.get('step')}: {verb} {sanitize_text(event.get('label'))}"
+            prefix + f"Step {event.get('step')}: {verb} {sanitize_text(event.get('label'))}"
             f"{value} -> {result}"
         )
     return None
@@ -746,9 +745,7 @@ def gate_result(report: dict[str, Any], url: str) -> dict[str, Any]:
     elif isinstance(failure, dict):
         if not trail:
             # Reports from older runners carry breadcrumbs only.
-            trail = [line.strip() for line in _breadcrumb_lines(report, _plain())][
-                :MAX_TRAIL_STEPS
-            ]
+            trail = [line.strip() for line in _breadcrumb_lines(report, _plain())][:MAX_TRAIL_STEPS]
         text = (
             f"Defect intercepted: {describe_signal(failure)} after "
             f"{_plural(summary['actions_taken'], 'action')} across "
