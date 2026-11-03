@@ -391,6 +391,9 @@ a.btn { display: inline-flex; align-items: center; text-decoration: none; }
 .playground h2 { margin: 0; font-size: 19px; letter-spacing: -0.01em; }
 .store-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; margin: 0; color: var(--ink-2); font-size: 13px; }
 .store-meta .inline-btn { color: var(--ink-2); }
+/* Tailwind's preflight strips underlines; inline links need one beside --ink-2 text (WCAG 1.4.1). */
+.store-meta a { text-decoration: underline; text-decoration-color: var(--ink-3); }
+.store-meta a:hover { text-decoration-color: var(--ink); }
 
 .flow { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin: 16px 0 0; padding: 0; list-style: none; }
 .flow-step { position: relative; display: flex; min-width: 0; }
@@ -581,7 +584,8 @@ a.btn { display: inline-flex; align-items: center; text-decoration: none; }
 .side .eyebrow { margin-bottom: 16px; }
 .side[data-tone="bad"] { background: var(--red-wash); }
 .side[data-tone="ok"] { background: var(--green-wash); }
-.verdict { margin: 0; font-size: 28px; font-weight: 600; letter-spacing: -0.02em; color: var(--ink-3); }
+/* Scoped to the seam: the corpus cards reuse .verdict and would inherit this 28px tracking as a fixed length. */
+.side .verdict { margin: 0; font-size: 28px; font-weight: 600; letter-spacing: -0.02em; color: var(--ink-3); }
 .side[data-tone="bad"] .verdict { color: var(--red); }
 .side[data-tone="ok"] .verdict { color: var(--green); }
 .side[data-tone="warn"] .verdict { color: var(--amber); }
@@ -714,7 +718,7 @@ details[open] > summary { margin-bottom: 16px; }
 .judge-head .tag { margin-bottom: 12px; }
 .judge-head h2 { margin: 0; font-size: 22px; }
 /* Pinned while the panel scrolls; a band in the drawer's own color masks content passing above it. */
-.gate-tabs.judge-tabs { position: sticky; top: 0; z-index: 1; background: var(--well); box-shadow: var(--core-hi), 0 -28px 0 0 var(--raised), 0 0 0 10px var(--raised); }
+.gate-tabs.judge-tabs { position: sticky; top: 0; z-index: 1; background: var(--well); box-shadow: var(--core-hi), 0 -20px 0 0 var(--raised), 0 0 0 10px var(--raised); }
 .judge-tabs .gate-tab { font-size: 12.5px; }
 .judge-section + .judge-section, .corpus > section + section { margin-top: 36px; padding-top: 28px; border-top: 1px solid var(--line); }
 .judge-h { margin: 0 0 12px; font-size: 15px; letter-spacing: -0.01em; }
@@ -744,7 +748,7 @@ details[open] > summary { margin-bottom: 16px; }
 .ledger-stats dt { color: var(--ink-3); font: 500 10.5px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; }
 .ledger-stats dd { margin: 4px 0 0; color: var(--ink); font: 600 24px/1.15 var(--mono); letter-spacing: -0.02em; }
 .ledger-stats > div[data-tone="ok"] dd { color: var(--green); }
-.ledger-stats span { color: var(--ink-3); font-size: 12px; }
+.ledger-stats .ledger-note { margin: 0; color: var(--ink-3); font: 12px var(--sans); letter-spacing: normal; }
 .table-scroll { overflow-x: auto; }
 .judge-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .judge-table th, .judge-table td { padding: 8px 12px 8px 0; border-bottom: 1px solid var(--line); text-align: left; vertical-align: baseline; }
@@ -779,7 +783,7 @@ details[open] > summary { margin-bottom: 16px; }
 .judge-docs a code { color: var(--ink-3); font-size: 12px; font-weight: 400; }
 
 /* Evaluation corpus: two verdicts side by side, then the holdout defects as a master and detail. */
-.verdicts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.verdicts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
 .verdict { display: flex; flex-direction: column; gap: 6px; padding: 16px 18px; border: 1px solid var(--line-strong); border-radius: 14px; box-shadow: var(--core-hi); }
 .verdict[data-tone="bad"] { border-color: rgba(255, 77, 106, 0.45); background: var(--red-wash); }
 .verdict[data-tone="ok"] { border-color: rgba(61, 255, 162, 0.35); background: var(--green-wash); }
@@ -853,6 +857,7 @@ details[open] > summary { margin-bottom: 16px; }
 @media (max-width: 760px) {
   .judge-drawer { width: 100vw; border-left: 0; border-radius: 0; }
   .judge { padding: 20px 16px 32px; }
+  .judge-tabs .gate-tab { padding-inline: 8px; }
   .rubric-bar span { padding-inline: 6px; font-size: 0; }
   .rubric-bar b { font-size: 15px; }
   .ledger-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }

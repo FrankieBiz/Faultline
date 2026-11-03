@@ -95,7 +95,7 @@ function Payload({ result, exact, onCopied }: { result: GateResult; exact: boole
           <CopyButton text={text} label={view === "prompt" ? "the agent fix prompt" : "the JSON verdict"} onCopied={onCopied} />
         </span>
       </figcaption>
-      <pre><code>{text}</code></pre>
+      <pre tabIndex={0}><code>{text}</code></pre>
       <p className="gate-payload-note">
         {exact ? <>The same <code>agent_remediation_prompt</code> and verdict that <code>faultline gate --json</code> returns for this run.</>
           : <>Built from this run in the <code>faultline gate --json</code> format.</>}{" "}
@@ -362,7 +362,7 @@ export default function AgentGatePanel(props: {
                 <code>{snippet.file}</code>
                 <CopyButton text={snippet.body} label={snippet.tab} onCopied={setCopied} />
               </div>
-              <pre className="gate-code"><code>{snippet.body}</code></pre>
+              <pre className="gate-code" tabIndex={0}><code>{snippet.body}</code></pre>
               <p className="gate-note">{snippet.note}</p>
             </div>
           </div>

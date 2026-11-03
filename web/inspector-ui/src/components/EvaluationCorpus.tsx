@@ -74,7 +74,7 @@ export default function EvaluationCorpus() {
             <span className="verdict-sub">False green: the 500 is gone, and the business contract is still broken.</span>
           </div>
           <div className="verdict" data-tone="ok">
-            <span className="verdict-key">FaultLine oracle · 27 business checks in the sandbox</span>
+            <span className="verdict-key">FaultLine oracle · 27 business checks on the sandboxed build</span>
             <strong><span aria-hidden="true">✓ </span>Rejected {faultlineRejected} of {wrong.length} wrong patches</strong>
             <span className="verdict-sub">
               Accepted {correct.length} of {correct.length} correct repairs, and refused {outOfPolicy.length} of {outOfPolicy.length} out-of-policy diffs before they ran.
@@ -130,7 +130,7 @@ export default function EvaluationCorpus() {
 
             <div className="holdout-change">
               <span className="judge-key">The defect <span className="muted">· struck lines are the healthy source</span></span>
-              <pre className="defect-code" aria-label={`Source change that introduces ${defect.id}`}>
+              <pre className="defect-code" tabIndex={0} aria-label={`Source change that introduces ${defect.id}`}>
                 {defect.change.map((line, i) => (
                   <span key={i} data-kind={line.startsWith("-") ? "healthy" : "defect"}>
                     <span className="sr-only">{line.startsWith("-") ? "Healthy line: " : "Defective line: "}</span>{line}

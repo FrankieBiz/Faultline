@@ -63,10 +63,10 @@ function Scorecard({ readiness, readinessError }: { readiness: Readiness | null;
       <section className="judge-section" aria-labelledby="judge-meta-h">
         <h3 id="judge-meta-h" className="judge-h">Live Meta Model API ledger</h3>
         <dl className="ledger-stats">
-          <div data-tone="ok"><dt>Trials verified</dt><dd>{META_LEDGER.trials.length}/{META_LEDGER.trials.length}</dd><span>all on attempt 1</span></div>
-          <div data-tone="ok"><dt>Assertions</dt><dd>44/44</dd><span>in every trial</span></div>
-          <div><dt>Median wall time</dt><dd>{META_LEDGER.medianSeconds} s</dd><span>{META_LEDGER.rangeSeconds[0]} to {META_LEDGER.rangeSeconds[1]} s</span></div>
-          <div><dt>Policy rejections</dt><dd>{META_LEDGER.policyRejections}</dd><span>cleanup confirmed 3 of 3</span></div>
+          <div data-tone="ok"><dt>Trials verified</dt><dd>{META_LEDGER.trials.length}/{META_LEDGER.trials.length}</dd><dd className="ledger-note">all on attempt 1</dd></div>
+          <div data-tone="ok"><dt>Assertions</dt><dd>44/44</dd><dd className="ledger-note">in every trial</dd></div>
+          <div><dt>Median wall time</dt><dd>{META_LEDGER.medianSeconds} s</dd><dd className="ledger-note">{META_LEDGER.rangeSeconds[0]} to {META_LEDGER.rangeSeconds[1]} s</dd></div>
+          <div><dt>Policy rejections</dt><dd>{META_LEDGER.policyRejections}</dd><dd className="ledger-note">cleanup confirmed 3 of 3</dd></div>
         </dl>
         <div className="table-scroll">
           <table className="judge-table">
@@ -83,7 +83,7 @@ function Scorecard({ readiness, readinessError }: { readiness: Readiness | null;
           </table>
         </div>
         <p className="judge-note">
-          Meta <code>{META_LEDGER.model}</code> wrote every patch, recorded {META_LEDGER.date}. The ledger script refuses any non-Meta response.
+          Meta <code>{META_LEDGER.model}</code> wrote every patch, recorded {META_LEDGER.date}. The ledger script refuses to record any other provider&apos;s response as a Meta trial.
           Scope: one registered scenario (<code>{META_LEDGER.scenario}</code>), a small sample rather than a reliability rate.{" "}
           <a href={docUrl(META_LEDGER.source)} target="_blank" rel="noreferrer">Ledger record</a>
         </p>

@@ -705,6 +705,24 @@ test("a hunt that finds nothing ends on the clean shield", async ({ page }) => {
   await expect(hud.getByRole("alert")).toHaveCount(0);
 });
 
+test("a re-run while a stopped crawl still holds the engine waits for it instead of failing", async ({ page }) => {
+  let attempts = 0;
+  // The orchestrator answers 409 until the stopped crawl's browser exits.
+  await mock(page, { crawl: () => ++attempts === 1
+    ? { status: 409, json: { error: { code: "crawl_in_progress", message: "crawl in progress" } } }
+    : { status: 200, ndjson: [
+      { type: "step", n: 1, action: "visit", target: "http://localhost:5000/", page: "/", ok: true },
+      { type: "done", steps: 1, defect: false, telemetry: { status: "clean", actions_taken: 0, stop_reason: "exhausted" } },
+    ] } });
+  await page.goto("/");
+  await page.getByRole("textbox", { name: "Target URL" }).fill("localhost:5000/");
+  await page.getByRole("textbox", { name: "Target URL" }).press("Enter");
+  const hud = page.getByRole("region", { name: "Live Agent Mission · Playwright" });
+  await expect(hud).toContainText("The previous crawl is still closing its browser. Retrying (2 of 5)…");
+  await expect(hud.getByRole("status")).toHaveText("Clean");
+  expect(attempts).toBe(2);
+});
+
 test("a hunt stopped by its budget, or that never says how it ended, is inconclusive and never green", async ({ page }) => {
   const steps = [
     { type: "step", n: 1, action: "visit", target: "http://localhost:5000/", page: "/", ok: true },
@@ -1214,6 +1232,30 @@ test("live progress follows the newest event before the job record catches up", 
   await expect(page.getByText(/No patched candidate was verified/)).toHaveCount(0);
 });
 
+test("a finished run's closed event stream reads complete without flashing reconnecting", async ({ page }) => {
+  const final = { sequence: 1, timestamp: "2026-10-27T12:00:02Z", stage: "completed", message_code: "completed", message: "Run finished." };
+  let finished = false;
+  await mock(page, { detail: detail("running", null) });
+  // The orchestrator sends a terminal job's last event and ends the stream in the same pass.
+  await page.route(/\/api\/faultline\/jobs\/[^/]+\/events/, (route) => {
+    finished = true;
+    return route.fulfill({ contentType: "text/event-stream", body: `id: 1\nevent: job_event\ndata: ${JSON.stringify(final)}\n\n` });
+  });
+  await page.route(`**/api/faultline/jobs/${id}`, (route) => route.fulfill({ json: finished ? { ...detail("cancelled"), events: [final] } : detail("running", null) }));
+  await page.addInitScript(() => {
+    const seen: string[] = [];
+    (window as unknown as { streamLabels: string[] }).streamLabels = seen;
+    new MutationObserver(() => {
+      const text = document.getElementById("events-h")?.textContent;
+      if (text && seen.at(-1) !== text) seen.push(text);
+    }).observe(document, { subtree: true, childList: true, characterData: true });
+  });
+  await page.goto("/");
+  await expect(page.locator("#events-h")).toContainText("complete · job finished");
+  const labels = await page.evaluate(() => (window as unknown as { streamLabels: string[] }).streamLabels);
+  expect(labels.filter((label) => label.includes("reconnecting"))).toEqual([]);
+});
+
 test("job submission sends a UUID idempotency key even where crypto.randomUUID is unavailable", async ({ page }) => {
   // randomUUID exists only in secure contexts; plain http on a LAN address lacks it.
   await page.addInitScript(() => Object.defineProperty(Crypto.prototype, "randomUUID", { value: undefined, configurable: true }));
@@ -1310,7 +1352,7 @@ test("judge evidence opens from the header and J with the rubric, the Meta ledge
   await expect(drawer).toContainText("FaultLine claims none");
 
   const ledger = drawer.locator(".ledger-stats");
-  await expect(ledger.locator("dd")).toHaveText(["3/3", "44/44", "10.5 s", "0"]);
+  await expect(ledger.locator("dd:not(.ledger-note)")).toHaveText(["3/3", "44/44", "10.5 s", "0"]);
   await expect(drawer.locator(".judge-table").first().locator("tbody tr")).toHaveCount(3);
   await expect(drawer).toContainText("muse-spark-1.3");
   await expect(drawer).toContainText("one registered scenario");

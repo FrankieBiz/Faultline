@@ -24,6 +24,8 @@ import {
 const POLL_MS = 1500;
 /** Attempts against a crawler endpoint that is still starting before a direct check stands in. */
 const CRAWL_ATTEMPTS = 3;
+/** Attempts while a stopped crawl still holds the engine's one crawl slot; its browser can take seconds to close. */
+const DRAIN_ATTEMPTS = 5;
 
 type Stream = "idle" | "live" | "reconnecting" | "closed";
 type Busy = "submit" | "cancel" | "reset" | "apply" | "revert" | "check" | "remove" | null;
@@ -252,6 +254,8 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
     let cursor = 0;
     let retries = 0;
     let polling = false;
+    /** A poll asked for while one is in flight runs as soon as that one settles. */
+    let pollSoon = false;
     let lastStage: string | null = null;
 
     const stop = () => {
@@ -259,6 +263,13 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
       source?.close();
       clearTimeout(pollTimer);
       clearTimeout(retryTimer);
+    };
+
+    const pollNow = (delay: number) => {
+      if (stopped) return;
+      if (polling) { pollSoon = true; return; }
+      clearTimeout(pollTimer);
+      pollTimer = setTimeout(poll, delay);
     };
 
     const open = () => {
@@ -275,18 +286,20 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
           // A new stage means a new recorded result; read it now instead of waiting for the next poll.
           if (event.stage !== lastStage) {
             lastStage = event.stage;
-            if (!polling && !stopped) {
-              clearTimeout(pollTimer);
-              pollTimer = setTimeout(poll, 50);
-            }
+            pollNow(50);
           }
         } catch {}
       });
+      // The server ends the stream once the job is terminal, which EventSource reports as an error.
+      // Read the record first: a finished run then reads "closed" without flashing "reconnecting".
       source.onerror = () => {
         source?.close();
         if (stopped) return;
-        setStream("reconnecting");
-        retryTimer = setTimeout(open, Math.min(8000, 500 * 2 ** retries++));
+        pollNow(0);
+        retryTimer = setTimeout(() => {
+          setStream("reconnecting");
+          open();
+        }, Math.min(8000, 500 * 2 ** retries++));
       };
     };
 
@@ -313,7 +326,8 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
       } finally {
         polling = false;
       }
-      if (!stopped) pollTimer = setTimeout(poll, POLL_MS);
+      if (!stopped) pollTimer = setTimeout(poll, pollSoon ? 0 : POLL_MS);
+      pollSoon = false;
     };
 
     void poll();
@@ -554,9 +568,21 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
         if (controller.signal.aborted) return;
         const starting = e instanceof ApiError && [0, 502, 503].includes(e.status);
         const absent = e instanceof ApiError && e.status === 404;
-        if (seen || e instanceof CrawlInterrupted || !(starting || absent)) {
+        // A crawl stopped a moment ago keeps the engine's one crawl slot until its browser exits.
+        const draining = e instanceof ApiError && e.status === 409 && e.code === "crawl_in_progress";
+        if (seen || e instanceof CrawlInterrupted || !(starting || absent || draining)) {
           update((state) => ({ ...state, phase: "failed", note: e instanceof Error && !(e instanceof ApiError) ? e.message : errorText(e) }));
           return;
+        }
+        if (draining) {
+          if (attempt >= DRAIN_ATTEMPTS) {
+            update((state) => ({ ...state, phase: "failed", note: errorText(e) }));
+            return;
+          }
+          update((state) => ({ ...state, phase: "retrying", note: `The previous crawl is still closing its browser. Retrying (${attempt + 1} of ${DRAIN_ATTEMPTS})…` }));
+          await pause(1000 * attempt);
+          if (controller.signal.aborted) return;
+          continue;
         }
         if (starting && attempt < CRAWL_ATTEMPTS) {
           update((state) => ({ ...state, phase: "retrying", note: `Crawler is starting up. Retrying (${attempt + 1} of ${CRAWL_ATTEMPTS})…` }));
