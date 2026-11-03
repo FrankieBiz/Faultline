@@ -1232,6 +1232,67 @@ test("live progress follows the newest event before the job record catches up", 
   await expect(page.getByText(/No patched candidate was verified/)).toHaveCount(0);
 });
 
+test("candidate verification shows a live badge with the candidate count, then the outcome's color", async ({ page }) => {
+  const attempt = (number: number) => ({
+    id: `00000000-0000-4000-8000-00000000003${number}`, attempt_number: number, prompt_tokens: null, completion_tokens: null,
+    raw_patch: null, parsed_diff: "--- a/x\n+++ b/x", outcome: number === 1 ? "verification_failed" : null,
+    validation_result: { provider: "deterministic", model: "deterministic-checkout-v1", is_valid: true, syntax_valid: true, ast_safe: true },
+  });
+  const events = [{ sequence: 1, timestamp: "2026-10-27T12:00:01Z", stage: "verification", message_code: "verification", message: "Verifying." }];
+  let finished = false;
+  await mock(page, { detail: { ...detail("running", null), attempts: [attempt(1), attempt(2)], events } });
+  await page.route(`**/api/faultline/jobs/${id}`, (route) => route.fulfill({ json: finished ? verifiedDetail()
+    : { ...detail("running", null), attempts: [attempt(1), attempt(2)], events } }));
+  await page.goto("/");
+  const kicker = page.locator(".job .result-kicker");
+  await expect(kicker).toContainText("Sandbox verification in progress");
+  await expect(kicker).toContainText("Candidate 2 of up to 2");
+  await expect(kicker).toHaveAttribute("data-tone", "active");
+  await expect(kicker.locator(".kicker-pulse")).toHaveAttribute("aria-hidden", "true");
+  finished = true;
+  await expect(page.getByRole("heading", { name: "Verified repair" })).toBeVisible();
+  await expect(kicker).toHaveAttribute("data-tone", "ok");
+  await expect(kicker).not.toContainText("Candidate");
+  await expect(page.locator(".job .side").first()).toHaveAttribute("data-tone", "bad");
+  await expect(page.locator(".job .side").last()).toHaveAttribute("data-tone", "ok");
+  await expect(page.locator(".job .side").last().locator(".side-mark")).toHaveText("✓");
+});
+
+test("the event log follows the newest event until scrolled up, then counts arrivals and jumps back", async ({ page }) => {
+  const event = (sequence: number) => ({
+    sequence, timestamp: "2026-10-27T12:00:01Z", stage: "verification", message_code: "progress", message: `Step ${sequence}.`,
+  });
+  let count = 40;
+  await mock(page, { detail: detail("running", null) });
+  await page.route(`**/api/faultline/jobs/${id}`, (route) => route.fulfill({
+    json: { ...detail("running", null), events: Array.from({ length: count }, (_, i) => event(i + 1)) } }));
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/");
+  await page.getByText("Explore the full run details").click();
+  await page.getByText("View event log").click();
+  const log = page.getByRole("log", { name: "Job events" });
+  const toggle = page.getByRole("button", { name: "Auto-scroll" });
+  const atEnd = () => log.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight < 8);
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("Following live output")).toBeVisible();
+  await expect.poll(atEnd).toBe(true);
+  count = 45;
+  await expect(log.getByText("Step 45.")).toBeVisible();
+  await expect.poll(atEnd).toBe(true);
+  await log.evaluate((el) => el.scrollTo({ top: 0 }));
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByText("Paused · scroll freely")).toBeVisible();
+  await expect(log).toHaveAttribute("data-below", "true");
+  count = 48;
+  const jumpBack = page.getByRole("button", { name: "3 new events · Jump to latest" });
+  await expect(jumpBack).toBeVisible();
+  expect(await log.evaluate((el) => el.scrollTop)).toBe(0);
+  await jumpBack.click();
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  await expect(jumpBack).toHaveCount(0);
+  await expect.poll(atEnd).toBe(true);
+});
+
 test("a finished run's closed event stream reads complete without flashing reconnecting", async ({ page }) => {
   const final = { sequence: 1, timestamp: "2026-10-27T12:00:02Z", stage: "completed", message_code: "completed", message: "Run finished." };
   let finished = false;

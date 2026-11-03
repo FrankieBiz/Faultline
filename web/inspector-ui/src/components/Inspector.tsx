@@ -855,8 +855,8 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
               {historyError && <p role="status">{historyError}</p>}
               {history.length === 0 ? <p className="muted">No sandbox runs yet.</p> : <ul className="rows">
                 {history.map((entry) => <li key={entry.id}>
-                  <button type="button" className="btn quiet" disabled={running || entry.id === jobId} onClick={() => { scrollToResult.current = true; follow(entry.id, true); }} aria-label={`Inspect job ${entry.id.slice(0, 8)}`}>
-                    {entry.id.slice(0, 8)}{entry.id === jobId ? " · selected" : ""}
+                  <button type="button" className="btn quiet" disabled={running || entry.id === jobId} onClick={() => { scrollToResult.current = true; follow(entry.id, true); }}>
+                    <span className="sr-only">Inspect job </span>{entry.id.slice(0, 8)}{entry.id === jobId ? " · selected" : ""}
                   </button>
                   <time dateTime={entry.created_at}>{new Date(entry.created_at).toLocaleString()}</time>
                   <span>{entry.outcome?.replaceAll("_", " ") ?? entry.state}</span>

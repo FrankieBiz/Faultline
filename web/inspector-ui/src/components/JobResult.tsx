@@ -5,6 +5,9 @@ import {
   type JobDetail, type JobEvent, type Tone,
 } from "@/lib/faultline-api";
 
+/** Patch proposals per job: `max_attempts` in services/repair-orchestrator/app/project.py is capped at 2. */
+const CANDIDATE_BUDGET = 2;
+
 /** Verification holds only with a failed isolated baseline, a passing candidate, and confirmed cleanup. */
 export function summarizeJob(detail: JobDetail | null) {
   const job = detail?.job ?? null;
@@ -37,6 +40,10 @@ export default function JobResult(props: {
   const jobSource = sourced ? providerName(String(sourced.validation_result?.provider), String(sourced.validation_result?.model)) : null;
   // Only a run that meets every verification condition offers its patch for export.
   const exported = verified && verifiedAttempt?.parsed_diff ? { ...verifiedAttempt, parsed_diff: verifiedAttempt.parsed_diff } : null;
+  const step = running ? currentStep(job, events) : null;
+  // Step 3 runs the newest proposal in the sandbox; the orchestrator allows at most CANDIDATE_BUDGET per job.
+  const candidate = step === 3 ? detail.attempts.at(-1)?.attempt_number ?? 1 : null;
+  const kickerTone = running ? "active" : outcome && outcome.tone !== "idle" ? outcome.tone : null;
 
   const downloadRecord = () => {
     const blob = new Blob([JSON.stringify(detail, null, 2)], { type: "application/json" });
@@ -48,8 +55,10 @@ export default function JobResult(props: {
   return (
     <section className="job" ref={resultRef} aria-labelledby="job-h">
       <div className="result-heading">
-        <p className="result-kicker">
-          {pastRun ? "Past sandbox run" : running ? "Sandbox run in progress" : "Sandbox run result"}
+        <p className="result-kicker" data-tone={kickerTone ?? undefined}>
+          {running && <span className="kicker-pulse" aria-hidden="true" />}
+          {pastRun ? "Past sandbox run" : candidate ? "Sandbox verification in progress" : running ? "Sandbox run in progress" : "Sandbox run result"}
+          {candidate && <span className="kicker-count">Candidate {candidate} of up to {CANDIDATE_BUDGET}</span>}
           {scenarioTitle && <span className="muted"> for {scenarioTitle}</span>}
         </p>
         <h2 id="job-h" ref={headingRef} tabIndex={-1} aria-live="polite">{outcome?.title ?? `Running: ${STEP_LABELS[currentStep(job, events)]}`}</h2>
@@ -69,7 +78,7 @@ export default function JobResult(props: {
       </div>
       <Pipeline detail={detail} events={events} verification={verification} verified={verified} />
       <Seam baseline={detail.baseline} verification={verification} verified={verified}
-        step={running ? currentStep(job, events) : null}
+        step={step}
         attemptNumber={verifiedAttempt?.attempt_number ?? null} artifacts={detail.artifacts} />
       {exported && <ProofExport jobId={job.id} attempt={exported} artifacts={detail.artifacts} />}
       <Attempts attempts={detail.attempts} terminal={terminal} exported={exported?.id ?? null} />
@@ -91,7 +100,7 @@ export default function JobResult(props: {
           ...(detail.baseline ? [{ label: "Baseline", run: detail.baseline }] : []),
           ...(verification ? [{ label: `Verification, attempt ${verifiedAttempt?.attempt_number ?? "?"}`, run: verification }] : []),
         ]} />
-        <EventLog events={events} stream={stream} />
+        <EventLog events={events} stream={stream} running={running} />
         <p className="record"><button type="button" className="btn quiet" onClick={downloadRecord}>Download job record (JSON)</button><span className="muted">The exact orchestrator response for this job, unedited.</span></p>
       </details>
     </section>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   STAGE_LABEL, TERMINAL, providerName,
   type Artifact, type Attempt, type Execution, type JobDetail, type JobEvent, type JobStage, type Tone,
@@ -133,7 +133,10 @@ function Side(props: { label: string; run: Execution | null; tone: Tone; empty: 
   const passed = assertions.filter((a) => a.passed).length;
   return (
     <figure className="side" data-tone={tone}>
-      <figcaption className="eyebrow">{label}</figcaption>
+      <figcaption className="eyebrow">
+        {tone !== "idle" && <span className="side-mark" aria-hidden="true">{tone === "ok" ? "✓" : tone === "bad" ? "✕" : "!"}</span>}
+        {label}
+      </figcaption>
       {run ? (
         <>
           <p className="verdict">{VERDICT[run.report.verdict]}</p>
@@ -418,23 +421,85 @@ export function Artifacts(props: { artifacts: Artifact[]; executions: Execution[
   );
 }
 
-export function EventLog({ events, stream }: { events: JobEvent[]; stream: string }) {
+/** Smooth unless the reader asked for reduced motion. */
+const scrollBehavior = (smooth: boolean): ScrollBehavior =>
+  smooth && !matchMedia("(prefers-reduced-motion: reduce)").matches ? "smooth" : "auto";
+
+/**
+ * The run's event stream as a terminal-style log. Auto-scroll pins it to the newest event; scrolling up
+ * releases the lock, and events that arrive meanwhile are counted until the reader jumps back to the tail.
+ */
+export function EventLog({ events, stream, running = false }: { events: JobEvent[]; stream: string; running?: boolean }) {
+  const logRef = useRef<HTMLDivElement>(null);
+  const lastTop = useRef(0);
+  /** Opening the log lands on the tail at once; only later arrivals glide. */
+  const jump = useRef(true);
+  const [open, setOpen] = useState(false);
+  const [follow, setFollow] = useState(true);
+  const [readCount, setReadCount] = useState(0);
+  const [below, setBelow] = useState(false);
+  const unread = follow ? 0 : Math.max(0, events.length - readCount);
+
+  useEffect(() => {
+    const el = logRef.current;
+    if (!open || !follow || !el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: scrollBehavior(!jump.current) });
+    jump.current = false;
+  }, [open, follow, events.length]);
+
+  const onScroll = () => {
+    const el = logRef.current;
+    if (!el) return;
+    const atEnd = el.scrollHeight - el.scrollTop - el.clientHeight < 8;
+    setBelow(!atEnd);
+    // Programmatic scrolling only ever moves toward the tail, so moving up is the reader's own scroll.
+    if (follow && el.scrollTop < lastTop.current - 4) {
+      setFollow(false);
+      setReadCount(events.length);
+    } else if (!follow && atEnd) setReadCount(events.length);
+    lastTop.current = el.scrollTop;
+  };
+
+  const toggleFollow = () => {
+    if (follow) setReadCount(events.length);
+    setFollow(!follow);
+  };
+
   return (
     <section className="block" aria-labelledby="events-h">
       <h3 id="events-h">Events <span className="muted">{events.length} recorded · {stream === "closed" ? "complete · job finished" : `updates ${stream}`}</span></h3>
-      <details>
+      <details onToggle={(e) => { jump.current = true; lastTop.current = 0; setOpen(e.currentTarget.open); }}>
         <summary>View event log</summary>
       {events.length === 0 ? <p className="muted">No events recorded yet.</p> : (
-        <ol className="events" role="log" tabIndex={0} aria-label="Job events">
-          {events.map((e) => (
-            <li key={e.sequence}>
-              <span className="muted">{String(e.sequence).padStart(3, "0")}</span>
-              <time dateTime={e.timestamp}>{clock(e.timestamp)}</time>
-              <span>{STAGE_LABEL[e.stage] ?? e.stage}</span>
-              <span>{e.message} <code className="muted">{e.message_code}</code></span>
-            </li>
-          ))}
-        </ol>
+        <>
+          <div className="log-bar">
+            <button type="button" className="btn quiet tool" aria-pressed={follow} onClick={toggleFollow}>
+              <span className="log-lock" data-on={follow} aria-hidden="true" />Auto-scroll
+            </button>
+            <span className="log-state" data-tone={follow && running ? "active" : undefined}>
+              {follow && running && <span className="log-dot" aria-hidden="true" />}
+              {follow ? (running ? "Following live output" : "Pinned to the newest event") : "Paused · scroll freely"}
+            </span>
+            {unread > 0 && (
+              <button type="button" className="btn quiet tool log-jump" onClick={() => setFollow(true)}>
+                <span aria-hidden="true">↓</span> {unread} new {unread === 1 ? "event" : "events"} · Jump to latest
+              </button>
+            )}
+          </div>
+          {/* The scrolling region carries the log role, so the list inside keeps its list semantics. */}
+          <div className="events-log" role="log" tabIndex={0} aria-label="Job events" ref={logRef} onScroll={onScroll} data-below={below}>
+          <ol className="events">
+            {events.map((e) => (
+              <li key={e.sequence}>
+                <span className="muted">{String(e.sequence).padStart(3, "0")}</span>
+                <time dateTime={e.timestamp}>{clock(e.timestamp)}</time>
+                <span>{STAGE_LABEL[e.stage] ?? e.stage}</span>
+                <span>{e.message} <code className="muted">{e.message_code}</code></span>
+              </li>
+            ))}
+          </ol>
+          </div>
+        </>
       )}
       </details>
     </section>

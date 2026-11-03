@@ -486,6 +486,15 @@ a.btn { display: inline-flex; align-items: center; text-decoration: none; }
 .workspace-title { max-width: 28ch; margin: 0; font: 600 clamp(26px, 3vw, 34px)/1.15 var(--display); letter-spacing: -0.025em; }
 .result-kicker { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; margin: 0 0 14px; padding: 4px 12px; border: 1px solid var(--line-strong); border-radius: 999px; background: rgba(255, 255, 255, 0.025); box-shadow: var(--core-hi); color: var(--ink-2); font: 600 10px/1.5 var(--mono); letter-spacing: 0.2em; text-transform: uppercase; }
 .result-kicker code { font-size: 10.5px; font-weight: 500; letter-spacing: 0.02em; text-transform: none; }
+/* The kicker carries the run's state: cyan while the sandbox works, then the outcome's evidence color. */
+.result-kicker[data-tone="active"] { border-color: rgba(45, 212, 255, 0.45); background: var(--cyan-wash); color: var(--cyan); }
+.result-kicker[data-tone="ok"] { border-color: rgba(61, 255, 162, 0.45); background: var(--green-wash); color: var(--green); }
+.result-kicker[data-tone="bad"] { border-color: rgba(255, 77, 106, 0.5); background: var(--red-wash); color: var(--red); }
+.result-kicker[data-tone="warn"] { border-color: rgba(245, 158, 11, 0.5); background: var(--amber-wash); color: var(--amber); }
+.kicker-pulse { position: relative; width: 7px; height: 7px; margin-right: 2px; border-radius: 50%; background: currentColor; box-shadow: 0 0 10px currentColor; }
+/* A ring that swells and fades from the dot: transform and opacity only, so it stays on the compositor. */
+.kicker-pulse::after { content: ""; position: absolute; inset: -1px; border: 1px solid currentColor; border-radius: 50%; animation: ripple 1.6s var(--spring) infinite; }
+.kicker-count { padding-left: 8px; border-left: 1px solid currentColor; letter-spacing: 0.12em; }
 .request-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; margin: 20px 0 0; font: 15px/1.5 var(--mono); }
 .request-line code { font-size: inherit; color: var(--ink); }
 .request-list { display: grid; gap: 6px; margin: 20px 0 0; padding: 0; list-style: none; }
@@ -589,6 +598,14 @@ a.btn { display: inline-flex; align-items: center; text-decoration: none; }
 .side[data-tone="bad"] .verdict { color: var(--red); }
 .side[data-tone="ok"] .verdict { color: var(--green); }
 .side[data-tone="warn"] .verdict { color: var(--amber); }
+/* The two sides never read alike: a failed baseline carries a red rule, a verified candidate an emerald one. */
+.side[data-tone="bad"] { box-shadow: inset 0 2px 0 var(--red); }
+.side[data-tone="warn"] { background: var(--amber-wash); box-shadow: inset 0 2px 0 var(--amber); }
+.side[data-tone="ok"] { background: linear-gradient(rgba(61, 255, 162, 0.1), var(--green-wash) 45%); box-shadow: inset 0 2px 0 var(--green), inset 0 24px 48px -36px rgba(61, 255, 162, 0.5); }
+.side-mark { display: inline-grid; place-items: center; width: 18px; height: 18px; margin-right: 8px; border: 1px solid currentColor; border-radius: 50%; font-size: 11px; line-height: 1; vertical-align: -3px; }
+.side[data-tone="bad"] .side-mark { color: var(--red); }
+.side[data-tone="ok"] .side-mark { color: var(--green); background: rgba(61, 255, 162, 0.1); }
+.side[data-tone="warn"] .side-mark { color: var(--amber); }
 .signal { margin: 8px 0 0; font: 13px/1.5 var(--mono); overflow-wrap: anywhere; }
 .side .signal + .signal { margin-top: 4px; }
 .side img { display: block; width: 100%; height: auto; margin-top: 16px; aspect-ratio: 16 / 10; object-fit: cover; object-position: top; border: 1px solid var(--line); border-radius: 6px; background: #000; }
@@ -635,9 +652,20 @@ details[open] > summary { margin-bottom: 16px; }
 .rows code { overflow-wrap: anywhere; }
 .evidence-actions { display: flex; flex-wrap: wrap; gap: 12px; }
 
-.events { max-height: 340px; overflow: auto; border-top: 1px solid var(--line); }
+.events-log { max-height: 340px; overflow: auto; border-top: 1px solid var(--line); }
 .events li { display: grid; grid-template-columns: 4ch 9ch 13ch 1fr; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--line); font: 12.5px/1.5 var(--mono); }
 .events li > span { overflow-wrap: anywhere; }
+.log-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 12px 0 8px; }
+.log-state { display: inline-flex; align-items: center; gap: 8px; color: var(--ink-3); font: 12px var(--mono); }
+.log-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: pulse 1.2s ease-in-out infinite; }
+/* A padlock: the shackle closes when auto-scroll holds the log to its tail. */
+.log-lock { position: relative; width: 10px; height: 8px; margin-top: 5px; border-radius: 2px; background: currentColor; }
+.log-lock::before { content: ""; position: absolute; left: 1px; bottom: 6px; width: 8px; height: 7px; box-sizing: border-box; border: 1.5px solid currentColor; border-bottom: 0; border-radius: 4px 4px 0 0; transform-origin: 100% 100%; transform: rotate(-24deg) translateX(-2px); transition: transform 200ms var(--spring); }
+.log-lock[data-on="true"]::before { transform: none; }
+.log-jump { margin-left: auto; border-color: rgba(45, 212, 255, 0.45); color: var(--cyan); animation: rise 320ms var(--spring); }
+.log-jump:hover { color: var(--cyan); }
+/* Content below the fold fades out at the bottom edge, so a paused log shows there is more. */
+.events-log[data-below="true"] { mask-image: linear-gradient(#000 calc(100% - 48px), transparent); }
 .record { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 32px 0 0; font-size: 13px; }
 
 .technical-details, .setup-details { margin-top: 32px; }
@@ -1020,6 +1048,7 @@ details[open] > summary { margin-bottom: 16px; }
 .gate-note { margin: 0; padding: 8px 12px 10px; border-top: 1px solid var(--line); color: var(--ink-3); font-size: 12.5px; }
 
 @keyframes pulse { 50% { opacity: 0.35; } }
+@keyframes ripple { from { transform: scale(1); opacity: 0.9; } to { transform: scale(2.6); opacity: 0; } }
 @keyframes pop { from { transform: scale(0.6); opacity: 0; } }
 @keyframes settle { from { opacity: 0.4; } to { opacity: 1; } }
 @keyframes rise { from { opacity: 0; transform: translateY(6px) scale(0.99); } }
