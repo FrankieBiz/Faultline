@@ -59,6 +59,7 @@ from shared.contracts.models import (
 
 logger = logging.getLogger("faultline.worker")
 HEARTBEAT_SECONDS = 5.0
+RETRY_BACKOFF_SECONDS = 1.0
 
 
 @dataclass(frozen=True)
@@ -578,9 +579,21 @@ class RepairWorker:
         # Independent gate findings from a rejected attempt guide the next proposal.
         feedback: AttemptFeedback | None = None
         final = TerminalOutcome.INVALID_PATCH
+        retry_delay = 0.0
         for number in range(1, (self.project.max_attempts if self.project else 2) + 1):
-            if number == 2 and deadline - time.monotonic() < self.budgets.attempt:
-                break
+            if number > 1:
+                remaining = deadline - time.monotonic()
+                if retry_delay + self.budgets.attempt > remaining:
+                    break
+                if retry_delay:
+                    await self._bounded(
+                        job_id, partial(asyncio.sleep, retry_delay), remaining, deadline
+                    )
+                # Scheduling delays and cancellation also count against the job budget.
+                self._check_cancel(job_id)
+                if deadline - time.monotonic() < self.budgets.attempt:
+                    break
+            retry_delay = 0.0
             attempt_deadline = min(deadline, time.monotonic() + self.budgets.attempt)
             # Where the request was sent stays separate from who answered: only a
             # returned response sets provider/model, so errors never read as inference.
@@ -777,6 +790,10 @@ class RepairWorker:
                 self.database.save_attempt(attempt)
                 if exc.disables_repair or not exc.retryable:
                     break
+                if exc.code not in CORRECTABLE_PROPOSAL_ERRORS:
+                    retry_delay = max(
+                        RETRY_BACKOFF_SECONDS * 2 ** (number - 1), exc.retry_after or 0.0
+                    )
             except (PatchPolicyError, CandidateRejected) as exc:
                 final = (
                     TerminalOutcome.INVALID_PATCH
@@ -810,6 +827,8 @@ class RepairWorker:
                     else None
                 )
                 self.database.save_attempt(attempt.model_copy(update={"outcome": previous_gate}))
+                if previous_gate == "provider_timeout":
+                    retry_delay = RETRY_BACKOFF_SECONDS * 2 ** (number - 1)
             except JobAbort as exc:
                 self.database.save_attempt(attempt.model_copy(update={"outcome": exc.code}))
                 if exc.outcome not in {TerminalOutcome.INVALID_PATCH, TerminalOutcome.UNRESOLVED}:

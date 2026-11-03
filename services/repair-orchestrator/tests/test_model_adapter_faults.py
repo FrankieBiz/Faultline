@@ -1,14 +1,15 @@
-"""Wire faults and fail-closed generation, without real providers or retry sleeps.
+"""Wire faults and fail-closed generation, without real providers.
 
 The adapter dispatches once; the worker accounts for each retry as an attempt.
-Retry-After is currently discarded and the worker has no backoff/jitter scheduler.
-The strict xfails below expose the SpecV1 Retry-After deadline violation without
-introducing hidden adapter retries or changing the two-request job budget.
+Retry-After and backoff are owned by the deadline-aware worker, with no hidden
+adapter retries or changes to the two-request job budget.
 """
 
 import asyncio
 import json
+import time
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from email.utils import format_datetime
 from typing import Any
@@ -28,6 +29,7 @@ from app.model_adapter import (
     deterministic_diff,
 )
 from app.policy import TARGET_FILE
+from app.worker import Budgets
 from shared.contracts.models import TerminalOutcome
 
 TRANSIENT_STATUSES = (429, 500, 502, 503, 504)
@@ -87,12 +89,40 @@ def assert_safe_error(error: ModelError, code: str, *, retryable: bool) -> None:
 
 
 @pytest.mark.parametrize(
-    "retry_after",
-    [None, "0", "2", "86400", "Wed, 04 Nov 2026 12:00:00 GMT", "-1", "1.5", "invalid"],
+    "retry_after,delay",
+    [
+        (None, None),
+        ("0", 0.0),
+        (" 2 ", 2.0),
+        ("86400", 86400.0),
+        ("Wed, 04 Nov 2026 12:00:00 GMT", 86400.0),
+        ("Mon, 02 Nov 2026 12:00:00 GMT", 0.0),
+        ("Tue Nov  3 12:00:02 2026", 2.0),
+        ("-1", None),
+        ("1.5", None),
+        ("+2", None),
+        ("NaN", None),
+        ("inf", None),
+        ("", None),
+        ("invalid", None),
+        ("Wed, 99 Nov 2026 12:00:00 GMT", None),
+        pytest.param("9" * 5000, float("inf"), id="huge_integer"),
+    ],
+)
+@pytest.mark.parametrize("status", [429, 503])
+@pytest.mark.parametrize(
+    "base_url", ["https://api.meta.ai/v1", "https://api.openai.com/v1", "http://localhost:11434/v1"]
 )
 async def test_rate_limit_headers_do_not_trigger_hidden_adapter_retries(
-    seeded_source: str, monkeypatch: pytest.MonkeyPatch, retry_after: str | None
+    seeded_source: str,
+    monkeypatch: pytest.MonkeyPatch,
+    retry_after: str | None,
+    delay: float | None,
+    status: int,
+    base_url: str,
 ) -> None:
+    now = datetime(2026, 11, 3, 12, tzinfo=UTC).timestamp()
+    monkeypatch.setattr("app.model_adapter.time.time", lambda: now)
     calls: list[httpx.Request] = []
     sleep = AsyncMock()
     monkeypatch.setattr(asyncio, "sleep", sleep)
@@ -101,17 +131,18 @@ async def test_rate_limit_headers_do_not_trigger_hidden_adapter_retries(
     def handle(request: httpx.Request) -> httpx.Response:
         calls.append(request)
         headers = {} if retry_after is None else {"Retry-After": retry_after}
-        return httpx.Response(429, headers=headers, stream=body)
+        return httpx.Response(status, headers=headers, stream=body)
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
-        adapter = MetaRepairAdapter(ModelSettings(api_key="test"), client=client)
+        adapter = MetaRepairAdapter(ModelSettings(api_key="test", base_url=base_url), client=client)
         with pytest.raises(ModelError) as caught:
             await adapter.propose_patch(RepairContext(seeded_source, "failure"))
         assert not client.is_closed
-    assert_safe_error(caught.value, "provider_http_429", retryable=True)
+    assert_safe_error(caught.value, f"provider_http_{status}", retryable=True)
+    assert caught.value.retry_after == delay
     assert len(calls) == 1
     assert body.closed
-    # Backoff and jitter must be owned by the attempt/deadline-aware worker.
+    # Backoff must be owned by the attempt/deadline-aware worker.
     sleep.assert_not_awaited()
 
 
@@ -121,13 +152,16 @@ async def test_gateway_failures_are_retryable_and_close_unread_bodies(
 ) -> None:
     body = FaultStream([], AssertionError("Private error body must not be read"))
     async with httpx.AsyncClient(
-        transport=httpx.MockTransport(lambda request: httpx.Response(status, stream=body))
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(status, headers={"Retry-After": "2"}, stream=body)
+        )
     ) as client:
         with pytest.raises(ModelError) as caught:
             await MetaRepairAdapter(ModelSettings(api_key="test"), client=client).propose_patch(
                 RepairContext(seeded_source, "failure")
             )
     assert_safe_error(caught.value, f"provider_http_{status}", retryable=True)
+    assert caught.value.retry_after == (2.0 if status in {429, 503} else None)
     assert body.closed and body.delivered == 0
 
 
@@ -374,13 +408,10 @@ async def test_worker_never_applies_or_retains_a_length_truncated_patch(
     assert evidence["previous_attempt"]["rejected_unified_diff"] is None
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="SpecV1 gap: Retry-After is discarded; the worker immediately dispatches attempt two",
-)
 @pytest.mark.parametrize("header_kind", ["delta_seconds", "http_date"])
+@pytest.mark.parametrize("status", [429, 503])
 async def test_retry_after_beyond_job_budget_prevents_second_dispatch(
-    harness: Harness, header_kind: str
+    harness: Harness, header_kind: str, status: int
 ) -> None:
     retry_after = (
         "86400"
@@ -392,7 +423,7 @@ async def test_retry_after_beyond_job_budget_prevents_second_dispatch(
     def handle(request: httpx.Request) -> httpx.Response:
         nonlocal requests
         requests += 1
-        return httpx.Response(429, headers={"Retry-After": retry_after}, text=PRIVATE)
+        return httpx.Response(status, headers={"Retry-After": retry_after}, text=PRIVATE)
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
         harness.worker.adapter = MetaRepairAdapter(ModelSettings(api_key="test"), client=client)
@@ -402,3 +433,83 @@ async def test_retry_after_beyond_job_budget_prevents_second_dispatch(
         "Provider delay exceeds the entire job budget; another dispatch is forbidden"
     )
     assert len(harness.database.list_attempts(job.id)) == 1
+
+
+@pytest.mark.parametrize("retry_after", [None, "1"])
+async def test_backoff_must_leave_budget_for_a_complete_second_attempt(
+    harness: Harness, retry_after: str | None
+) -> None:
+    harness.worker.budgets = replace(Budgets(), work=1.0, attempt=0.75)
+    requests = 0
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        nonlocal requests
+        requests += 1
+        headers = {} if retry_after is None else {"Retry-After": retry_after}
+        return httpx.Response(503, headers=headers)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+        harness.worker.adapter = MetaRepairAdapter(ModelSettings(api_key="test"), client=client)
+        job = await harness.run()
+    assert job.outcome == TerminalOutcome.MODEL_ERROR
+    assert requests == len(harness.database.list_attempts(job.id)) == 1
+    assert "cleanup" in harness.runtime.calls
+
+
+@pytest.mark.parametrize("retry_after,minimum_wait", [(None, 1.0), ("invalid", 1.0), ("2", 2.0)])
+async def test_worker_waits_before_second_dispatch(
+    harness: Harness, seeded_source: str, retry_after: str | None, minimum_wait: float
+) -> None:
+    dispatch_times: list[float] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        dispatch_times.append(time.monotonic())
+        if len(dispatch_times) == 2:
+            return httpx.Response(200, json=completion(seeded_source))
+        headers = {} if retry_after is None else {"Retry-After": retry_after}
+        return httpx.Response(503, headers=headers)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+        harness.worker.adapter = MetaRepairAdapter(ModelSettings(api_key="test"), client=client)
+        job = await harness.run()
+    assert job.outcome == TerminalOutcome.VERIFIED
+    assert len(dispatch_times) == len(harness.database.list_attempts(job.id)) == 2
+    assert dispatch_times[1] - dispatch_times[0] >= minimum_wait
+
+
+async def test_cancellation_during_backoff_prevents_second_dispatch(
+    harness: Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sleeping = asyncio.Event()
+    original_sleep = asyncio.sleep
+    requests = 0
+
+    async def sleep(delay: float) -> None:
+        if delay == 2.0:
+            sleeping.set()
+            await asyncio.Event().wait()
+        else:
+            await original_sleep(delay)
+
+    monkeypatch.setattr(asyncio, "sleep", sleep)
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        nonlocal requests
+        requests += 1
+        return httpx.Response(429, headers={"Retry-After": "2"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+        harness.worker.adapter = MetaRepairAdapter(ModelSettings(api_key="test"), client=client)
+        task = asyncio.create_task(harness.run())
+        try:
+            await asyncio.wait_for(sleeping.wait(), timeout=5)
+            job = harness.database.unfinished_jobs()[0]
+            harness.database.request_cancel(job.id)
+            result = await asyncio.wait_for(task, timeout=5)
+        finally:
+            if not task.done():
+                task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+    assert result.outcome == TerminalOutcome.CANCELLED
+    assert requests == len(harness.database.list_attempts(result.id)) == 1
+    assert "cleanup" in harness.runtime.calls

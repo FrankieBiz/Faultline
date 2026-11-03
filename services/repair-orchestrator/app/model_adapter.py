@@ -14,7 +14,10 @@ import hashlib
 import json
 import os
 import secrets
+import time
 from dataclasses import dataclass, field
+from datetime import UTC
+from email.utils import parsedate_to_datetime
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -211,12 +214,35 @@ class ModelError(Exception):
     """Safe provider classification without response bodies or credentials."""
 
     def __init__(
-        self, code: str, *, retryable: bool = False, disables_repair: bool = False
+        self,
+        code: str,
+        *,
+        retryable: bool = False,
+        disables_repair: bool = False,
+        retry_after: float | None = None,
     ) -> None:
         super().__init__(code)
         self.code = code
         self.retryable = retryable
         self.disables_repair = disables_repair
+        self.retry_after = retry_after
+
+
+def _retry_after(value: str | None) -> float | None:
+    """Parse RFC 7231 delay-seconds or HTTP-date; the worker bounds the wait."""
+    if value is None:
+        return None
+    value = value.strip()
+    if value.isascii() and value.isdecimal():
+        # float also handles huge valid integers without overflowing an int conversion.
+        return float(value)
+    try:
+        retry_at = parsedate_to_datetime(value)
+        if retry_at.tzinfo is None:
+            retry_at = retry_at.replace(tzinfo=UTC)
+        return max(0.0, retry_at.timestamp() - time.time())
+    except (ValueError, TypeError, OverflowError):
+        return None
 
 
 # Rejected model output the provider can correct when told which check failed.
@@ -398,6 +424,9 @@ class MetaRepairAdapter:
                         f"provider_http_{status}",
                         retryable=status == 429 or status >= 500,
                         disables_repair=status in {400, 401, 402, 403, 404, 422},
+                        retry_after=_retry_after(response.headers.get("Retry-After"))
+                        if status in {429, 503}
+                        else None,
                     )
                 body = bytearray()
                 async for chunk in response.aiter_bytes():
