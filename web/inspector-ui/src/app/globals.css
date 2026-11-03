@@ -308,8 +308,12 @@ a.btn { display: inline-flex; align-items: center; text-decoration: none; }
 .seis[data-mode="resonance"] .seis-trace { animation: seis-scroll 5s linear infinite; }
 
 @media (prefers-reduced-motion: no-preference) {
-  /* The rupture: one short shake of the whole mission and a red pulse from the seismograph. */
-  .hud[data-seismic="rupture"] { animation: quake 250ms cubic-bezier(0.36, 0.07, 0.19, 0.97); }
+  /*
+   * The rupture: one short shake of the mission frame and a red pulse from the seismograph. The
+   * frame shakes inside the shell's padding, so a full-width phone layout never scrolls sideways;
+   * `rise` stays listed so it is not replayed when the shake ends.
+   */
+  .hud[data-seismic="rupture"] .hud-frame { animation: rise 420ms var(--spring), quake 250ms cubic-bezier(0.36, 0.07, 0.19, 0.97); }
   .hud[data-seismic="rupture"] .hud-frame::after {
     content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0;
     background: radial-gradient(90% 70% at 50% 0%, rgba(255, 77, 106, 0.32), transparent 70%);
@@ -786,8 +790,21 @@ details[open] > summary { margin-bottom: 16px; }
   box-shadow: var(--core-hi), -40px 0 90px -30px rgba(0, 0, 0, 0.95); overscroll-behavior: contain;
 }
 .judge-drawer::backdrop { background: rgba(3, 4, 6, 0.66); backdrop-filter: blur(6px); }
-.judge-drawer[open] { animation: drawer-in 460ms var(--spring); }
-@keyframes drawer-in { from { opacity: 0; transform: translateX(32px); } }
+/*
+ * In on the spring, out faster with an ease-in. `display` and `overlay` hold the closing sheet in
+ * the top layer until it has slid away; reduced motion drops every transition, so it opens and
+ * closes in place.
+ */
+.judge-drawer, .judge-drawer::backdrop {
+  opacity: 0; transition: opacity 200ms ease-in, transform 200ms ease-in, overlay 200ms allow-discrete, display 200ms allow-discrete;
+}
+.judge-drawer { transform: translateX(32px); }
+.judge-drawer[open], .judge-drawer[open]::backdrop { opacity: 1; transition-duration: 460ms; transition-timing-function: var(--spring); }
+.judge-drawer[open] { transform: none; }
+@starting-style {
+  .judge-drawer[open], .judge-drawer[open]::backdrop { opacity: 0; }
+  .judge-drawer[open] { transform: translateX(32px); }
+}
 .judge { display: grid; gap: 20px; padding: 28px 32px 40px; }
 /* Grid tracks would otherwise grow to a wide table's min-content width instead of letting it scroll. */
 .judge > * { min-width: 0; }
@@ -1181,5 +1198,5 @@ details[open] > summary { margin-bottom: 16px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *, ::before, ::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+  *, ::before, ::after, ::backdrop { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }

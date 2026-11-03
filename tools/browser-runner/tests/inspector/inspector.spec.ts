@@ -1178,6 +1178,89 @@ test.describe("on a touch screen", () => {
   }
 });
 
+/** Runs the caught crawl from the header and returns the mission HUD once it has ruptured. */
+async function rupturedMission(page: Page) {
+  await page.getByRole("textbox", { name: "Target URL" }).fill("http://127.0.0.1:3000");
+  await page.getByRole("button", { name: "Run Autonomous Exploration" }).click();
+  const hud = page.getByRole("region", { name: "Live Agent Mission · Playwright" });
+  await expect(hud).toHaveAttribute("data-seismic", "rupture");
+  return hud;
+}
+
+for (const dpr of [1, 1.5, 2, 3]) {
+  test.describe(`at a device pixel ratio of ${dpr}`, () => {
+    test.use({ deviceScaleFactor: dpr, viewport: { width: 1440, height: 900 } });
+
+    test("the seismograph strokes its trace at device resolution and never clips it", async ({ page }) => {
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await mock(page, { crawl: caughtCrawl });
+      await page.goto("/");
+      const seis = (await rupturedMission(page)).locator(".seis");
+      const geometry = await seis.evaluate((el) => {
+        const svg = el.querySelector("svg")!;
+        const ctm = svg.getScreenCTM()!;
+        const band = el.getBoundingClientRect();
+        return {
+          ratio: devicePixelRatio, bitmaps: el.querySelectorAll("canvas, img").length,
+          scale: [ctm.a, ctm.d], viewBoxHeight: svg.viewBox.baseVal.height,
+          traceWidth: svg.getBoundingClientRect().width, band: { width: band.width, height: band.height },
+          // Each path's extent with half its stroke, the wide glow included.
+          strokes: [...svg.querySelectorAll("path")].map((path) => {
+            const box = path.getBBox();
+            const half = parseFloat(getComputedStyle(path).strokeWidth) / 2;
+            return [box.y - half, box.y + box.height + half];
+          }),
+        };
+      });
+      expect(geometry.ratio).toBe(dpr);
+      // Vector, one viewBox unit per CSS pixel: the browser strokes it per device pixel, never resampling a bitmap.
+      expect(geometry.bitmaps).toBe(0);
+      expect(geometry.scale).toEqual([1, 1]);
+      expect(geometry.viewBoxHeight).toBe(geometry.band.height);
+      // The tallest spike's glow stays inside the band, and the trace outruns the widest frame by a full scroll tile.
+      expect(geometry.strokes).toHaveLength(2);
+      for (const [top, bottom] of geometry.strokes) {
+        expect(top).toBeGreaterThanOrEqual(0);
+        expect(bottom).toBeLessThanOrEqual(geometry.band.height);
+      }
+      expect(geometry.traceWidth).toBeGreaterThanOrEqual(geometry.band.width + 200);
+      // The capture holds dpr pixels per CSS pixel; its clip rounds out to whole pixels at each edge.
+      const png = await seis.screenshot();
+      expect(Math.abs(png.readUInt32BE(16) / dpr - geometry.band.width)).toBeLessThanOrEqual(2);
+      expect(Math.abs(png.readUInt32BE(20) / dpr - geometry.band.height)).toBeLessThanOrEqual(2);
+    });
+  });
+}
+
+for (const width of [320, 360, 414]) {
+  test(`at ${width} px a rupture shakes the mission HUD without scrolling the page sideways`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await mock(page, { crawl: caughtCrawl });
+    await page.goto("/");
+    // Sample every frame through the rupture: how far the page overflows, and whether the frame shook.
+    await page.evaluate(() => {
+      const seen = { overflow: 0, quake: false };
+      (window as unknown as { seen: typeof seen }).seen = seen;
+      const sample = () => {
+        seen.overflow = Math.max(seen.overflow, document.documentElement.scrollWidth - innerWidth);
+        seen.quake ||= document.querySelector(".hud-frame")?.getAnimations().some((a) => (a as CSSAnimation).animationName === "quake") ?? false;
+        requestAnimationFrame(sample);
+      };
+      sample();
+    });
+    const hud = await rupturedMission(page);
+    const frame = hud.locator(".hud-frame");
+    await expect.poll(() => frame.evaluate((el) => el.getAnimations().length)).toBe(0);
+    expect(await page.evaluate(() => (window as unknown as { seen: object }).seen)).toEqual({ overflow: 0, quake: true });
+
+    // The band spans the frame inside the screen, clipping its far wider trace.
+    const band = (await hud.locator(".seis").boundingBox())!;
+    expect(band.x).toBeGreaterThanOrEqual(0);
+    expect(band.x + band.width).toBeLessThanOrEqual(width);
+    expect(band.width).toBeGreaterThanOrEqual((await frame.boundingBox())!.width - 2);
+  });
+}
+
 test("a journey badge's focus ring is never clipped by the ribbon that scrolls it", async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -1608,6 +1691,56 @@ test("judge evidence opens from the header and J with the rubric, the Meta ledge
   const box = await drawer.boundingBox();
   expect(box && box.x >= 0 && box.x + box.width <= 390).toBe(true);
   expect(await drawer.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+});
+
+/** Clicks the drawer's Close button and reports what the closing sheet looks like on that same frame. */
+const closeDrawer = (drawer: Locator) => drawer.evaluate((el) => {
+  el.querySelector<HTMLButtonElement>(".judge-head button")!.click();
+  const transitions = el.getAnimations().map((a) => [(a as CSSTransition).transitionProperty, a.effect!.getTiming().duration]);
+  return { display: getComputedStyle(el).display, transitions: transitions.sort(), rubric: el.querySelectorAll(".rubric > li").length };
+});
+
+test("the judge drawer slides in on a spring, slides out faster with its content, and does neither under reduced motion", async ({ page }) => {
+  await mock(page);
+  await page.goto("/");
+  const open = page.getByRole("button", { name: "Judge evidence" });
+  const drawer = page.getByRole("dialog", { name: "Judge scorecard & telemetry" });
+  const style = () => drawer.evaluate((el) => {
+    const [sheet, backdrop] = [getComputedStyle(el), getComputedStyle(el, "::backdrop")];
+    return { opacity: sheet.opacity, transform: sheet.transform, duration: sheet.transitionDuration, backdrop: backdrop.transitionProperty };
+  });
+
+  await open.click();
+  await expect(drawer).toBeVisible();
+  await expect.poll(style).toEqual({ opacity: "1", transform: "none", duration: "0.46s", backdrop: "opacity, transform, overlay, display" });
+  // Closing keeps the sheet and its panels on screen while it slides and fades out, then removes both.
+  const closing = await closeDrawer(drawer);
+  expect(closing.display).toBe("block");
+  expect(closing.rubric).toBe(4);
+  expect(closing.transitions).toEqual(expect.arrayContaining([["opacity", 200], ["transform", 200]]));
+  await expect(drawer).toBeHidden();
+  await expect(drawer.locator(".rubric > li")).toHaveCount(0);
+  await expect(open).toBeFocused();
+
+  // Reopening before the slide-out finishes keeps the panels it is showing.
+  await open.click();
+  await expect(drawer.locator(".rubric > li")).toHaveCount(4);
+  await closeDrawer(drawer);
+  await page.locator("body").press("j");
+  await expect(drawer).toBeVisible();
+  await page.waitForTimeout(300);
+  await expect(drawer.locator(".rubric > li")).toHaveCount(4);
+  await page.keyboard.press("Escape");
+  await expect(drawer).toBeHidden();
+
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await open.click();
+  await expect(drawer).toBeVisible();
+  expect(await style()).toEqual({ opacity: "1", transform: "none", duration: "0s", backdrop: "none" });
+  const still = await closeDrawer(drawer);
+  expect(still).toEqual({ display: "none", transitions: [], rubric: 4 });
+  await expect(drawer.locator(".rubric > li")).toHaveCount(0);
+  await expect(open).toBeFocused();
 });
 
 test("the runtime pill names the host kernel and discloses the sandbox, read-only root, and kernel-read bounds", async ({ page }) => {
