@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { crawlCompleted, stopReasonOf, trailAction } from "@/lib/agent-gate";
 import type { CheckRecord, CrawlEvent, CrawlTelemetry, Tone } from "@/lib/faultline-api";
 import { checkVerdict } from "@/lib/faultline-api";
@@ -321,8 +321,18 @@ export default function CrawlerHud(props: {
     item?.scrollIntoView({ block: "nearest", behavior: still ? "auto" : "smooth" });
   };
 
+  // Arrow keys walk the ribbon's badges, Home and End jump to its ends; Tab still stops at each one.
+  const onRibbonKey = (event: KeyboardEvent<HTMLOListElement>) => {
+    const badges = [...event.currentTarget.querySelectorAll<HTMLButtonElement>(".hud-node")];
+    const from = badges.indexOf(event.target as HTMLButtonElement);
+    const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+    if (from < 0 || (!step && event.key !== "Home" && event.key !== "End")) return;
+    event.preventDefault();
+    badges[event.key === "Home" ? 0 : event.key === "End" ? badges.length - 1 : (from + step + badges.length) % badges.length].focus();
+  };
+
   return (
-    <section className="hud shell" aria-labelledby="hud-h" data-phase={state.phase} data-seismic={seismic}>
+    <aside className="hud shell" role="complementary" aria-labelledby="hud-h" data-phase={state.phase} data-seismic={seismic}>
       <div className="hud-frame">
         <Seismograph mode={seismic} />
         <div className="hud-head">
@@ -353,7 +363,7 @@ export default function CrawlerHud(props: {
 
         {/* A crawl logs dozens of steps a second; the status and the defect alert announce what matters, so the log stays quiet. */}
         {state.lines.length > 0 && (
-          <ol ref={tickerRef} className="hud-ticker" role="log" aria-label="Agent steps" aria-live="off" data-running={running || undefined}>
+          <ol ref={tickerRef} className="hud-ticker" role="log" aria-label="Agent steps" aria-live="off" tabIndex={0} data-running={running || undefined}>
             {state.lines.map((line, i) => (
               <li key={i} data-ok={line.ok} data-kind={line.kind} data-focus={focus === i || undefined}>
                 <span className="hud-pulse" aria-hidden="true" />
@@ -388,7 +398,7 @@ export default function CrawlerHud(props: {
               Triggered by: {defect.trigger.kind} &ldquo;{defect.trigger.label}&rdquo;{defect.trigger.page && <> on <code>{defect.trigger.page}</code></>}
             </p>
             {journey.length > 0 && (
-              <ol className="hud-ribbon" aria-label="User journey">
+              <ol className="hud-ribbon" aria-label="User journey" onKeyDown={onRibbonKey}>
                 {journey.map((badge, i) => (
                   <li key={i}>
                     <button type="button" className="hud-node" data-impact={badge.impact || undefined}
@@ -463,6 +473,6 @@ export default function CrawlerHud(props: {
         {/* Outside the defect alert, so copy feedback is spoken politely instead of re-raising the alert. */}
         <p className="sr-only" aria-live="polite" aria-atomic="true">{copied}</p>
       </div>
-    </section>
+    </aside>
   );
 }

@@ -487,6 +487,7 @@ a.btn { display: inline-flex; align-items: center; text-decoration: none; }
 /* Dashboard: scenario rail beside the selected scenario's workspace. */
 .dashboard { display: grid; grid-template-columns: 272px minmax(0, 1fr); gap: 56px; align-items: start; padding-top: 36px; }
 #workspace { min-width: 0; outline: none; }
+#main-content:focus { outline: none; }
 /* Sticky, and scrollable on its own once it outgrows the viewport; the padding keeps focus rings inside the scroller. */
 .rail {
   position: sticky; top: 20px; display: grid; gap: 24px; max-height: calc(100dvh - 40px); margin: -4px; padding: 4px;

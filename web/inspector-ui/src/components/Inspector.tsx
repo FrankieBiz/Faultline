@@ -777,9 +777,10 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
 
   return (
     <>
+      <a className="skip" href="#main-content">Skip to main content</a>
       <a className="skip" href="#workspace">Skip to the selected scenario</a>
       <a className="skip" href="#demo">Skip to the guided demo</a>
-      <header className="top">
+      <header className="top" role="banner">
         <div className="shell top-row">
           <span className="wordmark"><span aria-hidden="true" className="glyph" />FaultLine{" "}<span className="wordmark-sub">Inspector</span></span>
           <div className="top-tools">
@@ -802,7 +803,7 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
         </div>
       </header>
       {/* One reading order for the demo: what it is, the guided path, its live evidence, the deploy gate, then every scenario. */}
-      <main>
+      <main id="main-content" tabIndex={-1}>
         <HeroArena storefrontUrl={storefrontUrl} apiUrl={store?.url ?? null}
           busy={busy !== null || quickTesting || flowAction !== null || crawlRunning}
           hunting={crawlRunning && flowAction === null && crawlOrigin !== "gate"} pinging={quickTesting && !crawlRunning}
@@ -881,7 +882,7 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
       <CliGuide request={guideRequest} />
       <JudgeEvidence request={judgeRequest} readiness={readiness} readinessError={readinessError} />
       <ProbeDialog open={dialogOpen} seedUrl={dialogSeed} storeUrl={store?.url ?? null} onClose={() => setDialogOpen(false)} onSubmit={submitProbe} />
-      <footer className="shell foot"><span>FaultLine · verified repair runs locally; nothing is pushed or deployed.</span><a href="https://github.com/FrankieBiz/Faultline">Source</a></footer>
+      <footer className="shell foot" role="contentinfo"><span>FaultLine · verified repair runs locally; nothing is pushed or deployed.</span><a href="https://github.com/FrankieBiz/Faultline">Source</a></footer>
     </>
   );
 }

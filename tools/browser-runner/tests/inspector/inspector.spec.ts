@@ -436,7 +436,7 @@ test("the guided demo advances Break it, repair, and Apply fix on recorded evide
   await expect(page.getByRole("heading", { name: "Failing", exact: true })).toBeVisible();
   expect(calls.crawls).toEqual([{ url: "http://127.0.0.1:3000", max_steps: 25 }]);
   expect(calls.checks).toEqual([{ id: "scenario.checkout_api", body: { port: 8000 } }]);
-  const hud = page.getByRole("region", { name: "Live Agent Mission · Direct HTTP check" });
+  const hud = page.getByRole("complementary", { name: "Live Agent Mission · Direct HTTP check" });
   await expect(hud).toContainText("no Playwright crawler endpoint yet");
   await expect(hud.getByRole("alert")).toContainText("HTTP 500 on POST /api/checkout");
   await expect(hud.getByRole("log", { name: "Agent steps" })).toContainText("[Step 1] Session 1: POST /api/checkout → HTTP 500");
@@ -499,6 +499,108 @@ test("one h1 and one main lead to the guided demo, and Space runs its highlighte
   await expect(steps.nth(0)).toHaveAttribute("data-state", "done");
   await expect(steps.nth(1)).toHaveAttribute("aria-current", "step");
   await expect(steps.nth(0).getByRole("button")).not.toHaveAttribute("aria-keyshortcuts", /./);
+});
+
+test("the first Tab reveals a skip link that moves focus into the one main, past the banner", async ({ page }) => {
+  await mock(page);
+  await page.goto("/");
+  await expect(runRepair(page)).toBeEnabled();
+  const skip = page.getByRole("link", { name: "Skip to main content" });
+  await expect(skip).not.toBeInViewport();
+  await page.keyboard.press("Tab");
+  await expect(skip).toBeFocused();
+  await expect(skip).toBeInViewport();
+  await expect(skip).toHaveAttribute("href", "#main-content");
+  await page.keyboard.press("Enter");
+  const main = page.getByRole("main");
+  await expect(main).toBeFocused();
+  await expect(main).toHaveAttribute("id", "main-content");
+  // The next Tab lands inside main, never back in the banner's tools.
+  await page.keyboard.press("Tab");
+  expect(await page.evaluate(() => Boolean(document.activeElement?.closest("main")))).toBe(true);
+  expect(await page.evaluate(() => Boolean(document.activeElement?.closest("header")))).toBe(false);
+});
+
+test("landmarks: one banner, one main, one contentinfo, and the mission HUD is complementary", async ({ page }) => {
+  await mock(page, { crawl: () => ({ status: 200, ndjson: [
+    { type: "step", n: 1, action: "submit", target: "Place order", page: "/checkout", ok: false, note: "HTTP 500" },
+    { type: "defect", method: "POST", path: "/api/checkout", status: 500, trigger: { kind: "Button", label: "Place order", page: "/checkout" }, fingerprint },
+    { type: "done", steps: 1, defect: true },
+  ] }) });
+  await page.goto("/");
+  await expect(page.getByRole("banner")).toHaveCount(1);
+  await expect(page.getByRole("main")).toHaveCount(1);
+  await expect(page.getByRole("contentinfo")).toHaveCount(1);
+  await expect(page.getByRole("banner").getByRole("button", { name: /Judge evidence/ })).toBeVisible();
+  await expect(page.getByRole("contentinfo").getByRole("link", { name: "Source" })).toBeVisible();
+  // Landmarks sit side by side, never nested in one another, and the skip link comes before them all.
+  expect(await page.evaluate(() => {
+    const pick = (selector: string) => document.querySelector(selector)!;
+    const [skip, banner, main, info] = [pick("a.skip"), pick("header[role=banner]"), pick("main"), pick("footer[role=contentinfo]")];
+    const before = (a: Node, b: Node) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    return [banner.parentElement === main.parentElement && main.parentElement === info.parentElement,
+      before(skip, banner), before(banner, main), before(main, info)];
+  })).toEqual([true, true, true, true]);
+  await expect(page.getByRole("complementary")).toHaveCount(0);
+
+  await page.getByRole("textbox", { name: "Target URL" }).fill("http://127.0.0.1:3000");
+  await page.getByRole("button", { name: "Run Autonomous Exploration" }).click();
+  const hud = page.getByRole("main").getByRole("complementary", { name: "Live Agent Mission · Playwright" });
+  await expect(hud).toBeVisible();
+  await expect(page.getByRole("complementary")).toHaveCount(1);
+  await expect(page.getByRole("main")).toHaveCount(1);
+});
+
+test("the mission HUD's log and journey ribbon take Tab and Arrow keys without dropping focus", async ({ page }) => {
+  await mock(page, { crawl: () => ({ status: 200, ndjson: [
+    { type: "scan", url: "http://127.0.0.1:3000", buttons: 6, forms: 1, links: 3 },
+    { type: "step", n: 1, action: "click", target: "Trail Mug", page: "/", ok: true },
+    { type: "step", n: 2, action: "click", target: "Add to Cart", page: "/products/trail-mug", ok: true },
+    { type: "step", n: 3, action: "submit", target: "Place order", page: "/checkout", ok: false, note: "HTTP 500" },
+    { type: "defect", method: "POST", path: "/api/checkout", status: 500, trigger: { kind: "Button", label: "Place order", page: "/checkout" }, fingerprint },
+    { type: "done", steps: 3, defect: true },
+  ] }) });
+  await page.goto("/");
+  await page.getByRole("textbox", { name: "Target URL" }).fill("http://127.0.0.1:3000");
+  await page.getByRole("button", { name: "Run Autonomous Exploration" }).click();
+  const hud = page.getByRole("complementary", { name: "Live Agent Mission · Playwright" });
+  await expect(hud.getByRole("status")).toHaveText("Defect caught");
+
+  // The scrolling log is a tab stop of its own, so the keyboard can scroll it.
+  const log = hud.getByRole("log", { name: "Agent steps" });
+  await hud.getByRole("button", { name: "Close the mission" }).focus();
+  await page.keyboard.press("Tab");
+  await expect(log).toBeFocused();
+
+  const ribbon = hud.getByRole("list", { name: "User journey" });
+  const badges = ribbon.getByRole("button");
+  await expect(badges).toHaveCount(5);
+  // Tab walks every badge in order.
+  await badges.first().focus();
+  for (let i = 1; i < 5; i++) {
+    await page.keyboard.press("Tab");
+    await expect(badges.nth(i)).toBeFocused();
+  }
+  // Arrows move one badge at a time and wrap; Home and End jump to the ends.
+  await page.keyboard.press("ArrowRight");
+  await expect(badges.first()).toBeFocused();
+  await page.keyboard.press("ArrowLeft");
+  await expect(badges.last()).toBeFocused();
+  await page.keyboard.press("Home");
+  await expect(badges.first()).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowRight");
+  await expect(badges.nth(2)).toBeFocused();
+  // Picking a badge re-renders the HUD; focus stays on the badge it picked.
+  await page.keyboard.press("Enter");
+  await expect(badges.nth(2)).toHaveAttribute("aria-current", "step");
+  await expect(badges.nth(2)).toBeFocused();
+  await expect(log.getByRole("listitem").nth(2)).toHaveAttribute("data-focus", "true");
+  await page.keyboard.press("End");
+  await expect(badges.last()).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(badges.last()).toHaveAttribute("aria-current", "step");
+  await expect(badges.last()).toBeFocused();
 });
 
 test("the repair step says Meta only for the Meta Model API and explains a blocked engine", async ({ page }) => {
@@ -572,7 +674,7 @@ test("the header tests any URL without asking for an expected status, reusing it
   await expect(ping).toBeEnabled();
   // Enter runs the crawler. With no crawler endpoint, a GET ping stands in and the HUD says so.
   await field.press("Enter");
-  const hud = page.getByRole("region", { name: "Live Agent Mission · Direct HTTP check" });
+  const hud = page.getByRole("complementary", { name: "Live Agent Mission · Direct HTTP check" });
   await expect(hud).toContainText('Sending "GET http://localhost:5000/health" directly');
   await expect(hud.getByRole("status")).toHaveText("Clean");
   await expect(hud).toContainText("Passing: Both fresh sessions met every expectation.");
@@ -606,7 +708,7 @@ test("the chaos crawler streams its scan and steps, intercepts the defect, and r
   const flow = page.getByRole("list", { name: "Guided demo" });
   const steps = flow.getByRole("listitem");
   await flow.getByRole("button", { name: "Break it" }).click();
-  const hud = page.getByRole("region", { name: "Live Agent Mission · Playwright" });
+  const hud = page.getByRole("complementary", { name: "Live Agent Mission · Playwright" });
   const log = hud.getByRole("log", { name: "Agent steps" });
   await expect(log.getByRole("listitem")).toHaveText([
     "[Scan] Discovered 9 interactive elements (6 buttons, 3 links) and 1 form",
@@ -663,7 +765,7 @@ test("the mission HUD traces a seismograph, clocks the agent, and maps the journ
   await page.goto("/");
   await page.getByRole("textbox", { name: "Target URL" }).fill("http://127.0.0.1:3000");
   await page.getByRole("button", { name: "Run Autonomous Exploration" }).click();
-  const hud = page.getByRole("region", { name: "Live Agent Mission · Playwright" });
+  const hud = page.getByRole("complementary", { name: "Live Agent Mission · Playwright" });
   const clock = hud.locator(".hud-telemetry .hud-clock dd");
   await expect(hud).toHaveAttribute("data-seismic", "hunt");
   await expect(clock).toHaveText(/^00:0\d\.\ds$/);
@@ -704,7 +806,7 @@ test("the mission HUD copies the click trail and says so politely, outside the d
   await page.goto("/");
   await page.getByRole("textbox", { name: "Target URL" }).fill("http://127.0.0.1:3000");
   await page.getByRole("button", { name: "Run Autonomous Exploration" }).click();
-  const hud = page.getByRole("region", { name: "Live Agent Mission · Playwright" });
+  const hud = page.getByRole("complementary", { name: "Live Agent Mission · Playwright" });
   const alert = hud.getByRole("alert");
   await expect(alert).toContainText("Defect intercepted");
   await expect(alert).toContainText("3 steps to reproduce");
@@ -752,7 +854,7 @@ test("a crawl defect no sandbox repair covers is detection only", async ({ page 
   await page.goto("/");
   await page.getByRole("textbox", { name: "Target URL" }).fill("localhost:5000/");
   await page.getByRole("button", { name: "Run Autonomous Exploration" }).click();
-  const banner = page.getByRole("region", { name: "Live Agent Mission · Playwright" }).getByRole("alert");
+  const banner = page.getByRole("complementary", { name: "Live Agent Mission · Playwright" }).getByRole("alert");
   await expect(banner).toContainText("HTTP 500 on GET /api/export");
   await expect(banner.getByRole("button", { name: "Auto-repair" })).toBeDisabled();
   await expect(banner.getByRole("button", { name: "Auto-repair" })).toHaveAccessibleDescription("No sandbox repair covers GET /api/export yet, so this failure is detection only.");
@@ -770,7 +872,7 @@ test("a hunt that finds nothing ends on the clean shield", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("textbox", { name: "Target URL" }).fill("localhost:5000/");
   await page.getByRole("textbox", { name: "Target URL" }).press("Enter");
-  const hud = page.getByRole("region", { name: "Live Agent Mission · Playwright" });
+  const hud = page.getByRole("complementary", { name: "Live Agent Mission · Playwright" });
   await expect(hud.getByRole("log", { name: "Agent steps" }).getByRole("listitem")).toHaveText([
     "[Step 1] Navigating to http://localhost:5000/…",
     "[Scan] Discovered 3 interactive elements (2 buttons, 1 link) and 1 form",
@@ -794,7 +896,7 @@ test("a re-run while a stopped crawl still holds the engine waits for it instead
   await page.goto("/");
   await page.getByRole("textbox", { name: "Target URL" }).fill("localhost:5000/");
   await page.getByRole("textbox", { name: "Target URL" }).press("Enter");
-  const hud = page.getByRole("region", { name: "Live Agent Mission · Playwright" });
+  const hud = page.getByRole("complementary", { name: "Live Agent Mission · Playwright" });
   await expect(hud).toContainText("The previous crawl is still closing its browser. Retrying (2 of 5)…");
   await expect(hud.getByRole("status")).toHaveText("Clean");
   expect(attempts).toBe(2);
@@ -813,7 +915,7 @@ test("a hunt stopped by its budget, or that never says how it ended, is inconclu
     await page.getByRole("textbox", { name: "Target URL" }).press("Enter");
   };
   await hunt();
-  const hud = page.getByRole("region", { name: "Live Agent Mission · Playwright" });
+  const hud = page.getByRole("complementary", { name: "Live Agent Mission · Playwright" });
   await expect(hud.getByRole("status")).toHaveText("Inconclusive");
   await expect(hud).toHaveAttribute("data-phase", "incomplete");
   await expect(hud).toContainText("No defect in the flows it explored, but this is inconclusive, not clean. The crawl stopped at its action budget after 1 action, so unexplored flows remain. faultline gate blocks a run like this (incomplete_crawl).");
@@ -908,7 +1010,7 @@ test("the pre-flight gate blocks with the CLI's exact fix prompt, clears a clean
 
   // Handing over opens the Mission HUD with its repair offer and keeps the gate's verdict.
   await gate.getByRole("button", { name: /Open in Mission HUD/ }).click();
-  await expect(page.getByRole("region", { name: "Live Agent Mission · Playwright" })).toBeVisible();
+  await expect(page.getByRole("complementary", { name: "Live Agent Mission · Playwright" })).toBeVisible();
   await expect(gate).toHaveAttribute("data-verdict", "blocked");
 
   // A typed URL runs the same gate; a clean crawl ends on Safe to Deploy with the CLI's summary.
@@ -1013,7 +1115,7 @@ test("the mission HUD repairs, verifies, and applies the fix it caught", async (
   await page.goto("/");
   await page.getByRole("textbox", { name: "Target URL" }).fill("http://127.0.0.1:3000");
   await page.getByRole("button", { name: "Run Autonomous Exploration" }).click();
-  const hud = page.getByRole("region", { name: "Live Agent Mission · Playwright" });
+  const hud = page.getByRole("complementary", { name: "Live Agent Mission · Playwright" });
   await expect(hud.getByRole("alert").getByRole("list", { name: "Click trail" }).getByRole("listitem")).toHaveText(["/", "“Place order”"]);
   await expect(hud).not.toContainText("Fix verified");
   await hud.getByRole("button", { name: /Auto-repair \(Sandbox Verified\)/ }).click();
@@ -1151,7 +1253,7 @@ test("mobile layout fits, keyboard controls have a visible focus, and the dialog
   await page.goto("/");
   await expect(runRepair(page)).toBeEnabled();
   await page.keyboard.press("Tab");
-  await expect(page.getByRole("link", { name: "Skip to the selected scenario" })).toBeFocused();
+  await expect(page.getByRole("link", { name: "Skip to main content" })).toBeFocused();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   const missingNames = await page.getByRole("button").evaluateAll((buttons) => buttons.filter((button) => !(button.textContent?.trim() || button.getAttribute("aria-label"))).length);
   expect(missingNames).toBe(0);
@@ -1215,7 +1317,7 @@ test.describe("on a touch screen", () => {
       await expect(pill).toBeVisible();
       await page.getByRole("textbox", { name: "Target URL" }).fill("http://127.0.0.1:3000");
       await page.getByRole("button", { name: "Run Autonomous Exploration" }).tap();
-      const hud = page.getByRole("region", { name: "Live Agent Mission · Playwright" });
+      const hud = page.getByRole("complementary", { name: "Live Agent Mission · Playwright" });
       await expect(hud.getByRole("status")).toHaveText("Defect caught");
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 
@@ -1253,7 +1355,7 @@ test.describe("on a touch screen", () => {
 async function rupturedMission(page: Page) {
   await page.getByRole("textbox", { name: "Target URL" }).fill("http://127.0.0.1:3000");
   await page.getByRole("button", { name: "Run Autonomous Exploration" }).click();
-  const hud = page.getByRole("region", { name: "Live Agent Mission · Playwright" });
+  const hud = page.getByRole("complementary", { name: "Live Agent Mission · Playwright" });
   await expect(hud).toHaveAttribute("data-seismic", "rupture");
   return hud;
 }
@@ -1339,7 +1441,7 @@ test("a journey badge's focus ring is never clipped by the ribbon that scrolls i
   await page.goto("/");
   await page.getByRole("textbox", { name: "Target URL" }).fill("http://127.0.0.1:3000");
   await page.getByRole("button", { name: "Run Autonomous Exploration" }).click();
-  const hud = page.getByRole("region", { name: "Live Agent Mission · Playwright" });
+  const hud = page.getByRole("complementary", { name: "Live Agent Mission · Playwright" });
   await expect(hud.getByRole("status")).toHaveText("Defect caught");
   const ribbon = hud.getByRole("list", { name: "User journey" });
   const badges = ribbon.getByRole("button");
