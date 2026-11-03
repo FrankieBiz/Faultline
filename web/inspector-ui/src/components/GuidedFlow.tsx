@@ -157,6 +157,7 @@ export default function GuidedFlow(props: {
             return (
               <li key={step.n} className="flow-step" data-state={phase} aria-current={step.n === current ? "step" : undefined}>
                 <button type="button" className="flow-button" onClick={step.onClick} disabled={!step.enabled} aria-busy={phase === "active" || undefined}
+                  aria-keyshortcuts={step === next ? "Space" : undefined}
                   aria-labelledby={`flow-${step.n}-t`} aria-describedby={`flow-${step.n}-k flow-${step.n}-d flow-${step.n}-s`}>
                   <span key={phase} className="flow-mark" aria-hidden="true">{phase === "done" ? "✓" : step.n}</span>
                   <span className="flow-copy">

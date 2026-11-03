@@ -361,8 +361,11 @@
       }
     }
 
-    /* Journey ribbon: the recorded run as one chain of nodes. Each node points at its evidence; wraps on wide screens, scrolls sideways when narrow. */
-    .journey { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 0; margin: 0 0 14px; padding: 2px 2px 8px; overflow-x: auto; list-style: none; scrollbar-width: thin; }
+    /*
+     * Journey ribbon: the recorded run as one chain of nodes. Each node points at its evidence; wraps on wide screens, scrolls sideways when narrow.
+     * The padding holds a node's whole focus ring, which the scroller would otherwise clip; the margin keeps the nodes where they sat.
+     */
+    .journey { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 0; margin: -3px -3px 14px; padding: 5px 5px 8px; overflow-x: auto; list-style: none; scrollbar-width: thin; }
     .journey li { display: flex; flex: none; align-items: center; }
     .journey li + li::before { content: "➔"; margin: 0 8px; color: var(--ink-3); font-size: 12px; transition: color 300ms ease-out; }
     .journey li[data-state="done"] + li::before, .journey li[data-state="ok"] + li::before, .journey li[data-state="bad"] + li::before { color: var(--ink-2); }
@@ -551,6 +554,10 @@
       .core-head { grid-template-columns: 1fr; }
       .core-models li { grid-template-columns: minmax(0, 1fr) auto; }
       .core-proof { grid-column: 1 / -1; }
+    }
+    /* Touch at any width, a tablet held upright included: journey nodes and gate tabs meet 44 px. */
+    @media (pointer: coarse) {
+      .node, .gate-tab { min-height: 44px; }
     }
     @media (max-width: 520px) {
       .shell { padding: 0 18px; }

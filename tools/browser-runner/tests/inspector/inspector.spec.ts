@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 const id = "00000000-0000-4000-8000-000000000001";
 const target = "apps/buggyshop-backend/app/routes/checkout.py";
@@ -478,6 +478,9 @@ test("one h1 and one main lead to the guided demo, and Space runs its highlighte
   const steps = flow.getByRole("listitem");
   await expect(steps.nth(0)).toHaveAttribute("aria-current", "step");
   await expect(page.locator(".flow-hint")).toHaveText("Space runs step 1, Break it");
+  // The shortcut is announced on the one step it runs.
+  await expect(flow.locator("button[aria-keyshortcuts]")).toHaveCount(1);
+  await expect(steps.nth(0).getByRole("button")).toHaveAttribute("aria-keyshortcuts", "Space");
   // Space inside a field is text, and on a control it presses that control; neither runs the demo.
   await page.getByLabel("Target URL").first().press("Space");
   expect(calls.crawls).toHaveLength(0);
@@ -487,6 +490,7 @@ test("one h1 and one main lead to the guided demo, and Space runs its highlighte
   await expect.poll(() => calls.crawls.length).toBe(1);
   await expect(steps.nth(0)).toHaveAttribute("data-state", "done");
   await expect(steps.nth(1)).toHaveAttribute("aria-current", "step");
+  await expect(steps.nth(0).getByRole("button")).not.toHaveAttribute("aria-keyshortcuts", /./);
 });
 
 test("the repair step says Meta only for the Meta Model API and explains a blocked engine", async ({ page }) => {
@@ -1079,6 +1083,117 @@ test("mobile layout fits, keyboard controls have a visible focus, and the dialog
   await page.getByRole("button", { name: "Custom URL check" }).click();
   const box = await page.getByRole("dialog", { name: "Custom URL check" }).boundingBox();
   expect(box && box.x >= 0 && box.x + box.width <= 390).toBe(true);
+});
+
+/**
+ * The tappable extent of each control, probed with elementFromPoint from its center outward, so an
+ * invisible hit-area extension counts and a neighbor drawn over it does not.
+ */
+async function hitAreas(controls: Locator) {
+  return controls.evaluateAll((elements) => elements.map((element) => {
+    element.scrollIntoView({ block: "center", inline: "center" });
+    const box = element.getBoundingClientRect();
+    const [cx, cy] = [box.left + box.width / 2, box.top + box.height / 2];
+    const step = 0.25;
+    const reach = (dx: number, dy: number) => {
+      let d = 0;
+      while (d < 40) {
+        const hit = document.elementFromPoint(cx + dx * (d + step), cy + dy * (d + step));
+        if (!hit || !element.contains(hit)) break;
+        d += step;
+      }
+      return d;
+    };
+    const name = element.getAttribute("aria-label") ?? element.textContent?.trim() ?? "";
+    return { name, width: reach(-1, 0) + reach(1, 0) + step, height: reach(0, -1) + reach(0, 1) + step };
+  }));
+}
+
+const hostReadiness = { ...ready,
+  host: { os: "Linux", kernel: "7.2.13-200.fc44.x86_64", runtime_kind: "isolated-browser" },
+  resource_limits: { requested: "required", mode: "cgroup-v2-scope", enforcement_preflight: "passed", reason: null, configured: { memory_max_bytes: 536870912, tasks_max: 64, cpu_quota_percent: 100 } } };
+const caughtCrawl = () => ({ status: 200, ndjson: [
+  { type: "scan", url: "http://127.0.0.1:3000", buttons: 6, forms: 1, links: 3 },
+  { type: "step", n: 1, action: "click", target: "Trail Mug", page: "/", ok: true },
+  { type: "step", n: 2, action: "submit", target: "Place order", page: "/checkout", ok: false, note: "HTTP 500" },
+  { type: "defect", method: "POST", path: "/api/checkout", status: 500, trigger: { kind: "Button", label: "Place order", page: "/checkout" }, fingerprint },
+  { type: "done", steps: 2, defect: true },
+] });
+
+test.describe("on a touch screen", () => {
+  test.use({ hasTouch: true });
+
+  for (const viewport of [{ width: 375, height: 812 }, { width: 768, height: 1024 }]) {
+    test(`at ${viewport.width} px the header capsules and mission HUD fit and every control is a 44 px target`, async ({ page }) => {
+      await page.setViewportSize(viewport);
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await mock(page, { readiness: hostReadiness, crawl: caughtCrawl });
+      await page.goto("/");
+      const header = page.getByRole("banner").first();
+      const engine = header.locator(".readiness");
+      const pill = page.getByRole("button", { name: "Runtime: Linux · cgroup v2" });
+      await expect(engine).toHaveText("Engine Status: Ready");
+      await expect(pill).toBeVisible();
+      await page.getByRole("textbox", { name: "Target URL" }).fill("http://127.0.0.1:3000");
+      await page.getByRole("button", { name: "Run Autonomous Exploration" }).tap();
+      const hud = page.getByRole("region", { name: "Live Agent Mission · Playwright" });
+      await expect(hud.getByRole("status")).toHaveText("Defect caught");
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+
+      // Engine Status is a readout and the pill a control; each stays one line, whole, inside the screen.
+      for (const capsule of [engine, pill, hud.locator(".seis")]) {
+        const box = (await capsule.boundingBox())!;
+        expect(box.x).toBeGreaterThanOrEqual(0);
+        expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
+      }
+      expect((await engine.boundingBox())!.height).toBeLessThan(44);
+      await expect(hud.locator(".seis")).toHaveAttribute("aria-hidden", "true");
+      const frame = (await hud.locator(".hud-frame").boundingBox())!;
+      const trace = (await hud.locator(".seis").boundingBox())!;
+      expect(trace.width).toBeGreaterThanOrEqual(frame.width - 2);
+
+      const controls = page.locator([
+        "header.top :is(button, a)",
+        ".hud-head button", ".hud-ribbon button", ".hud-repair",
+      ].join(", "));
+      expect(await controls.count()).toBeGreaterThanOrEqual(10);
+      const small = (await hitAreas(controls)).filter((area) => area.width < 44 || area.height < 44);
+      expect(small).toEqual([]);
+
+      // The runtime details open by touch and stay inside the screen.
+      await pill.tap();
+      const panel = page.getByRole("group", { name: /Host runtime/ });
+      const box = (await panel.boundingBox())!;
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
+    });
+  }
+});
+
+test("a journey badge's focus ring is never clipped by the ribbon that scrolls it", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await mock(page, { crawl: caughtCrawl });
+  await page.goto("/");
+  await page.getByRole("textbox", { name: "Target URL" }).fill("http://127.0.0.1:3000");
+  await page.getByRole("button", { name: "Run Autonomous Exploration" }).click();
+  const hud = page.getByRole("region", { name: "Live Agent Mission · Playwright" });
+  await expect(hud.getByRole("status")).toHaveText("Defect caught");
+  const ribbon = hud.getByRole("list", { name: "User journey" });
+  const badges = ribbon.getByRole("button");
+  // Reach the first badge by keyboard, so it shows its focus-visible ring.
+  await badges.nth(1).focus();
+  await page.keyboard.press("Shift+Tab");
+  await expect(badges.first()).toBeFocused();
+  const fit = await badges.first().evaluate((badge) => {
+    const style = getComputedStyle(badge);
+    const ring = parseFloat(style.outlineWidth) + parseFloat(style.outlineOffset);
+    const b = badge.getBoundingClientRect();
+    const clip = badge.closest("ol, ul")!.getBoundingClientRect();
+    return { visible: badge.matches(":focus-visible") && style.outlineStyle !== "none" && ring > 0,
+      inside: b.left - ring >= clip.left && b.top - ring >= clip.top && b.bottom + ring <= clip.bottom };
+  });
+  expect(fit).toEqual({ visible: true, inside: true });
 });
 
 test("retries show verifier feedback and non-Meta endpoints are never labeled Meta", async ({ page }) => {
