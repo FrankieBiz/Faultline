@@ -984,7 +984,9 @@ export async function runAutonomousCrawler(options: CrawlOptions): Promise<Crawl
       try {
         failure = await navigate(start.toString());
       } catch (error) {
-        if (error instanceof CrawlTimeout) throw error;
+        // A slow first page that exhausts the crawl budget is a clean timeout,
+        // not an infrastructure error, exactly as the outer catch treats it.
+        if (error instanceof CrawlTimeout || remaining() <= 0) throw new CrawlTimeout();
         return finish({ status: "error", ...summary(), error: `Could not load ${start.toString()}: ${firstLine(error)}` });
       }
       if (failure) return halt(failure);
