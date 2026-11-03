@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { chromium, expect, test, type Browser } from "@playwright/test";
 import { displayPath, normalizeUrl, runAutonomousCrawler, type CrawlEvent } from "../../src/crawler.js";
+import { browserEnvironment } from "../../src/env.js";
 import { ArtifactStore } from "../../src/evidence.js";
 
 /**
@@ -64,6 +65,82 @@ test.describe("cross-platform path handling", () => {
     // Cross-origin URLs are shown in full, and normalizeUrl still folds their backslashes.
     expect(displayPath("https://example.com/x", origin)).toBe("https://example.com/x");
     expect(normalizeUrl("https://example.com/a\\b")).toBe("https://example.com/a/b");
+  });
+});
+
+test.describe("browser process environment containment", () => {
+  const SECRET_NAMES = [
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "DEEPSEEK_API_KEY",
+    "META_API_KEY",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_SESSION_TOKEN",
+    "GITHUB_TOKEN",
+    "GH_TOKEN",
+    "GITLAB_TOKEN",
+    "NPM_TOKEN",
+    "FAULTLINE_CONTROL_TOKEN",
+    "GOOGLE_APPLICATION_CREDENTIALS",
+    "NODE_OPTIONS",
+    "NODE_PATH",
+    "PYTHONPATH",
+    "LD_PRELOAD",
+    "DYLD_INSERT_LIBRARIES",
+  ] as const;
+
+  const hostileSource = (): NodeJS.ProcessEnv => {
+    const source: NodeJS.ProcessEnv = {
+      PATH: "/usr/local/bin:/usr/bin:/bin",
+      HOME: "/home/tester",
+      XDG_CACHE_HOME: "/home/tester/.cache",
+      TMPDIR: "/tmp",
+      LANG: "en_US.UTF-8",
+      LC_ALL: "C.UTF-8",
+      TZ: "UTC",
+      PLAYWRIGHT_BROWSERS_PATH: "/home/tester/.cache/ms-playwright",
+      SYSTEMROOT: "C:\\Windows",
+      WINDIR: "C:\\Windows",
+      USERPROFILE: "C:\\Users\\tester",
+      LOCALAPPDATA: "C:\\Users\\tester\\AppData\\Local",
+      TEMP: "C:\\Users\\tester\\AppData\\Local\\Temp",
+      TMP: "C:\\Users\\tester\\AppData\\Local\\Temp",
+    };
+    for (const name of SECRET_NAMES) source[name] = "fake-secret-sentinel";
+    return source;
+  };
+
+  test("strips every credential and injection vector, keeping only the allowlist", () => {
+    const scrubbed = browserEnvironment(hostileSource());
+    for (const name of SECRET_NAMES) expect(scrubbed, name).not.toHaveProperty(name);
+    expect(Object.values(scrubbed)).not.toContain("fake-secret-sentinel");
+    // OS discovery and browser-cache variables cross the boundary, on any host.
+    expect(scrubbed.SYSTEMROOT).toBe("C:\\Windows");
+    expect(scrubbed.USERPROFILE).toBe("C:\\Users\\tester");
+    expect(scrubbed.HOME).toBe("/home/tester");
+    expect(scrubbed.PLAYWRIGHT_BROWSERS_PATH).toBe("/home/tester/.cache/ms-playwright");
+  });
+
+  test("returns a fresh object and never aliases or mutates the source", () => {
+    const source = { PATH: "/usr/bin", HOME: "/home/tester" } as NodeJS.ProcessEnv;
+    const scrubbed = browserEnvironment(source);
+    scrubbed.PATH = "/attacker";
+    expect(source.PATH).toBe("/usr/bin");
+    expect(browserEnvironment(source).PATH).toBe("/usr/bin");
+  });
+
+  test("drops case and whitespace variants of secret names", () => {
+    for (const name of ["openai_api_key", "OpenAI_Api_Key", "meta_api_key", "Path", "PATH "]) {
+      const scrubbed = browserEnvironment({ [name]: "fake-secret-sentinel", PATH: "/usr/bin" } as NodeJS.ProcessEnv);
+      expect(scrubbed, name).not.toHaveProperty(name);
+      expect(Object.values(scrubbed)).not.toContain("fake-secret-sentinel");
+    }
+  });
+
+  test("omits absent variables entirely", () => {
+    expect(browserEnvironment({ PATH: "/usr/bin" } as NodeJS.ProcessEnv)).toEqual({ PATH: "/usr/bin" });
+    expect(browserEnvironment({} as NodeJS.ProcessEnv)).toEqual({});
   });
 });
 

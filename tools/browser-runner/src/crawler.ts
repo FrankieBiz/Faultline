@@ -34,6 +34,7 @@
 import { performance } from "node:perf_hooks";
 import { chromium, type Browser, type BrowserContext, type Page, type Request, type Response } from "@playwright/test";
 import { truncateUtf8 } from "./evidence.js";
+import { browserEnvironment } from "./env.js";
 
 export const DEFAULT_MAX_ACTIONS = 15;
 export const MAX_CRAWL_ACTIONS = 100;
@@ -937,7 +938,7 @@ export async function runAutonomousCrawler(options: CrawlOptions): Promise<Crawl
   let browser = options.browser;
   const ownsBrowser = browser === undefined;
   try {
-    browser ??= await chromium.launch({ headless: true });
+    browser ??= await chromium.launch({ headless: true, env: browserEnvironment() });
   } catch (error) {
     return finish({ status: "error", ...summary(), error: `Chromium could not launch: ${firstLine(error)}` });
   }
