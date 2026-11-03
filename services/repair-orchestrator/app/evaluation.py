@@ -699,9 +699,9 @@ class IsolatedBackendLauncher:
     kind = "isolated-backend"
 
     def __init__(self) -> None:
-        from app.isolated_runtime import IsolatedRuntime
+        from app.isolation import select_runtime
 
-        self.runtime = IsolatedRuntime()
+        self.runtime = select_runtime()
 
     def session(self, application: Path) -> AbstractAsyncContextManager[BackendSession]:
         """Start one candidate backend in its own namespace and aggregate limits."""

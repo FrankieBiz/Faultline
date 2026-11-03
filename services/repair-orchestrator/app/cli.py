@@ -1850,12 +1850,13 @@ def cmd_demo(args: argparse.Namespace) -> int:
 
 def cmd_run(args: argparse.Namespace) -> int:
     """Execute an operator-selected reproduction with durable sandbox evidence."""
-    if sys.platform != "linux":
-        from app.portable import platform_capabilities
+    from app.portable import detect_host, platform_capabilities
 
+    if detect_host() != "linux":
         capabilities = platform_capabilities()
         print(
-            f"faultline run: full sandbox repair is not available on {capabilities.host}. "
+            f"faultline run: sandboxed project reproduction is not available on "
+            f"{capabilities.host}. "
             f"Active isolation engine: {capabilities.engine} ({capabilities.mode}). "
             f"{capabilities.summary}. "
             "check, test, scan, init, and gate run natively on this platform.",
