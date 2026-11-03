@@ -93,6 +93,22 @@
     .top nav { display: flex; gap: 4px 20px; flex-wrap: wrap; font-size: 13.5px; }
     .top nav a { display: inline-flex; align-items: center; min-height: 44px; color: var(--ink-2); text-decoration: none; transition: color 160ms; }
     .top nav a:hover { color: var(--ink); }
+    /* The section links and the sound toggle share the right edge; the links scroll first when narrow. */
+    .top nav { margin-left: auto; }
+
+    /* Sound cues: off until the visitor turns them on, as in the Inspector. */
+    .sound-toggle {
+      flex: none; display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 13px;
+      border: 1px solid var(--line-strong); border-radius: 999px; background: transparent; color: var(--ink-2); font: 500 12.5px var(--sans); cursor: pointer;
+      transition: color 160ms, border-color 160ms, background-color 160ms, transform 320ms var(--spring);
+    }
+    .sound-toggle[hidden] { display: none; }
+    .sound-toggle:hover { color: var(--ink); border-color: var(--ink-3); }
+    .sound-toggle:active { transform: scale(0.98); background: rgba(255, 255, 255, 0.06); }
+    .sound-toggle[aria-pressed="true"] { border-color: var(--ink-2); background: var(--raised); box-shadow: var(--core-hi); color: var(--ink); }
+    /* Speaker mark: three bars that stand up when sound is on. */
+    .sound-mark { position: relative; width: 12px; height: 12px; background: linear-gradient(currentColor, currentColor) 0 100% / 2px 40% no-repeat, linear-gradient(currentColor, currentColor) 5px 100% / 2px 40% no-repeat, linear-gradient(currentColor, currentColor) 10px 100% / 2px 40% no-repeat; transition: background-size 160ms ease-out; }
+    .sound-toggle[aria-pressed="true"] .sound-mark { background-size: 2px 55%, 2px 100%, 2px 75%; }
 
     /* Hero */
     .hero { position: relative; padding: clamp(40px, 7vw, 76px) 0 48px; }
@@ -171,6 +187,7 @@
     .tour li a { position: relative; display: grid; align-content: start; gap: 6px; height: 100%; padding: 20px 22px 22px 60px; color: var(--ink-2); font-size: 14px; line-height: 1.5; text-decoration: none; transition: background-color 200ms ease-out; }
     .tour li a::before { content: counter(tour); position: absolute; left: 22px; top: 20px; width: 26px; height: 26px; border: 1px solid var(--line-strong); border-radius: 50%; box-shadow: var(--core-hi); color: var(--ink); font: 600 12px/24px var(--mono); text-align: center; font-feature-settings: "tnum" 1; transition: background-color 200ms, color 200ms, border-color 200ms; }
     .tour li a:hover { background: rgba(255, 255, 255, 0.025); }
+    .tour li a:active { background: rgba(255, 255, 255, 0.05); }
     .tour li a:hover::before { border-color: var(--ink); background: var(--ink); color: var(--bg); }
     .tour li a:focus-visible { outline-offset: -3px; border-radius: 0; }
     .tour-t { color: var(--ink-3); font-size: 11px; font-weight: 600; letter-spacing: 0.04em; font-feature-settings: "tnum" 1; }
@@ -305,7 +322,10 @@
     .cmd .copy + pre, .cmd pre:has(+ .copy) { padding-right: 92px; }
     .copy { position: absolute; top: 8px; right: 8px; min-height: 32px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--raised); box-shadow: var(--core-hi); color: var(--ink-2); font: 500 12.5px var(--sans); cursor: pointer; transition: color 160ms, border-color 160ms, transform 320ms var(--spring); }
     .copy:hover { color: var(--ink); border-color: var(--ink-3); }
-    .copy:active { transform: scale(0.98); }
+    .copy:active { transform: scale(0.98); border-color: var(--ink-2); color: var(--ink); }
+    /* Copy feedback in ink, since color is kept for evidence: a solid rim when copied, a dashed one when the browser refused. */
+    .copy[data-state="copied"] { border-color: var(--ink); color: var(--ink); }
+    .copy[data-state="failed"] { border-style: dashed; border-color: var(--ink-2); color: var(--ink); }
     .two { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
     .two ul { margin: 0; padding-left: 18px; color: var(--ink-2); }
     .two li { padding: 3px 0; }
@@ -383,6 +403,8 @@
     .journey [data-state="bad"] .node { border-color: rgba(255, 77, 106, 0.7); background: rgba(255, 77, 106, 0.16); color: var(--red); font-weight: 650; box-shadow: 0 0 18px -6px var(--red); }
     .journey [data-state="ok"] .node { border-color: rgba(61, 255, 162, 0.6); background: var(--green-wash); color: var(--green); font-weight: 650; box-shadow: 0 0 18px -6px var(--green); }
     .node[aria-current="step"] { outline: 1px solid var(--cyan); outline-offset: 2px; }
+    /* The keyboard ring outranks the current-step marker, so a focused current node keeps the full ring. */
+    .node[aria-current="step"]:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
     /* What a journey node points at: a timeline row, the screenshot, the diff, or a fact. */
     .timeline li { transition: background-color 200ms ease-out, box-shadow 200ms ease-out; }
     .timeline li[data-focus] { margin-inline: -8px; padding-inline: 8px; border-radius: 4px; background: var(--cyan-wash); box-shadow: inset 2px 0 0 var(--cyan); }
@@ -515,6 +537,7 @@
     .gate-views { display: inline-flex; padding: 2px; border: 1px solid var(--line); border-radius: 7px; background: rgba(0, 0, 0, 0.35); }
     .gate-views button { min-height: 26px; padding: 0 9px; border: 0; border-radius: 5px; background: transparent; color: var(--ink-3); font: 600 10.5px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; }
     .gate-views button:hover { color: var(--ink); }
+    .gate-views button:active { background: rgba(255, 255, 255, 0.08); color: var(--ink); transform: scale(0.96); }
     .gate-views button[aria-pressed="true"] { background: var(--raised); color: var(--cyan); }
     .gate-payload pre, .gate-code { max-height: 300px; margin: 0; padding: 12px 14px; overflow: auto; color: #d7dbe0; font: 12px/1.65 var(--mono); white-space: pre; overscroll-behavior: contain; }
     .gate-payload pre code, .gate-code code { font-size: inherit; overflow-wrap: normal; }
@@ -527,6 +550,7 @@
     .gate-tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: 14px; background: rgba(0, 0, 0, 0.3); box-shadow: var(--core-hi); }
     .gate-tab { flex: 1 1 auto; min-height: 38px; padding: 0 12px; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--ink-2); font: 500 12px var(--mono); white-space: nowrap; cursor: pointer; transition: color 120ms, background-color 120ms, border-color 120ms; }
     .gate-tab:hover { color: var(--ink); }
+    .gate-tab:active { background: rgba(255, 255, 255, 0.06); color: var(--ink); transform: scale(0.98); }
     .gate-tab[aria-selected="true"] { border-color: var(--line-strong); background: var(--raised); color: var(--ink); box-shadow: var(--core-hi), inset 0 -2px 0 var(--cyan); }
     .gate-panel { margin-top: 12px; border: 1px solid var(--line); border-radius: 10px; background: #000; overflow: hidden; }
     .gate-file { background: var(--raised); }
@@ -557,7 +581,12 @@
     }
     /* Touch at any width, a tablet held upright included: journey nodes and gate tabs meet 44 px. */
     @media (pointer: coarse) {
-      .node, .gate-tab { min-height: 44px; }
+      .node, .gate-tab, .sound-toggle { min-height: 44px; }
+    }
+    /* Forced colors drop backgrounds and shadows, so selected and pressed controls keep a system-color rim. */
+    @media (forced-colors: active) {
+      :is(.gate-pill, .gate-views button, .sound-toggle)[aria-pressed="true"], .gate-tab[aria-selected="true"], .option:has(input:checked) { border: 2px solid Highlight; }
+      .node[aria-current="step"]:not(:focus-visible) { outline-color: Highlight; }
     }
     @media (max-width: 520px) {
       .shell { padding: 0 18px; }
@@ -569,6 +598,9 @@
       .top nav { flex-wrap: nowrap; gap: 16px; min-width: 0; overflow-x: auto; scrollbar-width: none; font-size: 13px; mask-image: linear-gradient(90deg, #000 85%, transparent); }
       .top nav::-webkit-scrollbar { display: none; }
       .top nav a { flex: none; }
+      /* "Sound" alone on a phone; the full label stays the button's accessible name. */
+      .sound-toggle { padding: 0 12px; }
+      .sound-more { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
       .proof { grid-template-columns: 1fr; }
       .tour-head, .tour-more { padding-inline: 18px; }
       .tour li a { padding: 16px 18px 18px 54px; }
@@ -610,6 +642,7 @@
         <a href="#run">Run it</a>
         <a href="https://github.com/FrankieBiz/Faultline">GitHub</a>
       </nav>
+      <button class="sound-toggle" type="button" id="sound-toggle" aria-pressed="false" hidden><span class="sound-mark" aria-hidden="true"></span><span>Sound<span class="sound-more"> cues</span></span></button>
     </div>
   </header>
 
@@ -957,6 +990,7 @@ FAULTLINE_INSPECTOR_URL=http://127.0.0.1:4400 ./scripts/rehearse-demo.sh</code><
       <p>Documents: <a href="https://github.com/FrankieBiz/Faultline#readme">README</a>, <a href="https://github.com/FrankieBiz/Faultline/blob/main/docs/EVALUATION.md">evaluation</a>, <a href="https://github.com/FrankieBiz/Faultline/blob/main/docs/QUALITY_REVIEW.md">quality review</a>, <a href="https://github.com/FrankieBiz/Faultline/blob/main/docs/SUBMISSION.md">technical dossier</a>, <a href="https://github.com/FrankieBiz/Faultline/blob/main/docs/PROJECT_STATUS.md">status</a>.</p>
     </div>
   </footer>
+  <p class="sr-only" id="copy-announce" aria-live="polite"></p>
 
   <script>
     // Patch data is copied from fixtures/evaluation/cases.json, the hash-pinned diffs,
@@ -1124,19 +1158,142 @@ FAULTLINE_INSPECTOR_URL=http://127.0.0.1:4400 ./scripts/rehearse-demo.sh</code><
       if (fromHash) document.getElementById("gates").scrollIntoView();
     }
 
+    // The label is read once, so a second press while "Copied" shows cannot make "Copied" the label.
+    // Buttons named by aria-label never voice their new text, so the outcome is announced as well.
+    const copyAnnounce = document.getElementById("copy-announce");
     function wireCopy(button) {
+      const label = button.textContent;
+      let restore = 0;
       button.addEventListener("click", async () => {
-        const label = button.textContent;
+        clearTimeout(restore);
+        let copied = false;
         try {
           await navigator.clipboard.writeText(button.dataset.copy);
-          button.textContent = "Copied";
-        } catch {
-          button.textContent = "Select and copy";
-        }
-        setTimeout(() => { button.textContent = label; }, 1800);
+          copied = true;
+        } catch {}
+        button.dataset.state = copied ? "copied" : "failed";
+        button.textContent = copied ? "Copied" : "Select and copy";
+        copyAnnounce.textContent = copied ? "Copied to the clipboard." : "Copy was blocked. Select the text and copy it.";
+        restore = setTimeout(() => {
+          button.textContent = label;
+          delete button.dataset.state;
+        }, 1800);
       });
     }
     document.querySelectorAll(".copy").forEach(wireCopy);
+
+    // ---- Sound cues: the Inspector's procedural cues (web/inspector-ui/src/lib/audio-cues.ts), no audio files ----
+    // Off until the visitor turns them on, and they share the Inspector's preference key. Browsers allow sound only
+    // after a user gesture, so no context is made before one. A context that will not run is closed, never left
+    // suspended, and muting closes it too. A Web Audio failure leaves the page silent, never broken.
+    const sound = (() => {
+      const KEY = "faultline.sound";
+      const Context = window.AudioContext || window.webkitAudioContext;
+      /** Audio devices can take a moment to wake; a cue still waiting after this is dropped, not played late. */
+      const RESUME_GRACE_MS = 500;
+      let on = false;
+      let context = null;
+      try { on = Boolean(Context) && localStorage.getItem(KEY) === "on"; } catch {}
+
+      function release() {
+        const closing = context;
+        context = null;
+        if (closing && closing.state !== "closed") Promise.resolve().then(() => closing.close()).catch(() => {});
+      }
+
+      function audio() {
+        if (context) return context;
+        // Before any gesture a new context could only sit suspended; don't make one.
+        if (navigator.userActivation && !navigator.userActivation.hasBeenActive) return null;
+        try { context = new Context({ latencyHint: "interactive" }); } catch { context = null; }
+        return context;
+      }
+
+      /** One oscillator with a fast attack and an exponential decay, so it never clicks. */
+      function voice(ctx, destination, v) {
+        const oscillator = ctx.createOscillator();
+        const envelope = ctx.createGain();
+        oscillator.type = v.type;
+        oscillator.frequency.setValueAtTime(v.frequency, v.start);
+        if (v.glideTo) oscillator.frequency.exponentialRampToValueAtTime(v.glideTo, v.start + v.duration);
+        envelope.gain.setValueAtTime(0.0001, v.start);
+        envelope.gain.exponentialRampToValueAtTime(v.peak, v.start + 0.012);
+        envelope.gain.exponentialRampToValueAtTime(0.0001, v.start + v.duration);
+        oscillator.connect(envelope).connect(destination);
+        oscillator.start(v.start);
+        oscillator.stop(v.start + v.duration + 0.05);
+      }
+
+      function schedule(ctx, cue) {
+        const t = ctx.currentTime + 0.02;
+        const master = ctx.createGain();
+        master.gain.value = 0.16;
+        master.connect(ctx.destination);
+        if (cue === "catastrophe") {
+          // Two hits of a detuned saw pair falling a tritone through a closing low-pass: plainly wrong, never shrill.
+          const filter = ctx.createBiquadFilter();
+          filter.type = "lowpass";
+          filter.Q.value = 6;
+          filter.frequency.setValueAtTime(2600, t);
+          filter.frequency.exponentialRampToValueAtTime(260, t + 0.9);
+          filter.connect(master);
+          for (const [offset, duration] of [[0, 0.22], [0.26, 0.72]]) {
+            for (const detune of [-4, 4]) {
+              voice(ctx, filter, { type: "sawtooth", frequency: 233.08 + detune, glideTo: 164.81, start: t + offset, duration, peak: 0.42 });
+            }
+            voice(ctx, filter, { type: "square", frequency: 116.54, glideTo: 82.41, start: t + offset, duration, peak: 0.2 });
+          }
+          return;
+        }
+        // A major triad arpeggiated up to the octave: the failure resolved into a verified pass.
+        const notes = [523.25, 659.25, 783.99, 1046.5];
+        notes.forEach((frequency, i) => {
+          voice(ctx, master, { type: i === notes.length - 1 ? "sine" : "triangle", frequency, start: t + i * 0.085, duration: 1.2 - i * 0.12, peak: 0.3 });
+        });
+      }
+
+      /** "catastrophe" for an observed failure, "resolve" for a verified pass. */
+      function play(cue) {
+        if (!on) return;
+        const ctx = audio();
+        if (!ctx) return;
+        const start = () => {
+          try { schedule(ctx, cue); } catch { if (ctx === context) release(); }
+        };
+        if (ctx.state === "running") return start();
+        // Suspended by the autoplay policy, or interrupted on iOS: resume now or drop the cue and close the context,
+        // rather than hold the cue until some later click sounds it out of step with the event.
+        const asked = performance.now();
+        const giveUp = setTimeout(() => { if (ctx === context && ctx.state !== "running") release(); }, RESUME_GRACE_MS);
+        Promise.resolve().then(() => ctx.resume()).then(() => {
+          clearTimeout(giveUp);
+          if (ctx === context && ctx.state === "running" && performance.now() - asked <= RESUME_GRACE_MS) start();
+        }, () => {
+          clearTimeout(giveUp);
+          if (ctx === context) release();
+        });
+      }
+
+      function set(next) {
+        on = Boolean(Context) && next;
+        try { localStorage.setItem(KEY, on ? "on" : "off"); } catch {}
+        if (!on) release();
+      }
+
+      return { supported: Boolean(Context), get on() { return on; }, set, play };
+    })();
+
+    const soundToggle = document.getElementById("sound-toggle");
+    if (sound.supported) {
+      soundToggle.hidden = false;
+      soundToggle.setAttribute("aria-pressed", String(sound.on));
+      soundToggle.addEventListener("click", () => {
+        sound.set(!sound.on);
+        soundToggle.setAttribute("aria-pressed", String(sound.on));
+        // The click that turns sound on is the gesture that unlocks audio; confirm with the pass cue.
+        if (sound.on) sound.play("resolve");
+      });
+    }
 
     // ---- Run timeline, shared by the recorded playback and live runs ----
     const STEPS = [
@@ -1317,11 +1474,14 @@ FAULTLINE_INSPECTOR_URL=http://127.0.0.1:4400 ./scripts/rehearse-demo.sh</code><
       if (mode === "rupture") seisHold = performance.now() + 1600;
     }
 
+    const RECORDED_CUES = { "baseline:bad": "catastrophe", "verify:ok": "resolve" };
+
     function onRecordedChange(key, state) {
       stages[key] = state;
       journeyItems.forEach((li, index) => { li.dataset.state = nodeState(index); });
       const seismic = playing && SEISMIC[`${key}:${state}`];
       if (seismic) queueSeismic(...seismic);
+      if (playing && RECORDED_CUES[`${key}:${state}`]) sound.play(RECORDED_CUES[`${key}:${state}`]);
     }
 
     function focusJourney(index) {
@@ -1678,6 +1838,9 @@ FAULTLINE_INSPECTOR_URL=http://127.0.0.1:4400 ./scripts/rehearse-demo.sh</code><
       }
       if (run.state === "finished" || run.state === "failed") {
         renderResult(run);
+        // Only a run watched to its end sounds; a linked run opened later stays quiet. Amber outcomes have no cue.
+        const tone = (OUTCOMES[run.outcome] || ["bad"])[0];
+        if (tone !== "warn") sound.play(tone === "ok" ? "resolve" : "catastrophe");
         stopRun();
         await refreshLive();
         return;
@@ -2073,6 +2236,7 @@ jobs:
         preflight.dataset.verdict = blocked ? "blocked" : "safe";
         paintSeismic(gateSeis, preflight, blocked ? "rupture" : "resonance", blocked ? `Rupture · HTTP ${v.failure.status}` : "Resonance · 0 defects", blocked);
         gateVerdict.replaceChildren(gateResult(run));
+        sound.play(blocked ? "catastrophe" : "resolve");
       };
       if (matchMedia("(prefers-reduced-motion: reduce)").matches) return finish();
       preflight.dataset.verdict = "running";
