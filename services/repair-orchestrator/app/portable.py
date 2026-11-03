@@ -17,6 +17,7 @@ its own containment before readiness.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import re
 import shutil
@@ -34,6 +35,26 @@ IS_LINUX = sys.platform.startswith("linux")
 Host = Literal["linux", "darwin", "windows"]
 
 _DRIVE = re.compile(r"^[A-Za-z]:")
+
+
+async def complete_cleanup[T](task: asyncio.Task[T]) -> T:
+    """Finish owned cleanup despite repeated cancellation, then propagate it.
+
+    The cleanup task must enforce its own budget. Shield alone lets its caller
+    return before cleanup finishes; retain ownership until its result is known.
+    """
+    cancelled: asyncio.CancelledError | None = None
+    while not task.done():
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError as exc:
+            if task.cancelled():
+                raise
+            cancelled = exc
+    result = task.result()
+    if cancelled is not None:
+        raise cancelled
+    return result
 
 
 def normalize_relpath(relative: str) -> str:

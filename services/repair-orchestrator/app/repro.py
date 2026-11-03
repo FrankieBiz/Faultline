@@ -30,6 +30,7 @@ from pydantic import (
     model_validator,
 )
 
+from app.portable import complete_cleanup
 from shared.contracts.models import AssertionResult, ContractModel
 
 Name = Annotated[str, Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_.-]+$")]
@@ -269,28 +270,37 @@ async def _regex_search(pattern: str, text: str) -> bool:
     preserves its syntax while bounding matching to 250 ms, including input I/O.
     Timeout is an infrastructure error, never a reproducible invariant failure.
     """
-    process = await asyncio.create_subprocess_exec(
-        sys.executable,
-        "-I",
-        "-c",
-        "import json,re,sys; p,t=json.load(sys.stdin); print(int(re.search(p,t) is not None))",
-        stdin=asyncio.subprocess.PIPE,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.DEVNULL,
+    spawn = asyncio.create_task(
+        asyncio.create_subprocess_exec(
+            sys.executable,
+            "-I",
+            "-c",
+            "import json,re,sys; p,t=json.load(sys.stdin); print(int(re.search(p,t) is not None))",
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
     )
-    try:
-        async with asyncio.timeout(0.25):
-            stdout, _ = await process.communicate(json.dumps([pattern, text]).encode())
-        if process.returncode != 0 or stdout not in {b"0\n", b"1\n"}:
-            raise RuntimeError("regex_evaluation_failed")
-        return stdout == b"1\n"
-    finally:
+
+    async def cleanup() -> None:
+        # Startup may finish after a timeout/cancellation; it still has an owner.
+        process = await spawn
         if process.returncode is None:
             try:
                 process.kill()
             except ProcessLookupError:
                 pass
         await process.wait()
+
+    try:
+        async with asyncio.timeout(0.25):
+            process = await asyncio.shield(spawn)
+            stdout, _ = await process.communicate(json.dumps([pattern, text]).encode())
+        if process.returncode != 0 or stdout not in {b"0\n", b"1\n"}:
+            raise RuntimeError("regex_evaluation_failed")
+        return stdout == b"1\n"
+    finally:
+        await complete_cleanup(asyncio.create_task(cleanup()))
 
 
 async def evaluate_assertion(step: AssertStep, measurement: Measurement) -> AssertionResult:
