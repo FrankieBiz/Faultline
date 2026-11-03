@@ -29,7 +29,7 @@ import sysconfig
 import tempfile
 import time
 from collections.abc import AsyncIterator, Callable, Iterator, Mapping
-from contextlib import asynccontextmanager, contextmanager
+from contextlib import AsyncExitStack, asynccontextmanager, contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Literal
@@ -513,6 +513,7 @@ class BackendResources:
     process: ManagedProcess | None = None
     client: httpx.AsyncClient | None = None
     resource_limits: ResourceLimits | None = None
+    socket_path: Path | None = None
 
     def logs(self) -> str:
         """Decode the backend's bounded stderr captured so far."""
@@ -1105,6 +1106,8 @@ class IsolatedRuntime:
         """
         endpoint = self._backend_endpoint(generation_id)
         backend.listener = endpoint.socket
+        if endpoint.kind == "named-unix":
+            backend.socket_path = Path(endpoint.address)
         backend.process = await ManagedProcess.start(
             *self._sandbox(application, unit=backend.unit),
             *self._backend_launch_argv(endpoint, application),
@@ -1150,16 +1153,24 @@ class IsolatedRuntime:
 
     async def _stop_backend(self, backend: BackendResources) -> None:
         """Stop the backend, then confirm its scope is gone rather than assuming it."""
-        if backend.process is not None:
-            await backend.process.stop()
-        await self.release_scope(backend.unit)
+        try:
+            if backend.process is not None:
+                await backend.process.stop()
+        finally:
+            await self.release_scope(backend.unit)
 
     @staticmethod
     async def _close_backend(backend: BackendResources) -> None:
-        if backend.listener is not None:
-            backend.listener.close()
-        if backend.client is not None:
-            await backend.client.aclose()
+        try:
+            if backend.listener is not None:
+                backend.listener.close()
+        finally:
+            try:
+                if backend.socket_path is not None:
+                    backend.socket_path.unlink(missing_ok=True)
+            finally:
+                if backend.client is not None:
+                    await backend.client.aclose()
 
     @asynccontextmanager
     async def backend_session(self, application: Path) -> AsyncIterator[BackendHandle]:
@@ -1183,8 +1194,31 @@ class IsolatedRuntime:
             await asyncio.shield(self._release_session(backend))
 
     async def _release_session(self, backend: BackendResources) -> None:
-        await self._stop_backend(backend)
-        await self._close_backend(backend)
+        try:
+            await self._stop_backend(backend)
+        finally:
+            await self._close_backend(backend)
+
+    @staticmethod
+    async def _close_bridge(
+        server: uvicorn.Server | None,
+        task: asyncio.Task[None] | None,
+        listener: socket.socket | None,
+    ) -> None:
+        try:
+            if server is not None:
+                server.should_exit = True
+            if task is not None:
+                try:
+                    async with asyncio.timeout(3):
+                        await asyncio.shield(task)
+                finally:
+                    if not task.done():
+                        task.cancel()
+                        await asyncio.gather(task, return_exceptions=True)
+        finally:
+            if listener is not None:
+                listener.close()
 
     @staticmethod
     def _application_entries(root: Path) -> list[tuple[str, str, str]]:
@@ -1230,7 +1264,12 @@ class IsolatedRuntime:
     @staticmethod
     def _verify_snapshot(snapshot: Snapshot) -> None:
         """Recompute the application export identity immediately before mounting."""
-        entries = IsolatedRuntime._application_entries(snapshot.path)
+        root = IsolatedRuntime._verify_application(snapshot.path)
+        entries = IsolatedRuntime._application_entries(root)
+        directories = {parent for name, _, _ in entries for parent in (root / name).parents}
+        for path in root.rglob("*"):
+            if path.is_dir() and path not in directories:
+                raise CandidateRejected("snapshot_nonapplication_file")
         actual = hashlib.sha256(json.dumps(entries, separators=(",", ":")).encode()).hexdigest()
         target = contained_path(snapshot.path, REGISTRY["scripted_checkout_repair"].target_file)
         if (
@@ -1571,18 +1610,17 @@ class IsolatedRuntime:
         if owned is None:
             return
         # Do not forget ownership or remove the directory until every cleanup succeeds.
-        for process in (owned.runner, owned.frontend):
-            if process is not None:
-                await process.stop()
-        await self._stop_backend(owned.backend)
-        if owned.bridge_server is not None:
-            owned.bridge_server.should_exit = True
-        if owned.bridge_task is not None:
-            async with asyncio.timeout(3):
-                await owned.bridge_task
-        if owned.bridge_socket is not None:
-            owned.bridge_socket.close()
-        await self._close_backend(owned.backend)
+        # Each callback runs even if an earlier teardown raises (including
+        # cancellation). Keep the ownership record on any unconfirmed cleanup.
+        async with AsyncExitStack() as teardown:
+            teardown.push_async_callback(self._close_backend, owned.backend)
+            teardown.push_async_callback(
+                self._close_bridge, owned.bridge_server, owned.bridge_task, owned.bridge_socket
+            )
+            teardown.push_async_callback(self._stop_backend, owned.backend)
+            for process in (owned.frontend, owned.runner):
+                if process is not None:
+                    teardown.push_async_callback(process.stop)
         shutil.rmtree(owned.directory)
         self.generations.pop(job_id)
 
