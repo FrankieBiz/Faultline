@@ -264,10 +264,16 @@ def detect_project_stack(target_dir: Path) -> dict[str, Any]:
 
 def generate_faultline_toml(info: dict[str, Any]) -> str:
     if not info["dev_command"]:
-        raise ValueError(
-            "No runnable service entrypoint detected; configure project.dev_command manually "
-            "(see docs/PROJECT_RUNNER.md)"
-        )
+        info = {
+            **info,
+            "dev_command": "REPLACE_WITH_YOUR_SERVER_COMMAND {port}",
+            "notes": [
+                *info["notes"],
+                "No runnable service entrypoint detected. Replace project.dev_command "
+                "with your server command before using faultline run. "
+                "For faultline check, start your app separately and pass --port.",
+            ],
+        }
 
     # JSON basic strings are TOML-compatible for these values, including control escapes.
     def quote(value: Any) -> str:

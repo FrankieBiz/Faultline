@@ -21,7 +21,9 @@ Use an absolute `--project` path when invoking the source installation from anot
 uv run --project /path/to/Faultline/services/repair-orchestrator --python 3.13 --locked faultline run addition
 ```
 
-The source installation includes the shared contracts in its import path. Shared contracts and the trusted Node/Playwright installation still come from the FaultLine checkout; the wheel is not yet a standalone published distribution.
+The orchestrator sdist and wheel include the shared Python contracts and support `faultline init`, `faultline check`, and CLI help outside the checkout. Install the backend and orchestrator wheels in separate environments: both currently expose an `app` package. Browser commands still need the trusted Node/Playwright installation from the FaultLine checkout; building a wheel does not bundle those tools.
+
+In an empty directory, `faultline init` creates a valid starter configuration with an explicit `REPLACE_WITH_YOUR_SERVER_COMMAND` value. Replace that value before using `faultline run`. To check an already running app, review the generated HTTP invariant and use `faultline check --port <port>`.
 
 ## Configure a project
 

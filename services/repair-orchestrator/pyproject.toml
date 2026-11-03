@@ -29,6 +29,8 @@ dev-mode-dirs = [".", "../.."]
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
 
+[tool.hatch.build.hooks.custom]
+
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

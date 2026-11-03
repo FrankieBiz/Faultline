@@ -1568,13 +1568,20 @@ def test_init_bad_project_reports_error_without_partial_config(
     assert not (tmp_path / "faultline.toml").exists()
 
 
-def test_init_empty_project_refuses_fake_service(
+def test_init_empty_project_creates_explicit_starter(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    from app.cli_check import validate_config
+
     with patch("pathlib.Path.cwd", return_value=tmp_path):
-        assert cmd_init(argparse.Namespace(force=False)) == 1
-    assert "No runnable service entrypoint" in capsys.readouterr().err
-    assert not (tmp_path / "faultline.toml").exists()
+        assert cmd_init(argparse.Namespace(force=False)) == 0
+    config = tmp_path / "faultline.toml"
+    checked = validate_config(config)
+    assert checked.root == tmp_path
+    assert checked.settings.project.dev_command == "REPLACE_WITH_YOUR_SERVER_COMMAND {port}"
+    assert "No runnable service entrypoint detected" in config.read_text()
+    assert "http.server" not in config.read_text()
+    assert capsys.readouterr().err == ""
 
 
 @pytest.mark.parametrize(
