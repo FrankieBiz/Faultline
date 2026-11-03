@@ -5,6 +5,7 @@ import { defineConfig, devices } from "@playwright/test";
  *
  * - `unit` runs the pure oracle logic (assertions, expectations, CLI parsing)
  *   with no browser and no running application.
+ * - `showcase` drives the static judge page, docs/index.html, by keyboard and pointer.
  * - `chromium-e2e` runs the checkout-flow oracle against a live BuggyShop at
  *   `BUGGYSHOP_BASE_URL` in headless Chromium.
  *
@@ -49,6 +50,12 @@ export default defineConfig({
       name: "storefront",
       testDir: "./tests/storefront",
       use: { ...devices["Desktop Chrome"], baseURL: "http://127.0.0.1:3100" },
+    },
+    {
+      // The static judge page (docs/index.html), served from disk by request interception: no server to start.
+      name: "showcase",
+      testDir: "./tests/showcase",
+      use: { ...devices["Desktop Chrome"], baseURL: "http://127.0.0.1:4500" },
     },
     {
       name: "chromium-e2e",

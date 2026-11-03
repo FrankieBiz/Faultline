@@ -16,6 +16,6 @@ npm run dev
 npm run check
 ```
 
-The root launcher generates a shared session credential and starts the stack. Run `make browser` for the Inspector and storefront browser regression suites.
+The root launcher generates a shared session credential and starts the stack. Run `make browser` for the Inspector, storefront, and judge page browser regression suites.
 
 A verified result refers to the isolated candidate and recorded checks. It does not indicate production deployment or compliance certification.
