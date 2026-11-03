@@ -3,7 +3,7 @@
 This document provides complete, cue-by-cue, word-for-word voiceover scripts for **both assembled video cuts** of FaultLine. All footage was recorded on the demo stack and the static showcase, with lower-third provenance captions. The Meta segment plays back a retained job at its recorded timing; it is not a live run.
 
 Choose the version that fits your presentation format:
-- **Track A (Standard Cut · 2:13.8):** Fast-paced, concise walkthrough covering the storefront defect, Meta Model API repair, Linux kernel sandboxing, and the 5-of-6 wrong patch oracle proof.
+- **Track A (Standard Cut · 2:13.8):** Fast-paced, concise walkthrough covering the storefront defect, Meta Model API repair, the Inspector's live candidate pulse and auto-scrolling event log, Linux kernel sandboxing, the 5-of-6 wrong patch oracle proof, the holdout results, and the cross-platform Pre-Flight Gate.
 - **Track B (Extended Master Cut with CLI Flex · 2:39.5):** Includes the extra high-flex terminal clip showing `./faultline gate http://127.0.0.1:3000` discovering UI elements, catching the HTTP 500 error, exiting 1 (`DEPLOYMENT_BLOCKED`), and emitting an exact agent remediation prompt before demonstrating Meta's repair.
 
 Both cuts are strictly under the Hackathon's 3-minute (180-second) ceiling.
@@ -18,8 +18,10 @@ Every figure spoken below comes from a committed record. Re-check this table bef
 | "44 independent checks, 27 of them business rules, on the first attempt" | Same job: one attempt; verification report = 16 checkout + 1 confirmation + 27 regression assertions, all passed. The checks run outside the sandbox, against the sandboxed build. |
 | "512 megabytes of RAM, 64 tasks, and one CPU" | cgroup v2 limits read back from the kernel ([submission](DEVPOST_SUBMISSION.md), [Inspector audit](audits/INSPECTOR_PERFECTION_AUDIT.md#confirmed-correct-no-change)) |
 | "accepts five of six plausible wrong repairs … reject all six" | Authored gauntlet ([evaluation](EVALUATION.md#what-verification-catches)); deterministic fallback and DeepSeek runs, not Meta |
-| "All 1,754 project tests pass" | Commit `82c0b8e`, November 3, 2026: `make check` 1,700 (328 backend/root, 1,238 orchestrator/CLI, 134 runner unit) plus `make browser` 54 (52 Inspector, 2 storefront) ([debate record](audits/ADVERSARIAL_JUDGING_DEBATE.md#verification-run-for-this-review)) |
-| "Pre-Flight Gate … on macOS, Linux, and Windows" | The gate CLI is CI-tested on all three (`platform-smoke.yml`). Sandbox *repair* and its kernel limits are Linux-only; do not narrate native macOS or Windows isolation. |
+| "All 1,872 project tests pass" | Commit `a49c70f`, November 3, 2026: `make check` 1,818 (1,356 orchestrator/CLI, 328 backend/root, 134 runner unit) plus `make browser` 54 (52 Inspector, 2 storefront) ([submission](DEVPOST_SUBMISSION.md#evidence-at-a-glance)) |
+| "On ten unfamiliar holdout defects … eighteen of twenty runs … rejected both wrong patches" | Holdout suite, two trials with DeepSeek `deepseek-v4-pro`, **not Meta** ([evaluation](EVALUATION.md#unfamiliar-defects), [record](evidence/2026-10-28-evaluation-deepseek-v4-pro.json)). Always say "non-Meta model"; Meta has not been run on the holdout. |
+| "a live pulse marks the candidate being verified … the event log auto-scrolls" | Inspector badge "Sandbox verification in progress · Candidate N of up to M" and the event log's "Following live output" lock, added in `1f27e8c` (November 3, 2026). **The November 1 footage predates them:** re-record the Inspector segment on `1f27e8c` or later and update its caption date before using this line. |
+| "Pre-Flight Gate … on macOS, Linux, and Windows" | The gate CLI is CI-tested on all three (`platform-smoke.yml`). The macOS (`sandbox-exec` + `setrlimit`) and Windows (Job Object) isolation engines exist but have not run natively, so sandbox *repair* and its kernel limits are narrated as Linux only; do not narrate native macOS or Windows isolation. |
 | "thirty interactive elements" (Track B) | **Owner to confirm** against the recorded gate output in the local footage; no committed record yet. |
 
 The Inspector segment is a local deterministic-fallback run, not a Meta trial, and its caption says so.
@@ -63,22 +65,22 @@ The Inspector segment is a local deterministic-fallback run, not a Meta trial, a
 ---
 
 ### Segment 4: Local Developer Studio & Kernel Sandboxing (1:27 – 2:09 | 42 seconds)
-- **On-Screen Picture:** Local Inspector Studio on `http://127.0.0.1:4000`. Clicking "Run sandbox repair", watching live stages execute, verifying kernel-enforced aggregate cgroup limits, and inspecting the 44 passing assertions and proof bundle.
+- **On-Screen Picture:** Local Inspector Studio on `http://127.0.0.1:4000`. Clicking "Run sandbox repair", watching live stages execute with the pulsing "Candidate 1 of up to N" badge and the event log following live output, verifying kernel-enforced aggregate cgroup limits, and inspecting the 44 passing assertions and proof bundle.
 - **Lower-Third Caption:** `Local run with the deterministic fallback: not a Meta trial · Inspector on this machine, November 1, 2026 · preset patch, real gates, isolated runtime`
 - **Voiceover Narration (speak from 1:28 to 2:05):**
-  > "In our local developer studio, the candidate executes inside Linux Bubblewrap namespaces under aggregate cgroup v2 limits—strictly enforcing 512 megabytes of RAM, 64 tasks, and one CPU quota, verified directly from the kernel with adversarial OOM-kill probes.
+  > "In our local developer studio, a live pulse marks the candidate being verified, and the event log auto-scrolls to follow every stage. The candidate executes inside Linux Bubblewrap namespaces under aggregate cgroup v2 limits—512 megabytes of RAM, 64 tasks, and one CPU, verified from the kernel with adversarial OOM-kill probes.
   >
-  > The sandbox confines the candidate, but our independent business oracles decide if it's correct. 44 assertions verify the fix, and an offline checksummed evidence bundle is generated. All 1,754 project tests pass."
+  > The sandbox confines the candidate; independent business oracles decide if it's correct. 44 assertions verify the fix, an offline checksummed evidence bundle is generated, and all 1,872 project tests pass."
 
 ---
 
 ### Segment 5: Verification vs Symptom Checks (2:09 – 2:34 | 25 seconds)
-- **On-Screen Picture:** Public Judge Page Patch Explorer. Comparing candidate patches (`early_return_unsaved`, `zero_all_discounts`, `null_coupon_only`). Showing how naive HTTP 201 checks accept 5 of 6 wrong patches, while FaultLine rejects all 6.
+- **On-Screen Picture:** Public Judge Page Patch Explorer. Comparing candidate patches (`early_return_unsaved`, `zero_all_discounts`, `null_coupon_only`). Showing how naive HTTP 201 checks accept 5 of 6 wrong patches, while FaultLine rejects all 6. For the holdout line, cut away to (or overlay) the unfamiliar-defects table from `docs/EVALUATION.md`; the judge page does not show it.
 - **Lower-Third Caption:** `Recorded evaluation results · Corpus runs of October 28, 2026 with the deterministic fallback and DeepSeek, not Meta`
 - **Voiceover Narration (speak from 2:10 to 2:31):**
-  > "Why independent verification matters: on this corpus, a naive status check accepts five of six plausible wrong repairs, including one that returns 201 but silently drops the customer order!
+  > "A naive status check accepts five of six plausible wrong repairs; FaultLine rejects all six. On ten unfamiliar holdout defects, a labeled non-Meta model verified eighteen of twenty runs, and the gates rejected both wrong patches.
   >
-  > FaultLine's independent assertions reject all six. Our cross-platform Pre-Flight Gate blocks broken code before deployment on macOS, Linux, and Windows."
+  > The Pre-Flight Gate runs on macOS, Linux, and Windows."
 
 ---
 
@@ -117,22 +119,22 @@ The Inspector segment is a local deterministic-fallback run, not a Meta trial, a
 ---
 
 ### Segment 3: Local Developer Studio & Kernel Sandboxing (1:02 – 1:44 | 42 seconds)
-- **On-Screen Picture:** Local Inspector Studio on `http://127.0.0.1:4000`. Clicking "Run sandbox repair", watching live stages execute, verifying kernel-enforced aggregate cgroup limits, and inspecting the 44 passing assertions and proof bundle.
+- **On-Screen Picture:** Local Inspector Studio on `http://127.0.0.1:4000`. Clicking "Run sandbox repair", watching live stages execute with the pulsing "Candidate 1 of up to N" badge and the event log following live output, verifying kernel-enforced aggregate cgroup limits, and inspecting the 44 passing assertions and proof bundle.
 - **Lower-Third Caption:** `Local run with the deterministic fallback: not a Meta trial · Inspector on this machine, November 1, 2026 · preset patch, real gates, isolated runtime`
 - **Voiceover Narration (speak from 1:03 to 1:40):**
-  > "In our local developer studio, the candidate executes inside Linux Bubblewrap namespaces under aggregate cgroup v2 limits—strictly enforcing 512 megabytes of RAM, 64 tasks, and one CPU quota, verified directly from the kernel with adversarial OOM-kill probes.
+  > "In our local developer studio, a live pulse marks the candidate being verified, and the event log auto-scrolls to follow every stage. The candidate executes inside Linux Bubblewrap namespaces under aggregate cgroup v2 limits—512 megabytes of RAM, 64 tasks, and one CPU, verified from the kernel with adversarial OOM-kill probes.
   >
-  > The sandbox confines the candidate, but our independent business oracles decide if it's correct. 44 assertions verify the fix, and an offline checksummed evidence bundle is generated. All 1,754 project tests pass."
+  > The sandbox confines the candidate; independent business oracles decide if it's correct. 44 assertions verify the fix, an offline checksummed evidence bundle is generated, and all 1,872 project tests pass."
 
 ---
 
 ### Segment 4: Verification vs Symptom Checks (1:44 – 2:09 | 25 seconds)
-- **On-Screen Picture:** Public Judge Page Patch Explorer. Comparing candidate patches (`early_return_unsaved`, `zero_all_discounts`, `null_coupon_only`). Showing how naive HTTP 201 checks accept 5 of 6 wrong patches, while FaultLine rejects all 6.
+- **On-Screen Picture:** Public Judge Page Patch Explorer. Comparing candidate patches (`early_return_unsaved`, `zero_all_discounts`, `null_coupon_only`). Showing how naive HTTP 201 checks accept 5 of 6 wrong patches, while FaultLine rejects all 6. For the holdout line, cut away to (or overlay) the unfamiliar-defects table from `docs/EVALUATION.md`; the judge page does not show it.
 - **Lower-Third Caption:** `Recorded evaluation results · Corpus runs of October 28, 2026 with the deterministic fallback and DeepSeek, not Meta`
 - **Voiceover Narration (speak from 1:45 to 2:06):**
-  > "Why independent verification matters: on this corpus, a naive status check accepts five of six plausible wrong repairs, including one that returns 201 but silently drops the customer order!
+  > "A naive status check accepts five of six plausible wrong repairs; FaultLine rejects all six. On ten unfamiliar holdout defects, a labeled non-Meta model verified eighteen of twenty runs, and the gates rejected both wrong patches.
   >
-  > FaultLine's independent assertions reject all six. Our cross-platform Pre-Flight Gate blocks broken code before deployment on macOS, Linux, and Windows."
+  > The Pre-Flight Gate runs on macOS, Linux, and Windows."
 
 ---
 
