@@ -48,6 +48,7 @@ if (-not ('FaultLineJob' -as [type])) {
     Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
+using System.Text;
 
 public static class FaultLineJob {
     [StructLayout(LayoutKind.Sequential)]
@@ -90,12 +91,53 @@ public static class FaultLineJob {
         [FieldOffset(4)] public uint Weight;
     }
 
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct STARTUPINFO {
+        public uint cb;
+        public string lpReserved, lpDesktop, lpTitle;
+        public uint dwX, dwY, dwXSize, dwYSize;
+        public uint dwXCountChars, dwYCountChars, dwFillAttribute, dwFlags;
+        public ushort wShowWindow, cbReserved2;
+        public IntPtr lpReserved2, hStdInput, hStdOutput, hStdError;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct PROCESS_INFORMATION {
+        public IntPtr hProcess, hThread;
+        public uint dwProcessId, dwThreadId;
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern bool CreateProcessW(
+        string application, StringBuilder command, IntPtr processAttributes,
+        IntPtr threadAttributes, bool inheritHandles, uint flags, IntPtr environment,
+        string directory, ref STARTUPINFO startup, out PROCESS_INFORMATION process);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern uint ResumeThread(IntPtr thread);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool TerminateProcess(IntPtr process, uint exitCode);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern uint WaitForSingleObject(IntPtr handle, uint milliseconds);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool GetExitCodeProcess(IntPtr process, out uint exitCode);
+
+    [DllImport("kernel32.dll")]
+    private static extern IntPtr GetStdHandle(int standardHandle);
+
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern IntPtr CreateJobObject(IntPtr lpJobAttributes, string lpName);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool SetInformationJobObject(
         IntPtr hJob, int JobObjectInfoClass, IntPtr lpJobObjectInfo, uint cbJobObjectInfoLength);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool QueryInformationJobObject(
+        IntPtr job, int infoClass, IntPtr info, uint size, IntPtr returnLength);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool AssignProcessToJobObject(IntPtr hJob, IntPtr hProcess);
@@ -117,6 +159,16 @@ public static class FaultLineJob {
         return job;
     }
 
+    private static T Query<T>(IntPtr job, int infoClass) where T : struct {
+        int size = Marshal.SizeOf(typeof(T));
+        IntPtr buffer = Marshal.AllocHGlobal(size);
+        try {
+            if (!QueryInformationJobObject(job, infoClass, buffer, (uint)size, IntPtr.Zero))
+                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+            return (T)Marshal.PtrToStructure(buffer, typeof(T));
+        } finally { Marshal.FreeHGlobal(buffer); }
+    }
+
     public static void SetMemoryAndProcessLimits(
         IntPtr job, ulong memoryBytes, uint activeProcesses) {
         var info = new JOBOBJECT_EXTENDED_LIMIT_INFORMATION();
@@ -130,6 +182,12 @@ public static class FaultLineJob {
                 job, 9, handle.AddrOfPinnedObject(), (uint)Marshal.SizeOf(info));
             if (!ok) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
         } finally { handle.Free(); }
+        var observed = Query<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>(job, 9);
+        if (observed.BasicLimitInformation.LimitFlags != JOB_MEMORY_FLAGS ||
+            observed.BasicLimitInformation.ActiveProcessLimit != activeProcesses ||
+            observed.ProcessMemoryLimit.ToUInt64() != memoryBytes ||
+            observed.JobMemoryLimit.ToUInt64() != memoryBytes)
+            throw new InvalidOperationException("Job memory/process limits differ from request.");
     }
 
     public static void SetCpuRate(IntPtr job, uint cpuRate) {
@@ -142,18 +200,75 @@ public static class FaultLineJob {
                 job, 15, handle.AddrOfPinnedObject(), (uint)Marshal.SizeOf(info));
             if (!ok) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
         } finally { handle.Free(); }
+        var observed = Query<JOBOBJECT_CPU_RATE_CONTROL_INFORMATION>(job, 15);
+        if (observed.ControlFlags != CPU_RATE_FLAGS || observed.CpuRate != cpuRate)
+            throw new InvalidOperationException("Job CPU limit differs from request.");
     }
 
-    public static bool Assign(IntPtr job, IntPtr process) => AssignProcessToJobObject(job, process);
-    public static bool Terminate(IntPtr job) => TerminateJobObject(job, 1);
+    // Windows command-line quoting: double backslashes preceding quotes and
+    // the closing quote, preserving empty strings and trailing backslashes.
+    public static string Quote(string value) {
+        var result = new StringBuilder("\"");
+        int slashes = 0;
+        foreach (char character in value) {
+            if (character == '\\') { slashes++; continue; }
+            if (character == '"') result.Append('\\', slashes * 2 + 1);
+            else result.Append('\\', slashes);
+            result.Append(character);
+            slashes = 0;
+        }
+        result.Append('\\', slashes * 2);
+        return result.Append('"').ToString();
+    }
+
+    public static int Run(IntPtr job, string[] argv) {
+        var command = new StringBuilder();
+        foreach (string argument in argv) {
+            if (command.Length != 0) command.Append(' ');
+            command.Append(Quote(argument));
+        }
+        var startup = new STARTUPINFO();
+        startup.cb = (uint)Marshal.SizeOf(startup);
+        startup.dwFlags = 0x100; // STARTF_USESTDHANDLES
+        startup.hStdInput = GetStdHandle(-10);
+        startup.hStdOutput = GetStdHandle(-11);
+        startup.hStdError = GetStdHandle(-12);
+        PROCESS_INFORMATION process;
+        const uint CREATE_SUSPENDED = 0x4;
+        // Job handles are non-inheritable (CreateJobObject receives NULL security
+        // attributes). Only the wrapper owns the kill-on-close handle.
+        if (!CreateProcessW(argv[0], command, IntPtr.Zero, IntPtr.Zero, true,
+                            CREATE_SUSPENDED, IntPtr.Zero, null, ref startup, out process))
+            throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+        try {
+            if (!AssignProcessToJobObject(job, process.hProcess))
+                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+            if (ResumeThread(process.hThread) == uint.MaxValue)
+                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+            if (WaitForSingleObject(process.hProcess, uint.MaxValue) != 0)
+                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+            uint code;
+            if (!GetExitCodeProcess(process.hProcess, out code))
+                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+            return unchecked((int)code);
+        } finally {
+            // Assignment/resume failure must not strand a suspended process.
+            // On normal exit, terminate the remaining job descendants as well.
+            TerminateJobObject(job, 1);
+            TerminateProcess(process.hProcess, 1);
+            try {
+                if (WaitForSingleObject(process.hProcess, 5000) != 0)
+                    throw new InvalidOperationException("Candidate did not terminate.");
+            } finally {
+                CloseHandle(process.hThread);
+                CloseHandle(process.hProcess);
+            }
+        }
+    }
+
     public static bool Close(IntPtr job) => CloseHandle(job);
 }
 '@
-}
-
-function Quote-Arg([string]$s) {
-    if ($s -match '^[a-zA-Z0-9_./\\:\-]+$') { return $s }
-    return '"' + $s.Replace('"', '\"') + '"'
 }
 
 $argv = @()
@@ -166,23 +281,12 @@ try {
         [uint32]$ActiveProcessLimit)
     [FaultLineJob]::SetCpuRate($job, [uint32]$CpuRate)
 
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = $argv[0]
-    $psi.UseShellExecute = $false
-    $psi.CreateNoWindow = $true
-    if ($argv.Count -gt 1) {
-        $psi.Arguments = (($argv | Select-Object -Skip 1 | `
-            ForEach-Object { Quote-Arg $_ }) -join ' ')
-    }
-    $proc = [System.Diagnostics.Process]::Start($psi)
-    [FaultLineJob]::Assign($job, $proc.Handle)
-    $proc.WaitForExit()
-    $code = $proc.ExitCode
+    $code = [FaultLineJob]::Run($job, [string[]]$argv)
     exit $code
 }
 finally {
     # KILL_ON_JOB_CLOSE sweeps every straggler as the job handle closes.
-    [FaultLineJob]::Close($job)
+    [void][FaultLineJob]::Close($job)
 }
 """
 
@@ -271,12 +375,13 @@ class WindowsIsolatedRuntime(IsolatedRuntime):
     ) -> ResourceLimits:
         if self.aggregate_mode == "disabled":
             return disabled_limits()
+        configured = limits or self.limits
         return ResourceLimits(
             mode="windows-job",
-            memory_max_bytes=self.limits.memory_max_bytes,
+            memory_max_bytes=configured.memory_max_bytes,
             memory_swap_max_bytes=0,
-            tasks_max=self.limits.tasks_max,
-            cpu_quota_percent=self.limits.cpu_quota_percent,
+            tasks_max=configured.tasks_max,
+            cpu_quota_percent=configured.cpu_quota_percent,
             verified=True,
         )
 
