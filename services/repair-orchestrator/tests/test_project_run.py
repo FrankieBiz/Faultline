@@ -802,6 +802,9 @@ async def test_browser_scope_and_kernel_artifact_production_limits(
     finally:
         try:
             if process is not None:
-                await process.stop()
+                try:
+                    await process.stop()
+                except TimeoutError:
+                    pass
         finally:
             await runtime.release_scope(unit)
