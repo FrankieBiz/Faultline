@@ -4,6 +4,8 @@ A generic, tested library function. It is not part of repair jobs: a useful
 minimization needs a real oracle that replays each subset against the failing
 backend, and the controller does not yet capture or replay request bodies.
 The result is only as meaningful as the oracle supplied by the caller.
+Source and diff strings are opaque values, never statement or line fragments.
+Oracles receive isolated copies so their mutations cannot alter retained data.
 """
 
 from __future__ import annotations
@@ -46,7 +48,7 @@ class DeltaDebugger:
 
         # Base case: verify the original payload reproduces
         iterations += 1
-        if not await oracle(payload):
+        if not await oracle(copy.deepcopy(payload)):
             return MinimalIncidentPayload(
                 original_payload=payload,
                 minimal_payload=payload,
@@ -81,7 +83,7 @@ class DeltaDebugger:
             for sub in subsets:
                 iterations += 1
                 candidate = {k: current[k] for k in sub}
-                if await oracle(candidate):
+                if await oracle(copy.deepcopy(candidate)):
                     current = candidate
                     keys = list(current.keys())
                     n = 2
@@ -98,7 +100,7 @@ class DeltaDebugger:
                 if not complement_keys:
                     continue
                 candidate = {k: current[k] for k in complement_keys}
-                if await oracle(candidate):
+                if await oracle(copy.deepcopy(candidate)):
                     current = candidate
                     keys = list(current.keys())
                     n = max(n - 1, 2)
@@ -163,7 +165,7 @@ class DeltaDebugger:
         # Try single items
         for item in items:
             test_payload = copy.deepcopy(base_payload)
-            test_payload[list_key] = [item]
+            test_payload[list_key] = copy.deepcopy([item])
             if await oracle(test_payload):
                 return [item]
 
@@ -172,7 +174,7 @@ class DeltaDebugger:
         while idx < len(items) and len(items) > 1:
             candidate_list = items[:idx] + items[idx + 1 :]
             test_payload = copy.deepcopy(base_payload)
-            test_payload[list_key] = candidate_list
+            test_payload[list_key] = copy.deepcopy(candidate_list)
             if await oracle(test_payload):
                 items = candidate_list
             else:

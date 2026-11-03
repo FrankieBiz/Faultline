@@ -9,6 +9,7 @@ import builtins
 import hashlib
 import re
 from dataclasses import dataclass
+from io import StringIO
 
 from shared.contracts.models import PatchValidationResult
 
@@ -111,7 +112,9 @@ def parse_unified_diff(diff: str, source: str, *, target_file: str = TARGET_FILE
         raise PatchPolicyError("Source exceeds 32 KiB")
     if "\x00" in diff or "\r" in diff or "\x00" in source:
         raise PatchPolicyError("NUL bytes and noncanonical diff line endings are forbidden")
-    raw_lines = diff.splitlines(keepends=True)
+    # Unified diffs count physical LF lines. str.splitlines() also splits form
+    # feeds (valid indentation) and Unicode separators inside strings/comments.
+    raw_lines = StringIO(diff).readlines()
     lines: list[str] = []
     for line in raw_lines:
         if line.rstrip("\n") == "\\ No newline at end of file":
@@ -165,7 +168,7 @@ def parse_unified_diff(diff: str, source: str, *, target_file: str = TARGET_FILE
         hunks.append(DiffHunk(old_start, old_count, new_start, new_count, tuple(content)))
     if not hunks or not 1 <= changed_lines <= MAX_CHANGED_LINES:
         raise PatchPolicyError("Require between 1 and 100 changed lines")
-    original = source.splitlines(keepends=True)
+    original = StringIO(source).readlines()
     output: list[str] = []
     position = 0
     for hunk in hunks:
@@ -206,11 +209,11 @@ def recount_unified_diff(diff: str, source: str) -> str:
     is returned unchanged whenever this is ambiguous, so the strict parser
     still decides every proposal.
     """
-    lines = diff.splitlines(keepends=True)
+    lines = StringIO(diff).readlines()
     first = next((index for index, line in enumerate(lines) if line.startswith("@@")), None)
     if first is None:
         return diff
-    original = source.splitlines(keepends=True)
+    original = StringIO(source).readlines()
     output = lines[:first]
     hunks: list[tuple[int, str, list[str]]] = []
     cursor = first
