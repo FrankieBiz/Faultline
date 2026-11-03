@@ -397,14 +397,30 @@ def validate_ast(source: str) -> tuple[bool, bool, str | None]:
         compile(tree, TARGET_FILE, "exec", dont_inherit=True)
     except (SyntaxError, ValueError, RecursionError):
         return False, False, "Candidate contains invalid Python syntax"
-    aliases = _exception_aliases(tree)
-    imported_exceptions = {
-        alias.asname or alias.name
-        for node in ast.walk(tree)
-        if isinstance(node, ast.ImportFrom) and node.module == "fastapi"
-        for alias in node.names
-        if alias.name == "HTTPException"
-    }
+    try:
+        aliases = _exception_aliases(tree)
+        imported_exceptions = {
+            alias.asname or alias.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom) and node.module == "fastapi"
+            for alias in node.names
+            if alias.name == "HTTPException"
+        }
+        return _validate_parsed(tree, aliases, imported_exceptions)
+    except RecursionError:
+        return True, False, "Exception analysis exceeded recursion limits"
+
+
+def _validate_parsed(
+    tree: ast.AST,
+    aliases: dict[str, list[ast.expr]],
+    imported_exceptions: set[str],
+) -> tuple[bool, bool, str | None]:
+    """Enforce the AST capability gates over an already-parsed module.
+
+    Extracted so an adversarial alias chain that overflows the resolver's stack
+    fails closed at a single boundary instead of escaping ``validate_ast``.
+    """
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             # Modules expose transitive capabilities, such as typing.sys.modules.
@@ -455,11 +471,13 @@ class PatchPolicy:
     ) -> PatchValidationResult:
         """Return a canonical gate result without mutating any source file."""
         try:
-            if (
-                base_sha256 is not None
-                and hashlib.sha256(source.encode()).hexdigest() != base_sha256
-            ):
-                raise PatchPolicyError("Proposal base hash is stale")
+            if base_sha256 is not None:
+                # Encoding a lone surrogate raises UnicodeEncodeError, which is
+                # not a PatchPolicyError; reject non-UTF-8 source first so the
+                # gate fails closed with the canonical message.
+                _utf8_size(source)
+                if hashlib.sha256(source.encode()).hexdigest() != base_sha256:
+                    raise PatchPolicyError("Proposal base hash is stale")
             candidate = parse_unified_diff(diff, source).patched_source
             syntax_valid, ast_safe, error = validate_ast(candidate)
             return PatchValidationResult(
