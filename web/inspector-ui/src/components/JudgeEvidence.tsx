@@ -130,6 +130,12 @@ export default function JudgeEvidence({ request, readiness, readinessError }: {
     setOpen(true);
   }, [request]);
 
+  // The panels ride out the closing slide, then unmount, unless the drawer was reopened meanwhile.
+  const onClose = () => {
+    const dialog = ref.current!;
+    void Promise.allSettled(dialog.getAnimations().map((a) => a.finished)).then(() => { if (!dialog.open) setOpen(false); });
+  };
+
   const onTabKey = (event: KeyboardEvent<HTMLButtonElement>) => {
     const index = TABS.findIndex((t) => t.key === tab);
     const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
@@ -141,7 +147,7 @@ export default function JudgeEvidence({ request, readiness, readinessError }: {
   };
 
   return (
-    <dialog ref={ref} className="judge-drawer" aria-labelledby={`${ids}-h`} onClose={() => setOpen(false)}>
+    <dialog ref={ref} className="judge-drawer" aria-labelledby={`${ids}-h`} onClose={onClose}>
       <div className="judge">
         <div className="judge-head">
           <div>
