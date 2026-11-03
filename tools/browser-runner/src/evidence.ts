@@ -231,9 +231,13 @@ export class ArtifactStore {
     await mkdir(this.root, { recursive: true });
   }
 
-  /** Absolute path for a store-chosen relative path. */
+  /**
+   * Absolute path for a store-chosen relative path. Windows backslashes are
+   * treated as separators so the containment check and the resulting path do
+   * not depend on the host platform's `path.sep`.
+   */
   resolve(relativePath: string): string {
-    const resolved = path.resolve(this.root, relativePath);
+    const resolved = path.resolve(this.root, relativePath.replace(/\\/g, "/"));
     const relative = path.relative(this.root, resolved);
     if (relative.startsWith("..") || path.isAbsolute(relative)) {
       throw new Error(`Artifact path escapes the artifacts directory: ${relativePath}`);
@@ -267,7 +271,7 @@ export class ArtifactStore {
     const entry: ArtifactManifestEntry = {
       artifact_id: randomUUID(),
       role,
-      relative_path: relativePath.split(path.sep).join("/"),
+      relative_path: relativePath.replace(/\\/g, "/"),
       content_type: contentType,
       size_bytes: info.size,
       sha256: createHash("sha256").update(bytes).digest("hex"),
