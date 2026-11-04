@@ -114,7 +114,7 @@ The [judge page](https://frankiebiz.github.io/Faultline/) is static and works wi
 
 ![Inspector captured November 4: crawl a preview URL, inspect kernel-enforced runtime limits, or start the guided demo; the repair source is explicitly labeled deterministic fallback, with no model call](docs/assets/inspector.png)
 
-*The same 44-check gate verified Meta's `muse-spark-1.3` patch in 3 of 3 live trials, each on the first attempt at 44/44 ([Oct 31 ledger](docs/evidence/2026-10-31-controller-ledger-meta.md)). This capture is a local run of that pipeline; its patch source is labeled as the deterministic fallback.*
+*The same 44-check gate verified Meta's `muse-spark-1.3` patch in 3 of 3 live trials, each on the first attempt at 44/44 ([Oct 31 ledger](docs/evidence/2026-10-31-controller-ledger-meta.md)). This screenshot shows the local Inspector ready to run, configured with the deterministic fallback.*
 
 ---
 
