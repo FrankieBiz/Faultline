@@ -204,6 +204,8 @@ def test_darwin_backend_launch_argv_uses_host_python(
     finally:
         if endpoint.socket is not None:
             endpoint.socket.close()
+            if endpoint.kind == "named-unix":
+                Path(endpoint.address).unlink(missing_ok=True)
 
 
 def test_windows_sandbox_argv_wraps_powershell(
@@ -299,14 +301,17 @@ async def test_disabled_mode_is_shared_across_adapters(
     assert (await runtime.verify_scope(None, NO_PROCESS)).mode == "disabled"
 
 
-def test_darwin_fails_closed_without_sandbox_exec_or_docker() -> None:
+@pytest.mark.asyncio
+async def test_darwin_fails_closed_without_sandbox_exec_or_docker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from app.isolation.darwin import DarwinIsolatedRuntime
 
+    monkeypatch.setattr(shutil, "which", lambda _: None)
     runtime = DarwinIsolatedRuntime()
-    runtime.sandbox_exec = None
-    runtime.docker = None
-    runtime._docker_mode = True
     assert runtime.limits_mode == "docker"
+    with pytest.raises(RuntimeUnavailable, match="sandbox_exec_and_docker_unavailable"):
+        await runtime.backend_preflight()
 
 
 @pytest.mark.parametrize("name", ["back\\slash", "semi;colon", "dollar$name"])

@@ -287,7 +287,7 @@ def stop_stack(
         raise RuntimeError("Demo launcher also owns other ports; no process was stopped.")
     ensure_build_unused(root, {pid: p for pid, p in snapshot.items() if p not in descendants})
     # A pidfd prevents PID reuse between the identity recheck and delivery of SIGTERM.
-    with os.fdopen(os.pidfd_open(launcher.pid), "rb") as handle:
+    with os.fdopen(os.pidfd_open(launcher.pid), "rb") as handle:  # type: ignore[attr-defined]
         current = _read_process(launcher.pid, {})
         if current is None or (current.started, current.cwd, current.argv) != (
             launcher.started,
@@ -295,7 +295,7 @@ def stop_stack(
             launcher.argv,
         ):
             raise RuntimeError("Demo launcher changed during inspection; retry discovery.")
-        signal.pidfd_send_signal(handle.fileno(), signal.SIGTERM)
+        signal.pidfd_send_signal(handle.fileno(), signal.SIGTERM)  # type: ignore[attr-defined]
     deadline = time.monotonic() + STOP_TIMEOUT
     while time.monotonic() < deadline:
         current_processes = processes()

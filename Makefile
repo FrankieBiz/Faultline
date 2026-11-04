@@ -4,6 +4,10 @@ BACKEND := apps/buggyshop-backend
 UV := uv run --project $(BACKEND) --python 3.13 --locked
 ORCHESTRATOR := services/repair-orchestrator
 ORCHESTRATOR_UV := uv run --project $(ORCHESTRATOR) --python 3.13 --locked
+ifeq ($(shell uname -s),Darwin)
+# Keep pytest's Unix-domain socket paths below macOS's sockaddr_un limit.
+ORCHESTRATOR_TEST_ENV := TMPDIR=/tmp
+endif
 FRONTEND := apps/buggyshop-frontend
 RUNNER := tools/browser-runner
 INSPECTOR := web/inspector-ui
@@ -33,7 +37,7 @@ inspector:
 
 test: frontend runner inspector
 	$(UV) pytest $(BACKEND)/tests tests
-	$(ORCHESTRATOR_UV) pytest $(ORCHESTRATOR)/tests
+	$(ORCHESTRATOR_TEST_ENV) $(ORCHESTRATOR_UV) pytest $(ORCHESTRATOR)/tests
 
 lint:
 	$(UV) ruff check --config $(BACKEND)/pyproject.toml $(BACKEND) shared fixtures tests scripts

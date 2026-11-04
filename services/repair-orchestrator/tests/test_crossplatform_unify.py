@@ -160,6 +160,7 @@ def _project_runtime(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Any:
     return runtime
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux abstract Unix listener")
 @pytest.mark.asyncio
 async def test_launch_service_inherits_an_abstract_unix_listener(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path

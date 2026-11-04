@@ -24,4 +24,7 @@ command -v uv >/dev/null 2>&1 || {
   echo "uv is required. Run make setup in $ROOT (or ./scripts/setup.sh) first." >&2
   exit 1
 }
+# The editable install's .pth file can carry macOS's hidden flag, which makes
+# Python skip it. Use only this installation's source paths for the launcher.
+export PYTHONPATH="$ROOT/services/repair-orchestrator:$ROOT"
 exec uv run --project "$ROOT/services/repair-orchestrator" --python 3.13 --locked --no-env-file python -m app.cli "$@"
