@@ -158,7 +158,12 @@ def test_empty_infinite_stream_cannot_starve_deadline() -> None:
 
         asyncio.run(main())
     """)
-    result = subprocess.run([sys.executable, "-c", script], capture_output=True, timeout=5)
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        timeout=5,
+    )
     assert result.returncode == 0, result.stderr.decode()
 
 

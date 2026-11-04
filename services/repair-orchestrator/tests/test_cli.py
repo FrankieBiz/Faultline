@@ -100,8 +100,12 @@ def test_cli_doctor_runs(capsys: pytest.CaptureFixture[str]) -> None:
         cmd_doctor(args)
     captured = capsys.readouterr().out
     assert "FaultLine Doctor" in captured
-    assert "Linux Bubblewrap" in captured
-    assert "cgroup v2" in captured
+    if sys.platform == "linux":
+        assert "Linux Bubblewrap" in captured
+        assert "cgroup v2" in captured
+    else:
+        assert "Playwright Chromium" in captured
+        assert "Sandbox repair requires Linux" in captured
 
 
 @pytest.mark.parametrize("platform", ["darwin", "win32", "linux"])
@@ -1284,6 +1288,7 @@ def test_check_missing_file_and_unreachable_target(
     assert result["checks"][0]["repair"]["status"] == "not_reproduced"
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux sandbox prerequisite enforcement")
 def test_check_missing_sandbox_fails_even_when_http_passes(
     tmp_path: Path,
     live_http: tuple[str, list[str]],
@@ -2069,6 +2074,7 @@ def test_status_reaches_a_real_orchestrator_on_a_custom_port(
     assert "Status:          ready" in out and "\x1b" not in out
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux /proc process discovery")
 def test_control_token_lookup_matches_the_port_in_a_process_command_line() -> None:
     from app.cli import _process_listens_on
 
@@ -2387,6 +2393,7 @@ def _demo_snapshot(root: Path, ports: tuple[int, ...], *, count: int = 4) -> dic
     return snapshot
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux /proc demo ownership")
 @pytest.mark.parametrize("no_open", [False, True])
 def test_demo_connects_existing_stack(
     tmp_path: Path,
@@ -2443,6 +2450,7 @@ def test_demo_start_uses_env_ports_and_opens_when_ready(
     browser.assert_called_once_with("http://127.0.0.1:4400")
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux /proc demo ownership")
 @pytest.mark.parametrize("restart", [False, True])
 def test_demo_foreign_collision_never_stops_or_starts(
     tmp_path: Path,
@@ -2466,6 +2474,7 @@ def test_demo_foreign_collision_never_stops_or_starts(
     assert "Foreign or unidentifiable service" in capsys.readouterr().err
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux /proc demo ownership")
 @pytest.mark.parametrize("healthy,count", [(True, 2), (False, 4)])
 def test_demo_partial_or_unhealthy_is_not_active(
     tmp_path: Path,
@@ -2487,6 +2496,7 @@ def test_demo_partial_or_unhealthy_is_not_active(
     assert "already active" not in capsys.readouterr().out
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux /proc demo ownership")
 def test_demo_restart_refuses_other_worktree(
     tmp_path: Path,
     demo_ports: tuple[int, ...],
@@ -2507,6 +2517,7 @@ def test_demo_restart_refuses_other_worktree(
     assert "another worktree" in capsys.readouterr().err
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux /proc demo ownership")
 def test_demo_restart_stops_then_launches(
     tmp_path: Path,
     demo_ports: tuple[int, ...],
@@ -2539,6 +2550,7 @@ def test_demo_rejects_duplicate_ports(
     scan.assert_not_called()
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux /proc demo ownership")
 def test_demo_other_port_stack_prevents_rebuilding_same_worktree(
     tmp_path: Path,
     demo_ports: tuple[int, ...],
@@ -2556,6 +2568,7 @@ def test_demo_other_port_stack_prevents_rebuilding_same_worktree(
     assert "no build was started" in capsys.readouterr().err
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux /proc demo ownership")
 def test_demo_start_launcher_and_cleanup_on_interrupt(
     tmp_path: Path, demo_ports: tuple[int, ...]
 ) -> None:
@@ -2599,6 +2612,7 @@ def test_demo_launcher_exit_and_timeout(tmp_path: Path, demo_ports: tuple[int, .
     process.terminate.assert_called_once()
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux /proc and pidfd demo ownership")
 def test_demo_stop_real_owned_launcher_preserves_unrelated_process(tmp_path: Path) -> None:
     from app import cli_demo
 
@@ -2667,6 +2681,7 @@ def test_demo_stop_real_owned_launcher_preserves_unrelated_process(tmp_path: Pat
             unrelated.wait(timeout=5)
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux /proc and pidfd demo ownership")
 @pytest.mark.parametrize("case", ["orphan", "extra-port", "other-launcher", "stale"])
 def test_demo_restart_ownership_refusals_never_signal(
     tmp_path: Path,
@@ -2764,6 +2779,7 @@ def test_demo_launch_lock_contention_prevents_second_build(
             owner.communicate(timeout=5)
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux /proc demo ownership")
 def test_demo_active_connection_bypasses_launch_lock(
     tmp_path: Path,
     demo_ports: tuple[int, ...],
@@ -2786,6 +2802,7 @@ def test_demo_active_connection_bypasses_launch_lock(
         launch.assert_not_called()
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux /proc demo ownership")
 def test_demo_rechecks_build_owners_after_acquiring_launch_lock(
     tmp_path: Path,
     demo_ports: tuple[int, ...],
@@ -2833,6 +2850,7 @@ def test_demo_launch_lock_releases_on_startup_exit(
         pass
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux /proc demo connection and restart")
 def test_demo_ready_releases_lock_before_foreground_wait(
     tmp_path: Path,
     demo_ports: tuple[int, ...],

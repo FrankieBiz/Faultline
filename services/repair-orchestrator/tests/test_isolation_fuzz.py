@@ -195,6 +195,8 @@ def test_darwin_launch_argv_is_shell_free(monkeypatch: pytest.MonkeyPatch, tmp_p
     finally:
         if endpoint.socket is not None:
             endpoint.socket.close()
+            if endpoint.kind == "named-unix":
+                Path(endpoint.address).unlink(missing_ok=True)
 
 
 def test_linux_sandbox_argv_is_shell_free(tmp_path: Path) -> None:

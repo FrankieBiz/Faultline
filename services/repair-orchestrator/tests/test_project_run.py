@@ -462,6 +462,9 @@ async def test_worker_requires_two_identical_failures_before_inference(
         worker.database.close()
 
 
+@pytest.mark.skipif(
+    os.name != "posix" or not Path("/proc").exists(), reason="Linux sandboxed project run"
+)
 def test_cli_uses_selected_config_and_reports_exit_code(
     project: tuple[Path, ProjectRun],
     monkeypatch: pytest.MonkeyPatch,

@@ -6,6 +6,7 @@ import sys
 import textwrap
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, Mock
 
@@ -217,7 +218,11 @@ def test_regex_is_bounded_responsive_and_reaped(exit_kind: str) -> None:
         asyncio.run(main())
     """).replace("EXIT_KIND", repr(exit_kind))
     result = subprocess.run(
-        [sys.executable, "-c", script], capture_output=True, text=True, timeout=5
+        [sys.executable, "-c", script],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+        timeout=5,
     )
     assert result.returncode == 0, result.stderr
 

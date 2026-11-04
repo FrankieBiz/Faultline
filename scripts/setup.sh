@@ -16,16 +16,16 @@ find_uv() {
 }
 if ! find_uv; then
   command -v curl >/dev/null 2>&1 || {
-    echo "curl is required to install uv. Install curl, then run make setup again." >&2
+    echo "curl is required to install uv. Install curl, then run ./faultline setup again." >&2
     exit 1
   }
   echo "Installing uv from https://astral.sh/uv/install.sh ..."
   curl -LsSf https://astral.sh/uv/install.sh | sh
-  find_uv || { echo "uv installation did not provide uv. Add it to PATH and run make setup again." >&2; exit 1; }
+  find_uv || { echo "uv installation did not provide uv. Add it to PATH and run ./faultline setup again." >&2; exit 1; }
 fi
 for program in node npm npx; do
   command -v "$program" >/dev/null 2>&1 || {
-    echo "Missing $program. Install Node.js 24+ (including npm), then run make setup again." >&2
+    echo "Missing $program. Install Node.js 24+ (including npm), then run ./faultline setup again." >&2
     exit 1
   }
 done

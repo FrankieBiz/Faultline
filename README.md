@@ -158,7 +158,8 @@ Open **<https://frankiebiz.github.io/Faultline/>** on any desktop or phone. Ever
 ```bash
 git clone https://github.com/FrankieBiz/Faultline.git
 cd Faultline
-make setup                  # or: bash scripts/setup.sh
+./faultline setup
+./faultline test-all         # full checks and browser suites
 ./faultline doctor
 ```
 
@@ -507,6 +508,8 @@ The retained [Meta repair replay](https://frankiebiz.github.io/Faultline/replay/
 These results describe an authored corpus for one checkout route, not arbitrary applications.
 
 ### Test scorecard
+
+On macOS or Linux, run `./faultline test-all` from the repository to execute `make check` and `make browser`. On macOS, the launcher selects the installed Xcode Command Line Tools automatically. This checks the code and browser flows; the isolated repair integration suite requires Linux.
 
 Verified locally on November 4, 2026. Counts are passing test executions across the three commands; the integration target reruns its containment subset with skips disallowed.
 

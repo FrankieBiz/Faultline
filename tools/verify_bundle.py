@@ -157,7 +157,7 @@ def verify_final_metadata(bundle: dict[str, Any]) -> tuple[list[str], list[str]]
         )
     ):
         errors.append("Invalid or missing generation/provider identity")
-    if errors:
+    if errors or not isinstance(source, dict) or not isinstance(generation, dict):
         return errors, []
     if not isinstance(executions, list) or not executions:
         return ["Missing execution provenance"], []
@@ -182,9 +182,10 @@ def verify_final_metadata(bundle: dict[str, Any]) -> tuple[list[str], list[str]]
             errors.append("Invalid execution provenance")
             continue
         identity = execution.get("execution_id")
-        if not text(identity) or identity in recorded:
+        if not isinstance(identity, str) or not identity.strip() or identity in recorded:
             errors.append("Missing or duplicate execution identity")
-        recorded[identity] = execution
+        else:
+            recorded[identity] = execution
         if (
             execution.get("phase") not in {"baseline", "verification"}
             or not text(execution.get("app_generation_id"))
