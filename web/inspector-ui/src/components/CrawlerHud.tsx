@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { crawlCompleted, stopReasonOf, trailAction } from "@/lib/agent-gate";
 import type { CheckRecord, CrawlEvent, CrawlTelemetry, Tone } from "@/lib/faultline-api";
 import { checkVerdict } from "@/lib/faultline-api";
-import { CtaIcon } from "@/components/CtaIcon";
+import { CtaIcon, Glyph, type GlyphKind } from "@/components/CtaIcon";
 import { CopyButton, useAnnouncer } from "@/components/CopyButton";
 
 type Defect = Extract<CrawlEvent, { type: "defect" }>;
@@ -158,7 +158,7 @@ export function crawlFromCheck(state: CrawlState, record: CheckRecord, title: st
 }
 
 const PHASE_LABEL: Record<CrawlState["phase"], string> = {
-  connecting: "Launching", retrying: "Waking crawler", running: "Hunting", fallback: "Direct check",
+  connecting: "Launching", retrying: "Waking crawler", running: "Crawling", fallback: "Direct check",
   caught: "Defect caught", clean: "Clean", incomplete: "Inconclusive", failed: "Stopped",
 };
 const PHASE_TONE: Record<CrawlState["phase"], Tone | "active"> = {
@@ -198,40 +198,73 @@ export type Seismic = "hunt" | "rupture" | "resonance" | "still";
 const SEISMIC: Record<Tone | "active", Seismic> = { active: "hunt", bad: "rupture", ok: "resonance", warn: "still", idle: "still" };
 
 /**
- * The seismograph traces, drawn at pixel scale: one 200 px tile per trace, repeated wide enough
- * for the widest frame, and scrolled left by exactly one tile so the loop is seamless. Offsets
- * are rounded before they are differenced, so every tile returns exactly to the baseline.
+ * The seismograph traces, drawn at pixel scale on a 40 px band with the baseline at y = 20. They
+ * are illustrative: the shape says what state the mission is in, and the status line says the same
+ * in words; no amplitude here is a measurement. Crawling is one 200 px tile of microseism repeated
+ * wide enough for the widest frame and scrolled by exactly one tile, so its loop is seamless. The
+ * other records are written once, left to right, and then hold still: a rupture with its decaying
+ * coda, a settle back to rest, or a flat line. Offsets are rounded before they are differenced, so
+ * every trace stays inside the band.
  */
 const TILE = 200;
+const WIDTH = TILE * 14;
 const bump = (x: number, at: number, width: number) => Math.exp(-(((x - at) / width) ** 2));
-const spikes = (() => {
-  let seed = 7;
-  const random = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-  return Array.from({ length: TILE / 5 + 1 }, (_, i) => i === 0 || i === TILE / 5 ? 0 : (random() * 2 - 1) * (i % 6 === 3 ? 17 : 10));
-})();
-function trace(offset: (x: number) => number, step: number) {
-  const ys = Array.from({ length: TILE / step + 1 }, (_, i) => Math.round(offset(i * step) * 10) / 10);
-  const tile = ys.slice(1).map((y, i) => `l${step} ${+(y - ys[i]).toFixed(1)}`).join("");
-  return `M0 ${20 + ys[0]}${tile.repeat(14)}`;
+/** A seeded generator, so the record is identical on every render. */
+const seeded = (seed: number) => () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+function draw(ys: number[], step: number, repeat = 1) {
+  const rounded = ys.map((y) => Math.round(y * 10) / 10);
+  const run = rounded.slice(1).map((y, i) => `l${step} ${+(y - rounded[i]).toFixed(1)}`).join("");
+  return `M0 ${20 + rounded[0]}${run.repeat(repeat)}`;
 }
+/** One periodic tile, repeated across the band; it starts and ends on the baseline. */
+const tile = (offset: (x: number) => number, step: number) =>
+  draw(Array.from({ length: TILE / step + 1 }, (_, i) => i === 0 || i === TILE / step ? 0 : offset(i * step)), step, 14);
+/** A single record across the whole width. */
+const record = (offset: (x: number, i: number) => number, step: number) =>
+  draw(Array.from({ length: WIDTH / step + 1 }, (_, i) => offset(i * step, i)), step);
+
+const microseism = (() => {
+  const random = seeded(7);
+  const noise = Array.from({ length: TILE / 4 + 1 }, () => random() * 2 - 1);
+  return (x: number) => 1.6 * noise[Math.round(x / 4)] - 6 * bump(x, 120, 2.4) + 4 * bump(x, 126, 2.6);
+})();
+const rupture = (() => {
+  const random = seeded(11);
+  /*
+   * The envelope: quiet ground, a sharp onset, the strongest shaking, then a long coda that is still
+   * shaking across the widest band. Its period lengthens as it decays, as a real coda does, so the
+   * pen crosses the baseline less often and the baseline stays readable between its crossings.
+   */
+  const envelope = (x: number) => x < 72 ? 1.8 : x < 96 ? 7 : x < 116 ? 7 + (x - 96) * 0.5 : x < 250 ? 17 : 6 + 11 * Math.exp(-(x - 250) / 420);
+  const period = (x: number) => x < 96 ? 7 : x < 250 ? 10 : 10 + Math.min(12, (x - 250) / 50);
+  let phase = 0;
+  return (x: number) => {
+    const y = envelope(x) * Math.sin(phase) * (0.7 + 0.3 * random());
+    phase += (2 * Math.PI * 2) / period(x);
+    return Math.max(-17, Math.min(17, y));
+  };
+})();
+
 const TRACES: Record<Seismic, string> = {
-  // A steady heartbeat while the agent hunts.
-  hunt: trace((x) => -2.5 * bump(x, 62, 7) - 13 * bump(x, 100, 2.2) + 8 * bump(x, 106, 2.4) - 3.5 * bump(x, 140, 9), 1),
-  // Jagged ruptures once a request fails.
-  rupture: trace((x) => spikes[x / 5], 5),
-  // A calm resonance once the fix is verified or nothing was broken.
-  resonance: trace((x) => 3.5 * Math.sin((2 * Math.PI * x) / 100), 2),
-  still: trace(() => 0, TILE),
+  // Microseism with a small arrival per tile while the agent works.
+  hunt: tile((x) => microseism(x), 2),
+  // The request that broke: an onset, the strongest shaking, then a decaying coda.
+  rupture: record(rupture, 2),
+  // A verified fix or a clean run: the last ripples settle back to rest.
+  resonance: record((x) => 9 * Math.exp(-x / 140) * Math.sin((2 * Math.PI * x) / 34), 2),
+  still: record(() => 0, WIDTH),
 };
 
-/** A live waveform of the mission: decorative, since the status line says the same in words. */
+/** The mission's record: decorative, since the status line says the same in words. */
 export function Seismograph({ mode }: { mode: Seismic }) {
   return (
     <div className="seis" data-mode={mode} aria-hidden="true">
-      <svg key={mode} className="seis-trace" width={TILE * 14} height={40} viewBox={`0 0 ${TILE * 14} 40`}>
-        <path className="seis-glow" d={TRACES[mode]} />
+      <svg key={mode} className="seis-trace" width={WIDTH} height={40} viewBox={`0 0 ${WIDTH} 40`}>
+        <path className="seis-glow" d={TRACES[mode]} pathLength={1} />
         <path className="seis-line" d={TRACES[mode]} pathLength={1} />
       </svg>
+      {/* The shape is the mission's state, not a measurement; say so where the eye lands. */}
+      <span className="seis-note">Illustrative trace</span>
     </div>
   );
 }
@@ -259,10 +292,10 @@ function MissionClock({ active, origin }: { active: boolean; origin: number }) {
   return <>{clockText(clock.spent + (clock.since === null ? 0 : clock.now - clock.since))}</>;
 }
 
-/** The icon a journey badge wears for the kind of step it was. */
-const stepIcon = (line: CrawlLine) =>
-  line.kind === "visit" ? "🌐" : line.kind === "fill" ? "⌨️" : /cart|basket|bag/i.test(line.label) ? "🛒"
-    : line.kind === "submit" || /checkout|order|pay/i.test(line.label) ? "📋" : "🖱️";
+/** The glyph a journey badge wears for the kind of step it was. */
+const stepIcon = (line: CrawlLine): GlyphKind =>
+  line.kind === "visit" ? "visit" : line.kind === "fill" ? "fill" : /cart|basket|bag/i.test(line.label) ? "cart"
+    : line.kind === "submit" || /checkout|order|pay/i.test(line.label) ? "order" : "click";
 
 /**
  * Live agent mission HUD: telemetry, a step ticker of the crawler's real actions, and, when a
@@ -297,7 +330,7 @@ export default function CrawlerHud(props: {
   const { steps, actions, screens, trail } = crawlSummary(state);
   const status = missionStatus(state, repair);
   const telemetry = crawler
-    ? [["Screens Explored", screens], ["Actions", actions]] as const
+    ? [["Screens explored", screens], ["Actions", actions]] as const
     : [["Sessions", new Set(steps.map((line) => line.text.split(":")[0])).size], ["Requests", steps.length]] as const;
   const seismic = SEISMIC[status.tone];
   const working = running || Boolean(repair?.running || repair?.applying);
@@ -305,9 +338,9 @@ export default function CrawlerHud(props: {
   const at = (line: CrawlLine) => state.lines.indexOf(line);
   const first = trail[0];
   const journey = crawler && defect && first ? [
-    ...(first.kind !== "visit" && first.page ? [{ icon: "🌐", label: first.page, line: at(first), impact: false }] : []),
+    ...(first.kind !== "visit" && first.page ? [{ icon: "visit" as GlyphKind, label: first.page, line: at(first), impact: false }] : []),
     ...trail.map((line) => ({ icon: stepIcon(line), label: line.label, line: at(line), impact: false })),
-    { icon: "💥", label: `${defect.method} ${defect.path}${defect.status ? ` ${defect.status}` : ""}`, line: at(trail.at(-1)!), impact: true },
+    { icon: "rupture" as GlyphKind, label: `${defect.method} ${defect.path}${defect.status ? ` ${defect.status}` : ""}`, line: at(trail.at(-1)!), impact: true },
   ] : [];
   const node = picked?.mission === state.startedAt ? picked.node : null;
   // The picked badge's step, as an index into `state.lines`.
@@ -334,17 +367,17 @@ export default function CrawlerHud(props: {
   return (
     <aside className="hud shell" role="complementary" aria-labelledby="hud-h" data-phase={state.phase} data-seismic={seismic}>
       <div className="hud-frame">
-        <Seismograph mode={seismic} />
         <div className="hud-head">
-          <p className="hud-key" id="hud-h">Live Agent Mission · {crawler ? "Playwright" : "Direct HTTP check"}</p>
+          <p className="hud-key" id="hud-h">Live agent mission<span className="hud-source"> · {crawler ? "Playwright" : "Direct HTTP check"}</span></p>
           <code className="hud-target">{state.target}</code>
           <button type="button" className="btn quiet tool hud-close" onClick={props.onDismiss}
             aria-label={running ? "Stop the agent and close" : "Close the mission"}>{running ? "Stop" : "Close"}</button>
         </div>
+        <Seismograph mode={seismic} />
 
         <dl className="hud-telemetry">
           <div data-tone={status.tone}>
-            <dt>Agent Status</dt>
+            <dt>Agent status</dt>
             <dd><span className="hud-dot" aria-hidden="true" /><span role="status">{status.label}</span></dd>
           </div>
           {telemetry.map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{value}</dd></div>)}
@@ -371,16 +404,16 @@ export default function CrawlerHud(props: {
                 {line.text}
                 {line.ok && line.kind !== "visit" && line.kind !== "scan" && line.kind !== "session" && <span className="muted"> (OK)</span>}
                 {line.page && <span className="muted"> on {line.page}</span>}
-                {line.caught && <strong className="hud-caught"> → <span aria-hidden="true">💥 </span>CAUGHT DEFECT: {line.caught}</strong>}
+                {line.caught && <strong className="hud-caught"> → Defect caught: {line.caught}</strong>}
               </li>
             ))}
           </ol>
         )}
-        {running && state.phase !== "retrying" && <p className="hud-cursor" aria-hidden="true">{state.phase === "fallback" ? "sending both sessions" : "agent hunting for bugs"}</p>}
+        {running && state.phase !== "retrying" && state.lines.length > 0 && <p className="hud-cursor" aria-hidden="true">{state.phase === "fallback" ? "Sending both sessions…" : "Waiting for the next step…"}</p>}
 
         {state.phase === "clean" && (
           <p className="hud-shield">
-            <span aria-hidden="true">✅ </span>
+            <Glyph kind="check" className="hud-shield-mark" />
             {crawler
               ? `Exploration finished clean. 0 defects found across ${plural(screens, "screen")} and ${plural(actions, "action")}. A smoke signal for the flows explored, not a business-logic check.`
               : `Clean. 0 defects found in ${plural(telemetry[0][1], "fresh session")}.`}
@@ -404,7 +437,7 @@ export default function CrawlerHud(props: {
                     <button type="button" className="hud-node" data-impact={badge.impact || undefined}
                       aria-current={node === i ? "step" : undefined} onClick={() => reveal(i)}
                       title={badge.impact ? "Show the step that broke in the agent log" : "Show this step in the agent log"}>
-                      <span aria-hidden="true">{badge.icon}</span><span>{badge.label}</span>
+                      <Glyph kind={badge.icon} /><span>{badge.label}</span>
                     </button>
                   </li>
                 ))}
@@ -427,7 +460,7 @@ export default function CrawlerHud(props: {
               <div className="hud-defect-actions">
                 <button type="button" className="btn primary hud-repair" onClick={props.onRepair} disabled={repairBlocked !== null}
                   aria-describedby={repairBlocked ? "hud-blocked" : undefined}>
-                  <span>{repairLabel} <span className="hud-repair-sub">(Sandbox Verified)</span></span><CtaIcon />
+                  <span>{repairLabel} <span className="hud-repair-sub">(sandbox verified)</span></span>
                 </button>
                 {repairBlocked && <span id="hud-blocked" className="hud-blocked">{repairBlocked}</span>}
               </div>
@@ -457,9 +490,9 @@ export default function CrawlerHud(props: {
                       aria-busy={repair.applying || undefined} aria-describedby="hud-apply-d">
                       {/* Keyed so each label change cross-fades in instead of snapping. */}
                       <span key={repair.applying ? "busy" : "idle"} className="btn-label">
-                        {repair.applying ? "Applying the verified fix…" : "Apply Verified Fix to Demo Store"}
+                        {repair.applying ? "Applying the verified fix…" : "Apply verified fix to demo store"}
                       </span>
-                      {repair.applying ? <span className="btn-icon btn-spin" aria-hidden="true" /> : <CtaIcon kind="check" />}
+                      {repair.applying && <span className="btn-spin" aria-hidden="true" />}
                     </button>
                     <span id="hud-apply-d" className="hud-apply-note">Writes only this verified diff, then re-checks checkout live. Revert store undoes it.</span>
                   </div>

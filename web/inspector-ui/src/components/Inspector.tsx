@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import AgentGatePanel from "@/components/AgentGatePanel";
 import CliGuide from "@/components/CliGuide";
 import ConfirmButton from "@/components/ConfirmButton";
+import { Glyph } from "@/components/CtaIcon";
 import CrawlerHud, { applyCrawlEvent, crawlFromCheck, crawlInFlight, startCrawl, type CrawlState, type MissionRepair } from "@/components/CrawlerHud";
 import { STEP_LABELS, currentStep } from "@/components/Evidence";
 import GuidedFlow, { type FlowRun, type StoreHunt } from "@/components/GuidedFlow";
@@ -786,18 +787,18 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
           <div className="top-tools">
             <span className="readiness" data-tone={readinessTone}>
               <span className="readiness-dot" aria-hidden="true" />
-              <span className="readiness-key">Engine Status:</span> {engineLabel}
+              <span className="readiness-key">Engine status:</span> {engineLabel}
             </span>
             <RuntimePill readiness={readiness} error={readinessError} />
             <button type="button" className="btn tool judge-open" onClick={() => setJudgeRequest((n) => n + 1)} aria-keyshortcuts="J" aria-haspopup="dialog">
               <span className="judge-mark" aria-hidden="true" />Judge evidence <kbd aria-hidden="true">J</kbd>
             </button>
-            <a className="btn quiet tool gate-link" href="#gate"><span className="gate-lock" aria-hidden="true" />Pre-Flight Gate</a>
+            <a className="btn quiet tool gate-link" href="#gate"><span className="gate-lock" aria-hidden="true" />Pre-flight gate</a>
             <button type="button" className="btn quiet tool" onClick={() => setGuideRequest((n) => n + 1)} aria-keyshortcuts="?" aria-haspopup="dialog">
               CLI guide <kbd aria-hidden="true">?</kbd>
             </button>
-            <button type="button" className="btn quiet tool" onClick={toggleSound} aria-pressed={sound}>
-              <span className="sound-mark" data-on={sound} aria-hidden="true" />Sound cues
+            <button type="button" className="btn quiet tool sound-toggle" onClick={toggleSound} aria-pressed={sound} aria-label="Sound cues" title="Sound cues">
+              <Glyph kind={sound ? "sound" : "muted"} />
             </button>
           </div>
         </div>
@@ -807,7 +808,7 @@ export default function Inspector({ storefrontUrl }: { storefrontUrl: string }) 
         <HeroArena storefrontUrl={storefrontUrl} apiUrl={store?.url ?? null}
           busy={busy !== null || quickTesting || flowAction !== null || crawlRunning}
           hunting={crawlRunning && flowAction === null && crawlOrigin !== "gate"} pinging={quickTesting && !crawlRunning}
-          onHunt={autoBreak} onPing={async (url) => { await quickTest(url); }} repairCore={repairCore} engineTone={readinessTone} />
+          onHunt={autoBreak} onPing={async (url) => { await quickTest(url); }} repairCore={repairCore} />
         {(storePack || !listing) && <GuidedFlow store={store} error={storeError} storefrontUrl={storefrontUrl}
           liveCheck={liveCheck} canCheckLive={liveCheckout !== null} run={flowRun} hunt={hunt}
           verifiedJobId={verified && job ? job.id : null}

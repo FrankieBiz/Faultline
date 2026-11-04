@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>FaultLine share card: the 201 trap</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+  /*
+   * The 201 trap: one authored wrong fix that returns HTTP 201 and never saves the order.
+   *   ?layout=portrait   1080x1350 (LinkedIn image post, 4:5)
+   *   ?layout=landscape  1200x675  (X image post, 16:9)
+   * Copy and counts are filled from the evaluation record and the fixture diff at render time.
+   */
+  .canvas { display: flex; flex-direction: column; padding: var(--pad-y) var(--pad-x); }
+  .head { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+  .scope { color: var(--ink-3); font-weight: 450; }
+  .headline { margin-top: var(--gap-head); }
+
+  .panels { display: grid; gap: var(--gap-panel); margin-top: var(--gap-panels); }
+  .panel {
+    display: flex; flex-direction: column; min-width: 0;
+    border: 1px solid var(--hair-strong); border-radius: var(--r-l); background: var(--drum); padding: var(--panel-pad);
+  }
+  .who { display: flex; align-items: baseline; gap: 12px; color: var(--ink-2); font-weight: 600; }
+  .who code { font-family: var(--mono); font-stretch: 87.5%; font-weight: 500; color: var(--ink); }
+  .who .tag { color: var(--ink-3); font-weight: 450; }
+  .claim { margin-top: var(--gap-claim); font-weight: 650; font-stretch: 92%; letter-spacing: -0.012em; line-height: 1.12; }
+  .claim span { display: block; }
+
+  .code {
+    margin-top: var(--gap-claim); padding: var(--code-pad); border-radius: var(--r-m); background: var(--well);
+    font-family: var(--mono); font-stretch: 80%; font-weight: 420; line-height: 1.55; white-space: pre; overflow: hidden; color: var(--ink-3);
+  }
+  .code span { display: block; }
+  .code .add { color: var(--ink); }
+
+  .checks { list-style: none; display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap-list) 20px; margin-top: var(--gap-claim); }
+  .checks li { display: flex; align-items: center; gap: 0.6em; font-family: var(--mono); font-stretch: 87.5%; font-weight: 450; color: var(--ink-2); white-space: nowrap; }
+  .checks .mark { color: var(--rupture); }
+
+  .panel > :has(+ .verdict) { margin-bottom: var(--gap-verdict); }
+  .verdict { margin-top: auto; padding-top: var(--gap-verdict); display: flex; align-items: center; justify-content: space-between; gap: 16px; border-top: 1px solid var(--hair); }
+  .verdict .by { color: var(--ink-2); font-weight: 600; }
+  .stamp {
+    display: inline-flex; align-items: center; gap: 0.4em; padding: 0.22em 0.55em 0.26em; border-radius: var(--r-m);
+    font-weight: 700; font-stretch: 88%; letter-spacing: -0.01em; line-height: 1;
+  }
+  .stamp.held { background: var(--held-tint); color: var(--held); box-shadow: inset 0 0 0 1px rgba(240, 180, 60, 0.45); }
+  .stamp.reject { background: var(--rupture-tint); color: var(--rupture); box-shadow: inset 0 0 0 1px rgba(255, 90, 78, 0.45); }
+
+  .still { display: flex; align-items: center; gap: 0.5em; margin-top: var(--gap-still); color: var(--ink-2); font-weight: 500; }
+  .still .mark { color: var(--verified); }
+  .foot { margin-top: var(--gap-foot); }
+  .tally { font-weight: 640; font-stretch: 92%; letter-spacing: -0.012em; line-height: 1.18; text-wrap: balance; }
+  .tally b { font-weight: 700; }
+  .src { position: absolute; right: var(--pad-x); bottom: var(--pad-y); font-family: var(--mono); font-stretch: 80%; color: var(--ink-3); white-space: nowrap; }
+
+  /*
+   * Portrait: one report. The patch on top, then the two verdicts side by side as rows
+   * (naive check, FaultLine), then what FaultLine observed.
+   */
+  .portrait {
+    --pad-x: 72px; --pad-y: 64px; --gap-head: 36px; --gap-panels: 34px; --gap-panel: 0px; --panel-pad: 26px 32px 24px;
+    --gap-claim: 14px; --code-pad: 13px 18px; --gap-list: 12px; --gap-verdict: 18px; --gap-foot: 30px; --gap-still: 12px;
+  }
+  .portrait .wordmark { font-size: 30px; }
+  .portrait .scope { font-size: 20px; }
+  .portrait .headline { font-size: 122px; }
+  .portrait .who { font-size: 20px; }
+  .portrait .claim { font-size: 42px; }
+  .portrait .code { font-size: 15.5px; line-height: 1.5; }
+  .portrait .checks { grid-template-columns: repeat(3, auto); justify-content: space-between; }
+  .portrait .checks li { font-size: 20px; }
+  .portrait .still { font-size: 22px; }
+  .portrait .verdict .by { font-size: 28px; }
+  .portrait .stamp { font-size: 32px; }
+  .portrait .tally { font-size: 35px; }
+  .portrait .src { font-size: 15px; }
+  .portrait #patch { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+  .portrait #faultline { border-top: 0; border-top-left-radius: 0; border-top-right-radius: 0; padding-top: 0; }
+  .portrait #faultline .who { display: none; }
+  .portrait #faultline .verdict { order: -1; margin-top: 0; padding-top: 18px; padding-bottom: 6px; border-top: 1px solid var(--hair); }
+  .portrait .verdict { padding-bottom: 0; }
+
+  /* Landscape: the patch and FaultLine side by side, verdicts aligned along the bottom. */
+  .landscape {
+    --pad-x: 64px; --pad-y: 50px; --gap-head: 28px; --gap-panels: 28px; --gap-panel: 18px; --panel-pad: 22px 24px 20px;
+    --gap-claim: 12px; --code-pad: 10px 14px; --gap-list: 8px; --gap-verdict: 14px; --gap-foot: 24px; --gap-still: 8px;
+  }
+  .landscape .panels { grid-template-columns: 1fr 1fr; }
+  .landscape .wordmark { font-size: 24px; }
+  .landscape .scope { font-size: 16px; }
+  .landscape .headline { font-size: 92px; }
+  .landscape .who { font-size: 16px; }
+  .landscape .claim { font-size: 31px; }
+  .landscape .checks li { font-size: 15.5px; }
+  .landscape .still { font-size: 17px; }
+  .landscape .verdict .by { font-size: 20px; }
+  .landscape .stamp { font-size: 26px; }
+  .landscape .tally { font-size: 27px; }
+  .landscape .src { font-size: 12.5px; }
+  .landscape .code { display: none; }
+</style>
+</head>
+<body>
+<main class="canvas" id="canvas">
+  <div class="head" data-key>
+    <span class="wordmark" id="wordmark">FaultLine</span>
+    <span class="scope" id="scope">Authored wrong fixes, one checkout route</span>
+  </div>
+  <h1 class="headline display" data-key>Don’t trust the 201.</h1>
+
+  <div class="panels">
+    <section class="panel" id="patch" data-key data-fit>
+      <p class="who"><code>early_return_unsaved</code><span class="tag">authored test case</span></p>
+      <p class="claim"><span>Returns HTTP 201 Created.</span><span class="rupture">Never saves the order.</span></p>
+      <pre class="code" id="diff" aria-hidden="true"></pre>
+      <div class="verdict"><span class="by">Naive check: did it return 201?</span><span class="stamp held" id="naive"></span></div>
+    </section>
+    <section class="panel" id="faultline" data-key data-fit>
+      <p class="who">Same patch through FaultLine</p>
+      <p class="claim" id="failed-claim"></p>
+      <ul class="checks" id="checks"></ul>
+      <div class="verdict"><span class="by">FaultLine</span><span class="stamp reject" id="reject"></span></div>
+    </section>
+  </div>
+
+  <div class="foot">
+    <p class="tally" id="tally" data-key></p>
+    <p class="still" id="still" data-key></p>
+  </div>
+  <p class="src" data-key>Source: fixtures/evaluation, docs/evidence/2026-10-28-evaluation-*.json</p>
+</main>
+<script type="module">
+  import { loadEvaluation, settle, MARK, WORDMARK_GLYPH } from "./seismogram.js";
+
+  const params = new URLSearchParams(location.search);
+  const layout = params.get("layout") === "landscape" ? "landscape" : "portrait";
+  document.getElementById("canvas").classList.add(layout);
+
+  try {
+    const ev = await loadEvaluation();
+    const diff = await (await fetch("/fixtures/evaluation/adversarial/early_return_unsaved.diff")).text();
+    document.getElementById("wordmark").insertAdjacentHTML("afterbegin", WORDMARK_GLYPH);
+
+    // The added lines and the line they return ahead of, verbatim from the fixture.
+    const lines = diff.split("\n");
+    const first = lines.findIndex((l) => l.startsWith("+") && !l.startsWith("+++"));
+    let last = first;
+    while (lines[last + 1] && lines[last + 1].startsWith("+")) last += 1;
+    const shown = lines.slice(first, last + 2);
+    const esc = (t) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+    document.getElementById("diff").innerHTML = shown
+      .map((l) => `<span class="${l.startsWith("+") ? "add" : "ctx"}">${esc(l) || " "}</span>`).join("");
+
+    const n = ev.trapFailing.length;
+    document.getElementById("naive").innerHTML = `${MARK.held}Accept`;
+    document.getElementById("reject").innerHTML = `${MARK.fail}Reject`;
+    document.getElementById("failed-claim").innerHTML = `<span>${n} of ${ev.businessChecks} business checks failed.</span>`;
+    document.getElementById("checks").innerHTML = ev.trapFailing.map((id) => `<li>${MARK.fail}${id}</li>`).join("");
+    document.getElementById("tally").innerHTML =
+      `A naive status check accepted <b class="held">${ev.naiveAccepted} of ${ev.wrong}</b> authored wrong fixes. FaultLine accepted <b class="verified">${ev.faultlineAccepted}</b>.`;
+    document.getElementById("still").innerHTML =
+      `${MARK.pass}FaultLine still accepted ${ev.correctAccepted === ev.correct && ev.correct === 2 ? "both" : `${ev.correctAccepted} of ${ev.correct}`} correct fixes.`;
+
+    await settle();
+    window.__og = { ok: true, layout };
+  } catch (error) {
+    window.__og = { ok: false, error: String(error && error.stack || error) };
+  }
+</script>
+</body>
+</html>

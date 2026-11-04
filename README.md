@@ -69,9 +69,9 @@ If you have 3 minutes to evaluate FaultLine, follow this sequence on the **[judg
 
 1. **Watch the recorded Meta repair (top of the page).**
    Click **Play the recorded Meta repair**. The retained job replays at its recorded timing (13.0 s): the checkout rupture, Meta's `muse-spark-1.3` single-file diff, the policy check, the sandboxed run, and 44 authored checks turning green. Nothing is merged or deployed.
-2. **Replay the Pre-Flight Agent Gate (section 01).**
+2. **Replay the deploy gate (the "Deploy gate" section).**
    Click **Test Broken Site**. The recorded verdict is `DEPLOYMENT_BLOCKED` with the click-by-click reproduction trail and the fix prompt an agent would receive. **Test Clean Site** replays a pass recorded under the earlier contract, before the gate reported whether exploration finished; it is captioned as such.
-3. **Try to fool the gates (section 05).**
+3. **Try to fool the gates (directly below the Meta repair).**
    Pick wrong patches from the authored corpus. A naive "returns HTTP 201" check accepts 5 of 6; FaultLine's business assertions reject all six. The sandbox confines each run; the assertions are what catch the regression.
 
 ---

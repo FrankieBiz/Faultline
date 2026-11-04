@@ -1,0 +1,74 @@
+/*
+ * Share-card tokens. These mirror DESIGN.md (soot and ink, three evidence hues, Zalando Sans and
+ * Martian Mono). Paths are root-relative: render.mjs serves the repository root, so the same URLs
+ * work under `python3 -m http.server` run from the repository root.
+ */
+@font-face {
+  font-family: "Zalando Sans";
+  src: url("/docs/assets/fonts/zalando-sans-latin-wdth-wght.woff2") format("woff2");
+  font-weight: 200 900;
+  font-stretch: 75% 125%;
+  font-display: block;
+}
+@font-face {
+  font-family: "Martian Mono";
+  src: url("/docs/assets/fonts/martian-mono-latin-wdth-wght.woff2") format("woff2");
+  font-weight: 100 800;
+  font-stretch: 75% 112.5%;
+  font-display: block;
+}
+
+:root {
+  --soot: #0b0b0a;
+  --drum: #141412;
+  --well: #070706;
+  --ink: #eceef1;
+  --ink-2: #a9abaf;
+  --ink-3: #8b8e93;
+  --hair: rgba(236, 238, 241, 0.10);
+  --hair-strong: rgba(236, 238, 241, 0.18);
+  --rupture: #ff5a4e;
+  --verified: #6fdc97;
+  --held: #f0b43c;
+  --rupture-tint: rgba(255, 90, 78, 0.07);
+  --verified-tint: rgba(111, 220, 151, 0.07);
+  --held-tint: rgba(240, 180, 60, 0.07);
+  --r-s: 4px;
+  --r-m: 8px;
+  --r-l: 14px;
+  --sans: "Zalando Sans", system-ui, sans-serif;
+  --mono: "Martian Mono", ui-monospace, monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; }
+body {
+  overflow: hidden;
+  background: var(--soot);
+  color: var(--ink);
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
+}
+
+.canvas { position: relative; width: 100vw; height: 100vh; overflow: hidden; background: var(--soot); }
+
+/* Matches the judge page's wordmark: weight 720, width 82%, a 20/19 em mark. */
+.wordmark { display: inline-flex; align-items: center; gap: 0.5em; color: var(--ink); font-weight: 720; font-stretch: 82%; letter-spacing: -0.01em; line-height: 1; }
+.wordmark svg { width: 1.05em; height: 1.05em; flex: none; }
+
+.display { font-weight: 780; font-stretch: 76%; letter-spacing: -0.02em; line-height: 0.92; text-wrap: balance; }
+/* Zalando Sans's tnum feature also widens the space to a figure width, so it stays off for prose. */
+.num { font-variant-numeric: tabular-nums; }
+.mono { font-family: var(--mono); font-stretch: 87.5%; font-weight: 450; letter-spacing: 0; }
+.readout { font-family: var(--mono); font-stretch: 75%; font-weight: 520; letter-spacing: -0.03em; line-height: 1; }
+
+.rupture { color: var(--rupture); }
+.verified { color: var(--verified); }
+.held { color: var(--held); }
+.ink-2 { color: var(--ink-2); }
+.ink-3 { color: var(--ink-3); }
+
+/* Evidence marks drawn as SVG: the latin subsets carry no check or cross glyphs. */
+.mark { display: inline-block; width: 0.78em; height: 0.78em; flex: none; vertical-align: -0.06em; }
+.mark path { fill: none; stroke: currentColor; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }

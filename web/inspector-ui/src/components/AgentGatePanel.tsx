@@ -4,7 +4,7 @@ import { useId, useRef, useState, type FormEvent, type KeyboardEvent } from "rea
 import { crawlInFlight, crawlSummary, plural, reproductionTrail, Seismograph, type CrawlState, type Seismic } from "@/components/CrawlerHud";
 import { agentSnippets, crawlCompleted, DEFAULT_GATE_URL, gateErrorResult, gateResult, trailAction, type GateResult } from "@/lib/agent-gate";
 import type { CrawlTelemetry } from "@/lib/faultline-api";
-import { CtaIcon } from "@/components/CtaIcon";
+import { Glyph } from "@/components/CtaIcon";
 import { CopyButton, useAnnouncer } from "@/components/CopyButton";
 
 type Verdict = "idle" | "running" | "safe" | "blocked" | "inconclusive";
@@ -66,7 +66,7 @@ function Payload({ result, exact, onCopied }: { result: GateResult; exact: boole
   return (
     <figure className="gate-payload">
       <figcaption>
-        <span><span aria-hidden="true">🤖 </span>AI Agent Remediation Payload</span>
+        <span>Agent remediation payload</span>
         <span className="gate-payload-tools">
           <span className="gate-views" role="group" aria-label="Payload format">
             <button type="button" aria-pressed={view === "prompt"} onClick={() => setView("prompt")}>Prompt</button>
@@ -126,8 +126,8 @@ export default function AgentGatePanel(props: {
     {
       label: `Storefront (:${portOf(storefrontUrl, "3000")})`, value: storefrontUrl,
       // The demo store is clean only once the verified fix is applied; seeded, it fails checkout.
-      expect: storeState === "patched" ? { tone: "ok", text: "Clean → Safe to Deploy" }
-        : storeState === "seeded" ? { tone: "bad", text: "Seeded defect → Blocked" } : null,
+      expect: storeState === "patched" ? { tone: "ok", text: "Patched → expect exit 0" }
+        : storeState === "seeded" ? { tone: "bad", text: "Seeded defect → expect exit 1" } : null,
     },
   ];
 
@@ -198,12 +198,12 @@ export default function AgentGatePanel(props: {
       <div className="gate-frame">
         <Seismograph mode={SEISMIC[verdict]} />
         <header className="gate-head">
-          <p className="gate-kicker"><span className="gate-lock" aria-hidden="true" />Pre-Flight Agent Gate · Claude Code · Codex · Cursor · Devin · CI</p>
-          <h2 id={`${ids}-h`}>Nothing ships until the gate clears it.</h2>
+          <p className="gate-kicker"><span className="gate-lock" aria-hidden="true" />Pre-flight agent gate <span className="gate-kicker-for">for coding agents and CI</span></p>
+          <h2 id={`${ids}-h`}>Exit 1 blocks the pipeline until the gate passes.</h2>
           <p className="gate-lede">
-            Before an AI agent or CI pipeline deploys, FaultLine crawls the preview with deterministic heuristics, within an action and time budget.{" "}
-            <strong>Exit 1 blocks</strong> a defect, with the exact reproduction for the agent, or a crawl that did not finish.{" "}
-            <strong>Exit 0</strong> means exploration finished clean: a smoke signal for the flows it reached, not proof of business logic.
+            Before a coding agent or CI pipeline deploys, <code>faultline gate</code> crawls the preview with deterministic heuristics inside an
+            action and time budget. A defect, or a crawl that did not finish, exits 1 and hands the agent the exact reproduction.
+            Exit 0 means exploration finished clean: <strong>a smoke signal for the flows it reached</strong>, not proof of business logic.
           </p>
         </header>
 
@@ -217,7 +217,7 @@ export default function AgentGatePanel(props: {
                   placeholder={DEFAULT_GATE_URL} value={url} onChange={(e) => setUrl(e.target.value)}
                   aria-invalid={error ? true : undefined} aria-describedby={error ? `${ids}-e` : undefined} />
                 <button type="submit" className="btn primary gate-run" disabled={busy}>
-                  {verdict === "running" ? "Gate scanning…" : "Run Pre-Flight Gate"}<CtaIcon kind="shield" />
+                  {verdict === "running" ? "Gate scanning…" : "Run pre-flight gate"}
                 </button>
               </div>
               {error && <p id={`${ids}-e`} className="gate-error" role="alert">{error}</p>}
@@ -239,7 +239,7 @@ export default function AgentGatePanel(props: {
               {verdict === "idle" && (
                 <p className="gate-await">
                   <span className="gate-await-mark" aria-hidden="true" />
-                  Gate armed. Pick a target. A real headless Chromium crawl decides the verdict.
+                  Pick a target. A real headless Chromium crawl decides the verdict.
                 </p>
               )}
 
@@ -255,7 +255,7 @@ export default function AgentGatePanel(props: {
 
               {verdict === "safe" && state && summary && (
                 <div className="gate-result" data-tone="ok">
-                  <p className="gate-badge" data-tone="ok"><span aria-hidden="true">✅ </span>Verdict: Safe to deploy</p>
+                  <p className="gate-badge" data-tone="ok"><Glyph kind="check" />Verdict: Safe to deploy</p>
                   <dl className="gate-stats">
                     {crawler ? <>
                       {elements !== null && <div><dt>Elements</dt><dd>{elements}</dd></div>}
@@ -274,7 +274,7 @@ export default function AgentGatePanel(props: {
 
               {verdict === "blocked" && state && summary && defect && (
                 <div className="gate-result" data-tone="bad">
-                  <p className="gate-badge" data-tone="bad"><span aria-hidden="true">🛡️ </span>Verdict: Deployment blocked</p>
+                  <p className="gate-badge" data-tone="bad"><Glyph kind="rupture" />Verdict: Deployment blocked</p>
                   <p className="gate-intercept">Defect intercepted before going live</p>
                   <p className="gate-defect">
                     <span className="hud-code">{defect.status ? `HTTP ${defect.status}` : "No response"}</span>
@@ -299,7 +299,7 @@ export default function AgentGatePanel(props: {
                   <div className="gate-actions">
                     {!props.missionOpen && (
                       <button type="button" className="btn gate-mission" onClick={props.onOpenMission}>
-                        <span aria-hidden="true">🛠️ </span>Open in Mission HUD to repair
+                        Open in Mission HUD to repair
                       </button>
                     )}
                     <button type="button" className="btn quiet" onClick={props.onReset}>Clear</button>
@@ -309,7 +309,7 @@ export default function AgentGatePanel(props: {
 
               {verdict === "inconclusive" && state && (
                 <div className="gate-result" data-tone="warn">
-                  <p className="gate-badge" data-tone="warn"><span aria-hidden="true">🛡️ </span>Verdict: Inconclusive · deployment blocked</p>
+                  <p className="gate-badge" data-tone="warn"><Glyph kind="held" />Verdict: Inconclusive · deployment blocked</p>
                   {unfinished && summary && (
                     <dl className="gate-stats">
                       {elements !== null && <div><dt>Elements</dt><dd>{elements}</dd></div>}

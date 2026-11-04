@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>FaultLine share card: the recorded Meta repair</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+  /*
+   * The master share card. One template, two layouts:
+   *   ?layout=og       1200x630 (og:image, twitter:image) and 1280x640 (GitHub social preview)
+   *   ?layout=gallery  1920x1080 (hackathon gallery thumbnail, no small text)
+   * Everything anchors to an edge, so the og layout holds at both 1.905:1 and 2:1.
+   */
+  .canvas { --pad-x: 56px; --pad-y: 56px; }
+
+  .top { position: absolute; left: var(--pad-x); top: var(--pad-y); }
+  .wordmark { font-size: 28px; }
+
+  .headline { position: absolute; left: var(--pad-x); }
+  .sub { position: absolute; left: var(--pad-x); line-height: 1.35; color: var(--ink-2); font-weight: 450; white-space: nowrap; }
+
+  /* Before and after: the two real checkout frames from the same job, cut by one diagonal fault. */
+  .frames { position: absolute; right: var(--pad-x); top: var(--pad-y); overflow: hidden; border-radius: var(--r-l); background: #fff; /* the store page's own white */ }
+  .wedge { position: absolute; inset: 0; background-repeat: no-repeat; }
+  .wedge.before { clip-path: polygon(0 0, var(--cut-top) 0, var(--cut-bottom) 100%, 0 100%); }
+  .wedge.after { clip-path: polygon(var(--cut-top) 0, 100% 0, 100% 100%, var(--cut-bottom) 100%); }
+  .fault { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .fault line { stroke: var(--soot); stroke-linecap: butt; }
+  .chip {
+    position: absolute; display: inline-flex; align-items: center; gap: 0.45em; padding: 0.42em 0.7em 0.46em;
+    border-radius: var(--r-s); background: var(--soot); font-family: var(--mono); font-stretch: 87.5%; font-weight: 560; line-height: 1; white-space: nowrap;
+  }
+
+  .seismo { position: absolute; left: var(--pad-x); right: var(--pad-x); }
+  .seismo svg { position: absolute; left: 0; top: 0; overflow: visible; }
+  .seismo path { fill: none; stroke-linejoin: round; stroke-linecap: round; }
+  .seg-pre { stroke: var(--ink-3); }
+  .seg-rupture { stroke: var(--rupture); }
+  .seg-model { stroke: var(--ink-3); }
+  .seg-verified, .comb { stroke: var(--verified); }
+  .axis, .sec { stroke: var(--hair-strong); }
+  .bracket { stroke: var(--ink-3); }
+  .pin { stroke-dasharray: 2 4; stroke-linecap: butt !important; }
+  .pin.r { stroke: var(--rupture); }
+  .pin.v { stroke: var(--verified); }
+  .note { position: absolute; white-space: nowrap; font-family: var(--mono); font-stretch: 87.5%; line-height: 1.2; }
+  .note.lead { font-weight: 560; }
+  .note.quiet { color: var(--ink-2); font-weight: 420; }
+  .note.foot { color: var(--ink-3); font-weight: 400; }
+
+  /*
+   * og: 1200x630 and 1280x640. Key content stays in a centered 940x520 safe area, so a 3:2 center
+   * crop (LinkedIn's small preview) or X's 2:1 crop never cuts it; only the drum line runs full-bleed.
+   */
+  .og { --pad-x: calc((100vw - 940px) / 2); --pad-y: 56px; }
+  .og .wordmark { font-size: 26px; }
+  .og .headline { top: 110px; font-size: 78px; max-width: 500px; }
+  .og .sub { top: 352px; font-size: 18px; }
+  .og .frames { width: 432px; height: 282px; --cut-top: 52%; --cut-bottom: 40%; }
+  .og .chip { font-size: 18px; bottom: 12px; }
+  .og .chip.r { left: 12px; }
+  .og .chip.v { right: 12px; }
+  .og .seismo { top: 404px; height: 160px; }
+  .og .note { font-size: 15px; }
+  .og .note.foot { font-size: 13px; }
+
+  /* gallery: 1920x1080, nothing small */
+  .gallery { --pad-x: 120px; --pad-y: 100px; }
+  .gallery .wordmark { font-size: 44px; }
+  .gallery .headline { top: 204px; font-size: 140px; max-width: 900px; }
+  .gallery .sub { top: 640px; font-size: 32px; }
+  .gallery .frames { width: 760px; height: 500px; --cut-top: 52%; --cut-bottom: 40%; }
+  .gallery .chip { font-size: 28px; bottom: 28px; }
+  .gallery .chip.r { left: 20px; }
+  .gallery .chip.v { right: 20px; }
+  .gallery .seismo { top: 712px; height: 270px; }
+  .gallery .note { font-size: 30px; }
+  .gallery .note.foot { font-size: 22px; }
+</style>
+</head>
+<body>
+<main class="canvas" id="canvas">
+  <div class="top" data-key><span class="wordmark" id="wordmark">FaultLine</span></div>
+  <h1 class="headline display" id="headline" data-key>Meta writes the patch. Checks decide.</h1>
+  <p class="sub" id="sub" data-key></p>
+  <figure class="frames" id="frames" data-key>
+    <div class="wedge before" id="before"></div>
+    <div class="wedge after" id="after"></div>
+    <svg class="fault" id="fault" aria-hidden="true"></svg>
+    <span class="chip r rupture" id="chip-r" data-key></span>
+    <span class="chip v verified" id="chip-v" data-key></span>
+  </figure>
+  <section class="seismo" id="seismo"></section>
+</main>
+<script type="module">
+  import { loadRun, traceSVG, settle, preload, MARK, WORDMARK_GLYPH, JOB_ID } from "./seismogram.js";
+
+  const params = new URLSearchParams(location.search);
+  const layout = params.get("layout") === "gallery" ? "gallery" : "og";
+  const canvas = document.getElementById("canvas");
+  canvas.classList.add(layout);
+  const G = layout === "gallery";
+  const k = G ? 1.6 : 1; // gallery scale for strokes and offsets
+
+  try {
+    const run = await loadRun();
+    const s = (n) => n.toFixed(1);
+    document.getElementById("wordmark").insertAdjacentHTML("afterbegin", WORDMARK_GLYPH);
+    document.getElementById("sub").textContent = `A recorded Meta ${run.model} repair, drawn at its real timing.`;
+
+    // Frames: the baseline's "Checkout failed" and the verified "Order placed", from the same job.
+    const art = (id) => `/docs/replay/${JOB_ID}/artifacts/${id}.png`;
+    const FAILED = art("e2d4a4a5-db08-4755-a361-d337f61e7244");
+    const PLACED = art("c6b8a6b5-90d7-4abf-a293-7e9237d7bea9");
+    await preload([FAILED, PLACED]);
+    const box = document.getElementById("frames").getBoundingClientRect();
+    const scale = G ? 0.9 : 0.52; // both frames end in the white space under the cart row
+    const before = document.getElementById("before");
+    const after = document.getElementById("after");
+    before.style.backgroundImage = `url(${FAILED})`;
+    before.style.backgroundSize = `${1280 * scale}px auto`;
+    // Both frames start just below the top edge of the page, so the store's own header shows.
+    const top = 6;
+    before.style.backgroundPosition = `${-72 * scale}px ${-top * scale}px`; // the cart row starts under the chip
+    after.style.backgroundImage = `url(${PLACED})`;
+    after.style.backgroundSize = `${1280 * scale}px auto`;
+    // The success frame sits in the right-hand wedge, offset a few px across the fault.
+    after.style.backgroundPosition = `${box.width * 0.53 - 96 * scale}px ${-top * scale - 9 * k}px`;
+    const cutTop = 0.52, cutBottom = 0.40;
+    const fault = document.getElementById("fault");
+    fault.setAttribute("viewBox", `0 0 ${box.width} ${box.height}`);
+    fault.innerHTML = `<line x1="${box.width * cutTop}" y1="-2" x2="${box.width * cutBottom}" y2="${box.height + 2}" stroke-width="${5 * k}"/>`;
+    document.getElementById("chip-r").innerHTML = `${MARK.fail}HTTP 500`;
+    document.getElementById("chip-v").innerHTML = `${MARK.pass}${run.passed} of ${run.checks} checks`;
+
+    // The seismogram: x is real seconds from job.json, so every mark sits at its recorded time.
+    const seismo = document.getElementById("seismo");
+    const W = seismo.clientWidth;
+    const H = seismo.clientHeight;
+    const traceTop = 26 * k;
+    const traceH = (G ? 110 : 96) * k;
+    const { svg, x, mid } = traceSVG(run, { width: W, height: traceH, stroke: 2.1 * k });
+    const axisY = traceTop + traceH + 6 * k;
+    const secs = [];
+    for (let t = 0; t <= Math.floor(run.t.end); t += 1) secs.push(`M${x(t).toFixed(1)},${axisY}v${6 * k}`);
+    const comb = [];
+    // One tick per recorded check across the verification execution's own window (order, not timestamps).
+    const span = run.t.checksTo - run.t.checksFrom;
+    for (let i = 0; i < run.checks; i += 1) {
+      const xx = x(run.t.checksFrom + ((i + 0.5) / run.checks) * span).toFixed(2);
+      comb.push(`M${xx},${traceTop + mid - 22 * k}V${traceTop + mid - 5 * k}`);
+    }
+    const xr = x(run.t.rupture);
+    const xd = x(run.t.diagnosing);
+    const xp = x(run.t.patch);
+    const xe = x(run.t.end);
+    const by = axisY + 14 * k;
+    const bleed = seismo.getBoundingClientRect().left + 4; // the drum line runs off both edges
+    seismo.innerHTML = `
+      <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true">
+        <path class="axis" d="M0,${axisY}H${W}" stroke-width="1"/>
+        <path class="sec" d="${secs.join("")}" stroke-width="1"/>
+        <path class="pin r" d="M${xr},${22 * k}V${traceTop + mid - 40 * k}" stroke-width="${1.4 * k}"/>
+        <path class="pin v" d="M${xe},${22 * k}V${traceTop + mid - 6 * k}" stroke-width="${1.4 * k}"/>
+        <path class="seg-pre" d="M${-bleed},${traceTop + mid}H0" stroke-width="${2.1 * k}"/>
+        <path class="seg-verified" d="M${W},${traceTop + mid}H${W + bleed}" stroke-width="${2.1 * k}"/>
+        <g transform="translate(0 ${traceTop})">${svg}</g>
+        <path class="comb" d="${comb.join("")}" stroke-width="${1.6 * k}"/>
+        <path class="bracket" d="M${xd},${by - 5 * k}V${by}H${xp}V${by - 5 * k}" stroke-width="${1.2 * k}"/>
+      </svg>
+      <span data-key class="note lead rupture" style="left:${xr - 1}px;top:0">HTTP 500 at ${s(run.t.rupture)} s</span>
+      <span data-key class="note lead verified" style="right:${W - xe}px;top:0">${run.passed} of ${run.checks} checks, verified at ${s(run.t.end)} s</span>
+      <span data-key class="note quiet" style="left:${(xd + xp) / 2}px;top:${by + 8 * k}px;transform:translateX(-50%)">${run.model} proposes the patch, ${s(run.generationMs / 1000)} s</span>
+      <span class="note foot" style="left:0;top:${by + 9 * k}px">0 s</span>
+      <span data-key class="note foot" style="right:0;top:${by + 9 * k}px">Trace shape illustrative</span>`;
+
+    await settle();
+    window.__og = { ok: true, layout };
+  } catch (error) {
+    window.__og = { ok: false, error: String(error && error.stack || error) };
+  }
+</script>
+</body>
+</html>

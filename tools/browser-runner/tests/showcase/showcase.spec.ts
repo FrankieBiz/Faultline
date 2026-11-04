@@ -1,4 +1,5 @@
 import { resolve, sep } from "node:path";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
@@ -104,6 +105,111 @@ const audio = (page: Page) => page.evaluate(() => {
 const RESOLVE = ["triangle", "triangle", "triangle", "sine"];
 const CATASTROPHE = ["sawtooth", "sawtooth", "square", "sawtooth", "sawtooth", "square"];
 
+test.describe("hero recording", () => {
+  test("the automatic trace can be stopped and replayed without an older frame restarting it", async ({ page }) => {
+    await page.clock.install();
+    const errors = await open(page);
+    const finish = page.getByRole("button", { name: "Show final record" });
+    await expect(finish).toBeVisible();
+    await finish.click();
+    const clock = page.locator("#heli-clock");
+    await expect(clock).toHaveText("13.039 s");
+    await page.clock.runFor(3000);
+    expect(await clock.textContent()).toBe("13.039 s");
+    await expect(finish).toBeFocused();
+
+    for (let i = 0; i < 2; i += 1) {
+      await page.getByRole("button", { name: "Replay the trace" }).click();
+      await page.clock.runFor(500);
+      expect(await clock.textContent()).not.toBe("13.039 s");
+      await finish.click();
+      await page.clock.runFor(1000);
+      expect(await clock.textContent()).toBe("13.039 s");
+    }
+    await expect(page.locator("#headline")).not.toHaveAttribute("data-fault");
+    await page.getByRole("button", { name: "Replay the trace" }).click();
+    await page.clock.runFor(3000);
+    await expect(page.locator("#headline")).toHaveAttribute("data-fault", "offset");
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await expect(clock).toHaveText("13.039 s");
+    await page.clock.runFor(1000);
+    expect(await clock.textContent()).toBe("13.039 s");
+    await expect(page.locator("#headline")).not.toHaveAttribute("data-fault");
+    expect(errors).toEqual([]);
+  });
+
+  test("the rupture marker uses the retained HTTP error time rather than the later diagnosis stage", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    const errors = await open(page);
+    const record = JSON.parse(readFileSync(resolve(DOCS, "replay/3573b32b-09bd-4f14-897d-cf6dccf9b118/job.json"), "utf8"));
+    // Preserve the controller's sub-millisecond precision before rounding the interval for display.
+    const milliseconds = (timestamp: string): number => Date.parse(timestamp.slice(0, 19) + "Z") + Number("0." + timestamp.slice(20, -1)) * 1000;
+    const observed = record.baseline.report.observations.find((observation: { kind: string }) => observation.kind === "http_error");
+    const at = Math.round(milliseconds(observed.timestamp) - milliseconds(record.events[0].timestamp));
+    const marker = page.locator('#heli-lane [data-tone="rupture"]');
+    await expect(marker).toHaveAttribute("data-t", String(at));
+    await expect(marker).toContainText((at / 1000).toFixed(3) + " s");
+    await expect(marker).toContainText("HTTP 500 observed");
+    expect(errors).toEqual([]);
+  });
+
+  test("replaying the trace keeps its final state when reduced motion is requested", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.clock.install();
+    const errors = await open(page);
+    const clock = page.locator("#heli-clock");
+    await expect(clock).toHaveText("13.039 s");
+    const pen = page.locator("#heli-plot .pen");
+    const settled = await pen.getAttribute("transform");
+
+    await page.getByRole("button", { name: "Replay the trace" }).click();
+    await page.clock.runFor(1000);
+    expect(await clock.textContent()).toBe("13.039 s");
+    await expect(pen).toHaveAttribute("transform", settled!);
+    await expect(page.locator("#heli-phase")).toHaveText("Verified");
+    expect(errors).toEqual([]);
+  });
+
+  test("all 44 candidate check marks fit inside the panel at 320 pixels", async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 900 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    const errors = await open(page);
+    await page.evaluate(() => document.fonts.ready);
+    const cells = page.locator("#reg-candidate .cell");
+    await expect(cells).toHaveCount(44);
+    const bounds = await cells.evaluateAll((marks) => {
+      const panel = document.querySelector(".heli-panel")!.getBoundingClientRect();
+      return marks.map((mark) => {
+        const rect = mark.getBoundingClientRect();
+        return { left: rect.left - panel.left, right: panel.right - rect.right, width: rect.width };
+      });
+    });
+    for (const [index, bound] of bounds.entries()) {
+      expect(bound.left, `check ${index + 1} clears the left edge`).toBeGreaterThanOrEqual(0);
+      expect(bound.right, `check ${index + 1} clears the right edge`).toBeGreaterThanOrEqual(0);
+      expect(bound.width, `check ${index + 1} remains visible`).toBeGreaterThan(0);
+    }
+    expect(errors).toEqual([]);
+  });
+});
+
+test("a linked finished run stays visible when the live service is not accepting new jobs", async ({ page }) => {
+  const headers = { "access-control-allow-origin": "*" };
+  await page.context().route(`${LIVE}/api/live/**`, (route) => {
+    const path = new URL(route.request().url()).pathname;
+    const json = path.endsWith("/status") ? { available: false, reason: "capacity" }
+      : path.endsWith("/ledger") ? {}
+      : { id: RUN_ID, defect_id: "coupon_case_sensitive", state: "finished", outcome: "verified", events: [], attempts: [] };
+    return route.fulfill({ headers, json });
+  });
+  const errors = await open(page, `/?live=${encodeURIComponent(LIVE)}#run=${RUN_ID}`);
+  await expect(page.locator("#live-result")).toContainText("Verified: the bug is repaired");
+  await expect(page.locator("#live-result")).toBeVisible();
+  await expect(page.locator("#live-status")).toContainText("not accepting runs");
+  await expect(page.getByRole("button", { name: "Plant this bug and repair it" })).toBeHidden();
+  expect(errors).toEqual([]);
+});
+
 /** WCAG relative luminance contrast between two computed `rgb()` colors. */
 function contrast(a: string, b: string): number {
   const luminance = (color: string) => {
@@ -148,6 +254,8 @@ test.describe("keyboard focus", () => {
       ["section link", page.getByRole("navigation", { name: "Sections" }).getByRole("link", { name: "Meta repair" })],
       ["sound toggle", page.getByRole("button", { name: "Sound cues" })],
       ["hero call to action", page.getByRole("button", { name: "Play the recorded Meta repair" })],
+      ["hero replay", page.getByRole("button", { name: "Replay the trace" })],
+      ["hero finish", page.getByRole("button", { name: "Show final record" })],
       ["tour step", page.getByRole("link", { name: /Block a broken deploy/ })],
       ["gate run pill", page.getByRole("button", { name: /Test Broken Site/ })],
       ["integration tab", page.getByRole("tab", { name: "Cursor / Claude Code" })],
