@@ -13,11 +13,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { chromium } from "@playwright/test";
+import { captureGate, showGateOutput } from "./gate-footage.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const VIDEO = { width: 1920, height: 1080 };
 const FPS = 30;
-const HEADER_OFFSET = 78; // CSS px. The judge page and Inspector both have a sticky header about 70 px tall.
+const HEADER_OFFSET = 32; // CSS px. Both redesigned pages use a normal-flow header.
 const RECORDED_JOB = "3573b32b-09bd-4f14-897d-cf6dccf9b118";
 const GATE_PATCHES = ["zero_all_discounts", "null_coupon_only", "early_return_unsaved"];
 
@@ -36,6 +37,12 @@ Options:
   --zoom N                 CSS zoom applied to every page so text reads larger in the
                            1080p frame; 1 records the page as a 1920x1080 browser shows
                            it (default 1.2).
+  --require-deterministic  Refuse an Inspector repair unless readiness names the
+                           deterministic fallback. Prevents accidental paid model calls.
+  --judge-cut              Shorter reading holds and two corpus examples for a
+                           concise judge video. Repair and replay timing stay real.
+  --repair-job-id ID       Verified Inspector job for clip 06. Defaults to the job
+                           recorded in clip 04, or the latest verified server job.
   -h, --help               Show this help.
 
 Clips:
@@ -44,13 +51,21 @@ Clips:
   03-gates                 Judge page: three candidate patches in the gate explorer.
   04-inspector-run         Inspector: "Run sandbox repair" to the result, then steps, diff, evidence.
   05-live-break-it         Judge page with ?live=URL: plant a bug and wait for the live result.
+  07-gate-blocked          Execute the real CLI against the seeded store; require exit 1.
+  06-apply-regate-revert   Apply the latest verified Inspector job, confirm HTTP 201,
+                           execute a clean CLI gate, then restore the seeded defect.
+  08-limits               Judge page: the stated scope and limits, held statically.
 `;
 
 const CLIPS = [
   { name: "01-storefront-crash", needs: ["storefront"], run: recordStorefront },
   { name: "02-recorded-meta-repair", needs: ["docs"], run: recordReplay },
   { name: "03-gates", needs: ["docs"], run: recordGates },
+  // Capture the broken gate before the sandbox repair and apply, regardless of --only ordering.
+  { name: "07-gate-blocked", needs: ["storefront", "inspector"], run: recordBlockedGate },
   { name: "04-inspector-run", needs: ["inspector", "api", "controller"], run: recordInspector },
+  { name: "06-apply-regate-revert", needs: ["storefront", "inspector", "api", "controller"], run: recordApplyGateRevert },
+  { name: "08-limits", needs: ["docs"], run: recordLimits },
   { name: "05-live-break-it", needs: ["docs", "live"], run: recordLive },
 ];
 
@@ -106,6 +121,10 @@ function parseOptions(argv) {
       only: { type: "string" },
       out: { type: "string" },
       zoom: { type: "string", default: "1.2" },
+      "require-deterministic": { type: "boolean", default: false },
+      "judge-cut": { type: "boolean", default: false },
+      "job-id": { type: "string" },
+      "repair-job-id": { type: "string" },
       help: { type: "boolean", short: "h", default: false },
     },
     strict: true,
@@ -139,7 +158,9 @@ function parseOptions(argv) {
     docs: docs.href,
     live,
   };
-  let selected = CLIPS.filter((clip) => clip.name !== "05-live-break-it" || live);
+  // New shots are opt-in so existing callers keep their original five-clip behavior.
+  let selected = CLIPS.filter((clip) => !["06-apply-regate-revert", "07-gate-blocked", "08-limits"].includes(clip.name)
+    && (clip.name !== "05-live-break-it" || live));
   if (values.only) {
     const wanted = values.only.split(",").map((item) => item.trim()).filter(Boolean);
     selected = CLIPS.filter((clip) => wanted.some((token) => clip.name === token || clip.name.startsWith(token + "-") || clip.name.slice(3) === token));
@@ -150,7 +171,10 @@ function parseOptions(argv) {
   if (!selected.length) throw new Error("No clips selected.");
   const stamp = new Date().toISOString().replace(/[-:]/g, "").replace("T", "-").slice(0, 15);
   const out = path.resolve(values.out ?? path.join(ROOT, "data", "footage", stamp));
-  return { urls, zoom, selected, out, liveDefect: values["live-defect"] };
+  if (values["require-deterministic"] && selected.some((clip) => clip.name === "05-live-break-it")) {
+    throw new Error("--require-deterministic excludes clip 05, which may call an external model.");
+  }
+  return { urls, zoom, selected, out, liveDefect: values["live-defect"], requireDeterministic: values["require-deterministic"], judgeCut: values["judge-cut"], jobId: values["repair-job-id"] ?? values["job-id"] ?? null };
 }
 
 async function reachable(url) {
@@ -351,7 +375,7 @@ async function recordStorefront(page, { urls, mark }) {
   return { provenance: "local-fixture", banner: (await failure.innerText()).replace(/\s+/g, " ").trim() };
 }
 
-async function recordReplay(page, { urls, mark }) {
+async function recordReplay(page, { urls, mark, judgeCut }) {
   const cursor = pointer(page);
   await page.goto(urls.docs, { waitUntil: "load" });
   await ready(page);
@@ -371,12 +395,12 @@ async function recordReplay(page, { urls, mark }) {
 
   await glideToElement(page, page.locator("#repair figure.diff"), { ms: 1500 });
   mark("diff_visible");
-  await sleep(9500); // The one-line patch, the model's explanation, and the recorded facts.
+  await sleep(judgeCut ? 4000 : 9500); // The one-line patch, the model's explanation, and the recorded facts.
   mark("end");
   return { provenance: "recorded-meta-replay", job: RECORDED_JOB, clock: (await page.locator("#recorded-clock").textContent())?.trim() };
 }
 
-async function recordGates(page, { urls, mark }) {
+async function recordGates(page, { urls, mark, judgeCut }) {
   const cursor = pointer(page);
   await page.goto(urls.docs, { waitUntil: "load" });
   await ready(page);
@@ -384,19 +408,20 @@ async function recordGates(page, { urls, mark }) {
   await sleep(400);
   await cursor.show();
   mark("start");
-  await sleep(4200); // The question and the four recorded totals.
+  await sleep(judgeCut ? 2200 : 4200); // The question and the four recorded totals.
 
   await glideToElement(page, page.locator("#picker"), { ms: 1300 });
   await sleep(1200);
-  for (const id of GATE_PATCHES) {
+  const patches = judgeCut ? ["early_return_unsaved", "zero_all_discounts"] : GATE_PATCHES;
+  for (const id of patches) {
     const option = page.locator(`label[for="patch-${id}"]`);
     await cursor.click(option, { dx: 0.62 }); // Between the patch name and its status.
     await page.locator("#detail").getByText(id, { exact: true }).waitFor();
     mark(`patch_${id}`);
-    await sleep(5000); // Verdicts, failed checks, and the diff.
+    await sleep(judgeCut ? 3500 : 5000); // Verdicts, failed checks, and the diff.
   }
   mark("end");
-  return { provenance: "recorded-evaluation", patches: GATE_PATCHES };
+  return { provenance: "recorded-evaluation", patches };
 }
 
 function classifySource(text) {
@@ -405,7 +430,7 @@ function classifySource(text) {
   return "other";
 }
 
-async function recordInspector(page, { urls, mark }) {
+async function recordInspector(page, { urls, mark, out, requireDeterministic, judgeCut }) {
   const cursor = pointer(page);
   await page.goto(urls.inspector + "/", { waitUntil: "networkidle" });
   const run = page.getByRole("button", { name: "Run sandbox repair", exact: true });
@@ -413,15 +438,23 @@ async function recordInspector(page, { urls, mark }) {
   await waitUntil(() => run.isEnabled(), 90_000, "the Inspector to report readiness (Run sandbox repair enabled)");
   await ready(page);
   const readinessSource = (await page.locator(".workspace .source-line").innerText()).replace(/\s+/g, " ").trim();
+  if (requireDeterministic && !readinessSource.includes("Deterministic fallback")) {
+    throw new Error(`Refusing a model call: Inspector source is ${readinessSource}.`);
+  }
+  await jumpToElement(page, page.locator(".workspace"));
   await cursor.show();
   mark("start");
-  await sleep(2600);
+  await sleep(judgeCut ? 1600 : 2600);
   // Point at the patch source line from its left margin, leaving its text readable.
   await cursor.over(page.locator(".workspace .source-line"), { dx: -0.03 });
-  await sleep(2200);
+  await sleep(judgeCut ? 1500 : 2200);
 
+  const submitted = page.waitForResponse((response) => response.request().method() === "POST"
+    && new URL(response.url()).pathname.endsWith("/api/faultline/jobs"), { timeout: 30_000 });
   await cursor.click(run);
   mark("run_start");
+  const submittedJob = await (await submitted).json();
+  if (!submittedJob.job_id) throw new Error("Inspector did not return the submitted job id.");
   await cursor.rest(); // The page scrolls to the live result; keep its text uncovered.
   const heading = page.locator("#job-h");
   await heading.waitFor({ timeout: 30_000 });
@@ -429,23 +462,24 @@ async function recordInspector(page, { urls, mark }) {
   await waitUntil(async () => (await run.count()) > 0 && (await run.isEnabled()), 300_000, "the run to finish");
   mark("run_end");
   const outcome = (await heading.innerText()).trim();
+  if (outcome !== "Verified repair") throw new Error(`Sandbox repair did not verify: ${outcome}.`);
   const sourceLine = page.locator(".result-heading .source-line");
   const jobSource = (await sourceLine.count()) ? (await sourceLine.innerText()).replace(/\s+/g, " ").replace(/^Patch source\s*/, "").trim() : "";
   await jumpToElement(page, page.locator("section.job"));
   await sleep(500);
   await cursor.rest();
-  await sleep(5000); // Result heading, provider line, and the recorded steps.
+  await sleep(judgeCut ? 2500 : 5000); // Result heading, provider line, and the recorded steps.
 
   const stops = [
     ["seam", page.locator("section.job .seam").first(), 4800],
-    ["patch", page.locator("#attempts-h"), 6000],
+    ["patch", (await page.locator("section.job .proof").count()) ? page.locator("section.job .proof") : page.locator("#attempts-h"), 6000],
     ["evidence", page.locator("#artifacts-h"), 3800],
   ];
   for (const [key, locator, hold] of stops) {
     if (!(await locator.count())) continue;
     await glideToElement(page, locator);
     mark(key);
-    await sleep(hold);
+    await sleep(judgeCut ? 2500 : hold);
   }
   const details = page.locator("details.technical-details > summary");
   if (await details.count()) {
@@ -454,15 +488,148 @@ async function recordInspector(page, { urls, mark }) {
     await cursor.rest();
     await glideToElement(page, details);
     mark("details");
-    await sleep(4500);
+    await sleep(judgeCut ? 2500 : 4500);
   }
   mark("end");
+  const jobId = submittedJob.job_id;
+  const jobRecord = await inspectorJson(urls, `jobs/${encodeURIComponent(jobId)}`);
+  await writeFile(path.join(out, "04-inspector-job.json"), JSON.stringify(jobRecord, null, 2) + "\n");
   return {
     provenance: classifySource(jobSource || readinessSource) === "meta" ? "local-meta" : "local-" + classifySource(jobSource || readinessSource),
     outcome,
     readiness_source: readinessSource,
     job_source: jobSource,
+    job_id: jobId,
+    job_record_file: jobId ? "04-inspector-job.json" : null,
   };
+}
+
+async function inspectorJson(urls, pathname) {
+  const response = await fetch(`${urls.inspector}/api/faultline/${pathname}`, { signal: AbortSignal.timeout(10_000) });
+  if (!response.ok) throw new Error(`Inspector ${pathname} returned HTTP ${response.status}.`);
+  return response.json();
+}
+
+async function recordLimits(page, { urls, mark }) {
+  await page.goto(urls.docs, { waitUntil: "load" });
+  await ready(page);
+  await jumpToElement(page, page.locator("#limits"));
+  mark("start");
+  await sleep(6000);
+  mark("end");
+  return { provenance: "current-project-scope", text: await page.locator("#limits").innerText() };
+}
+
+async function recordBlockedGate(page, { urls, out, mark }) {
+  const store = await inspectorJson(urls, "store");
+  if (store.state !== "seeded") throw new Error(`Blocked gate needs the seeded store; actual state ${store.state}.`);
+  // Execute first, then film the captured output. There is no invented progress or simulated terminal.
+  const capture = await captureGate({ root: ROOT, out, name: "07-gate-blocked", target: urls.storefront });
+  await showGateOutput(page, capture);
+  mark("start");
+  mark("verdict_visible");
+  await sleep(6500);
+  await showGateOutput(page, capture, "reproduction");
+  mark("reproduction_visible");
+  await sleep(8500);
+  mark("end");
+  if (capture.exit_code !== 1 || capture.report.verdict !== "DEPLOYMENT_BLOCKED" || capture.report.failure?.status !== 500) {
+    throw new Error(`Expected a caught HTTP 500 and exit 1; actual ${capture.report.verdict}, exit ${capture.exit_code}. See ${capture.stdout_file}.`);
+  }
+  return { provenance: "captured-cli-output", capture };
+}
+
+async function recordApplyGateRevert(page, { urls, out, mark, jobId }) {
+  const cursor = pointer(page);
+  await page.goto(urls.inspector + "/", { waitUntil: "networkidle" });
+  await ready(page);
+  const flow = page.locator("#demo");
+  const apply = flow.getByRole("button", { name: "Apply fix", exact: true });
+  // Completed jobs are deliberately not reattached on reload. Select the real retained job through history.
+  const jobs = await inspectorJson(urls, "jobs?limit=10");
+  const sourceJob = jobId ? jobs.jobs?.find((job) => job.id === jobId)
+    : jobs.jobs?.find((job) => job.state === "succeeded" && job.outcome === "verified");
+  if (!sourceJob || sourceJob.state !== "succeeded" || sourceJob.outcome !== "verified") {
+    throw new Error("Clip 06 needs a completed verified job; record clip 04 first or pass --repair-job-id.");
+  }
+  await page.locator("details.history > summary").click();
+  await page.getByRole("button", { name: `Inspect job ${sourceJob.id.slice(0, 8)}`, exact: true }).click();
+  await waitUntil(() => apply.isEnabled(), 90_000, "the verified job to unlock Apply fix");
+  const before = await inspectorJson(urls, "store");
+  if (before.state !== "seeded") throw new Error(`Apply shot needs the seeded store; actual ${before.state}.`);
+  await jumpToElement(page, flow);
+  await cursor.show();
+  mark("start");
+  mark("apply_start");
+  let capture = null;
+  let applied = null;
+  let finalStore = null;
+  const liveChecks = [];
+  const pendingChecks = [];
+  const onCheckResponse = (response) => {
+    if (response.request().method() === "POST" && /\/api\/faultline\/invariants\/[^/]+\/check$/.test(new URL(response.url()).pathname)) {
+      pendingChecks.push(response.json().then((record) => { liveChecks.push(record); }, (error) => { liveChecks.push({ capture_error: error.message }); }));
+    }
+  };
+  page.on("response", onCheckResponse);
+  try {
+    await sleep(2000);
+    await cursor.click(apply);
+    mark("apply_clicked");
+    const checkoutStatus = flow.locator(".flow-step").nth(2).locator(".flow-status");
+    await waitUntil(async () => (await checkoutStatus.innerText()).includes("HTTP 201") && (await checkoutStatus.innerText()).includes("checkout works"), 90_000, "the live checkout check to return HTTP 201");
+    applied = await inspectorJson(urls, "store");
+    if (applied.state !== "patched") throw new Error(`Apply did not patch the demo store (${applied.state}).`);
+    await Promise.all(pendingChecks);
+    if (!liveChecks.some((check) => check.outcome === "no_failure" && check.sessions?.length >= 2
+      && check.sessions.every((session) => session.status === 201))) {
+      throw new Error("No captured live check proves HTTP 201 in both fresh sessions.");
+    }
+    mark("http_201_visible");
+    mark("apply_verified");
+    await sleep(4500);
+    mark("gate_start");
+    capture = await captureGate({ root: ROOT, out, name: "06-gate-clean", target: urls.storefront });
+    mark("gate_end");
+    await showGateOutput(page, capture);
+    mark("clean_gate_visible");
+    mark("terminal_start");
+    await sleep(6500);
+    mark("terminal_end");
+    if (capture.exit_code !== 0 || capture.report.verdict !== "SAFE_TO_DEPLOY" || capture.report.stop_reason !== "exhausted") {
+      throw new Error(`Clean gate did not finish clean: ${capture.report.verdict}, ${capture.report.stop_reason}, exit ${capture.exit_code}. See ${capture.stdout_file}.`);
+    }
+  } finally {
+    // Return the real demo store to its starting state even if the clean gate fails.
+    mark("revert_start");
+    await page.goto(urls.inspector + "/", { waitUntil: "networkidle" });
+    await ready(page);
+    await jumpToElement(page, flow);
+    const current = await inspectorJson(urls, "store");
+    if (current.state !== "seeded") {
+      const revert = flow.getByRole("button", { name: "Revert store", exact: true });
+      await waitUntil(() => revert.isEnabled(), 30_000, "Revert store to become available");
+      await cursor.click(revert);
+      await cursor.click(flow.getByRole("button", { name: "Confirm revert?", exact: true }));
+      await waitUntil(async () => (await inspectorJson(urls, "store")).state === "seeded", 30_000, "Revert store to restore the seeded defect");
+    }
+    finalStore = await inspectorJson(urls, "store");
+    await flow.getByRole("heading", { name: "Checkout is broken: the seeded defect is live", exact: true }).waitFor();
+    mark("seeded_restored");
+    // A retained pre-revert check can still show HTTP 201. Recheck the actual restored source for the closing shot.
+    await sleep(1000);
+    await cursor.click(flow.getByRole("button", { name: "Check checkout live", exact: true }));
+    await waitUntil(async () => (await flow.locator(".flow-step").first().locator(".flow-status").innerText()).includes("HTTP 500"), 30_000, "the reverted store's live check to reproduce HTTP 500");
+    mark("reverted_http_500_visible");
+    await sleep(3500);
+    await writeFile(path.join(out, "06-store-states.json"), JSON.stringify({ before, applied, final: finalStore }, null, 2) + "\n");
+    page.off("response", onCheckResponse);
+    await Promise.all(pendingChecks);
+    await writeFile(path.join(out, "06-live-checks.json"), JSON.stringify(liveChecks, null, 2) + "\n");
+    mark("end");
+  }
+  return { provenance: "local-apply-captured-cli-revert", applied_job_id: applied.applied_job_id, live_checkout_status: 201,
+    store_state_file: "06-store-states.json", live_check_file: "06-live-checks.json", final_store_state: finalStore.state, capture };
 }
 
 async function liveJson(base, pathname) {
@@ -576,6 +743,7 @@ async function main() {
     for (const clip of options.selected) {
       process.stdout.write(`Recording ${clip.name} ... `);
       const result = await recordClip(browser, clip, options);
+      if (clip.name === "04-inspector-run" && result.status === "ok") options.jobId = result.job_id;
       manifest.clips.push(result);
       await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
       const length = result.marks.end != null && result.marks.start != null ? ` (${(result.marks.end - result.marks.start).toFixed(1)} s usable)` : "";
