@@ -1192,8 +1192,8 @@ details[open] > summary { margin-bottom: 16px; }
   /* input[type] lifts the selector to match `.field input[type="url"]`, which sets 13.5 px. */
   .field :is(input, select, textarea, input[type]), .gate-field input { font-size: max(16px, 1em); }
   .arena-field input { font-size: 16px; }
-  /* At any width, a tablet held upright included, header tools, presets and mission controls meet 44 px. */
-  .btn.tool, .hud-node, .preset, .btn.cmd-copy, .btn.gate-copy { min-height: 44px; }
+  /* At any width, a tablet held upright included, every button, tab, preset and mission control meets 44 px. */
+  .btn, .btn.tool, .gate-tab, .hud-node, .preset, .btn.cmd-copy, .btn.gate-copy, .rows li > .btn.quiet { min-height: 44px; }
 }
 @media (hover: none) and (pointer: coarse) {
   .flow-hint { display: none; }

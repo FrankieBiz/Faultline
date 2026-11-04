@@ -1881,8 +1881,11 @@ make check
         line.setAttribute("y1", "0");
         line.setAttribute("x2", (bottom - 10 * k).toFixed(1));
         line.setAttribute("y2", (box.height + 24).toFixed(1));
-        set("--note-x", bottom - 10 * k);
-        set("--note-top-x", top + 14 * k);
+        // Keep the note inside the headline: on a one-line display its diagonal anchor can sit past the right edge.
+        const noteWidth = note.offsetWidth;
+        const inside = (x) => Math.max(0, Math.min(x, box.width - noteWidth - 12));
+        set("--note-x", inside(bottom - 10 * k));
+        set("--note-top-x", inside(top + 14 * k));
         // The note hangs from the top of the fault unless the byline is in the way; then from its foot.
         const byline = headline.previousElementSibling.getBoundingClientRect();
         headline.dataset.noteAt = box.left + top + 14 * k < byline.right + 16 ? "foot" : "head";

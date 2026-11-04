@@ -191,6 +191,37 @@ test.describe("hero recording", () => {
     }
     expect(errors).toEqual([]);
   });
+
+  test("the fault note stays inside a one-line headline and never scrolls the page sideways", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    const errors = await open(page);
+    await page.evaluate(() => document.fonts.ready);
+    // One-line headlines around tablet widths put the diagonal note closest to the right edge.
+    for (const width of [390, 414, 430, 500, 639, 768]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.waitForTimeout(100);
+      const bounds = await page.evaluate(() => {
+        const headline = document.getElementById("headline")!;
+        // The live trace adds these during the rupture; draw the same state without waiting 2.1 s.
+        headline.dataset.fault = "offset";
+        headline.dataset.note = "offset";
+        const note = document.getElementById("fault-note")!.getBoundingClientRect();
+        const head = headline.getBoundingClientRect();
+        return {
+          note: { left: note.left, right: note.right },
+          head: { left: head.left, right: head.right },
+          scrollWidth: document.documentElement.scrollWidth,
+          clientWidth: document.documentElement.clientWidth,
+        };
+      });
+      expect(bounds.scrollWidth, `at ${width} px the page does not scroll sideways`).toBe(bounds.clientWidth);
+      expect(bounds.note.left, `at ${width} px the note clears the left edge`).toBeGreaterThanOrEqual(0);
+      expect(bounds.note.right, `at ${width} px the note clears the right edge`).toBeLessThanOrEqual(width);
+      expect(bounds.note.left, `at ${width} px the note starts inside the headline`).toBeGreaterThanOrEqual(bounds.head.left);
+      expect(bounds.note.right, `at ${width} px the note ends inside the headline`).toBeLessThanOrEqual(bounds.head.right + 1);
+    }
+    expect(errors).toEqual([]);
+  });
 });
 
 test("a linked finished run stays visible when the live service is not accepting new jobs", async ({ page }) => {
