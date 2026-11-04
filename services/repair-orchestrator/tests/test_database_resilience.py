@@ -312,14 +312,25 @@ async def test_heartbeat_failure_stops_work_and_quarantines(
     harness: Harness, monkeypatch: pytest.MonkeyPatch, failure: str
 ) -> None:
     monkeypatch.setattr("app.worker.HEARTBEAT_SECONDS", 0.01)
-    heartbeat = Mock(return_value=False)
-    if failure == "database":
-        heartbeat.side_effect = sqlite3.OperationalError("disk unavailable")
+
+    def heartbeat_result(*_: object) -> bool:
+        # Let manifest verification and snapshot setup finish first. Otherwise,
+        # a slow CI runner can reject the first heartbeat while `git worktree
+        # add` is still creating its .git file, making this test exercise an
+        # interrupted worktree setup instead of a failed lease during prepare.
+        if not harness.runtime.entered.is_set():
+            return True
+        if failure == "database":
+            raise sqlite3.OperationalError("disk unavailable")
+        return False
+
+    heartbeat = Mock(side_effect=heartbeat_result)
     monkeypatch.setattr(harness.database, "heartbeat_lease", heartbeat)
     harness.runtime.block_phase = "prepare"
     job = harness.database.create_job(submission())
     with pytest.raises(RuntimeUnavailable, match="lease_heartbeat_failed"):
         await asyncio.wait_for(harness.worker.run_job(job.id), 5)
+    assert harness.runtime.entered.is_set()
     assert "cleanup" in harness.runtime.calls
     assert harness.database.get_lease().quarantined
     assert harness.worker._supervision_failed
