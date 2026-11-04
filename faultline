@@ -12,6 +12,20 @@ while [ -L "$SOURCE" ]; do
   esac
 done
 ROOT="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+configure_macos_toolchain() {
+  if [ -z "${DEVELOPER_DIR:-}" ] && [ "$(uname -s)" = Darwin ] && [ -d /Library/Developer/CommandLineTools ]; then
+    export DEVELOPER_DIR=/Library/Developer/CommandLineTools
+  fi
+}
+if [ "${1:-}" = setup ]; then
+  shift
+  if [ "$#" -ne 0 ]; then
+    echo "Usage: ./faultline setup" >&2
+    exit 2
+  fi
+  configure_macos_toolchain
+  exec bash "$ROOT/scripts/setup.sh"
+fi
 if ! command -v uv >/dev/null 2>&1; then
   for DIRECTORY in "$HOME/.local/bin" "$HOME/.cargo/bin" /opt/homebrew/bin /usr/local/bin; do
     if [ -x "$DIRECTORY/uv" ]; then
@@ -21,9 +35,18 @@ if ! command -v uv >/dev/null 2>&1; then
   done
 fi
 command -v uv >/dev/null 2>&1 || {
-  echo "uv is required. Run make setup in $ROOT (or ./scripts/setup.sh) first." >&2
+  echo "uv is required. Run ./faultline setup in $ROOT first." >&2
   exit 1
 }
+if [ "${1:-}" = test-all ]; then
+  shift
+  if [ "$#" -ne 0 ]; then
+    echo "Usage: ./faultline test-all" >&2
+    exit 2
+  fi
+  configure_macos_toolchain
+  exec make -C "$ROOT" check browser
+fi
 # The editable install's .pth file can carry macOS's hidden flag, which makes
 # Python skip it. Use only this installation's source paths for the launcher.
 export PYTHONPATH="$ROOT/services/repair-orchestrator:$ROOT"

@@ -61,7 +61,7 @@ def machine(tmp_path: Path) -> tuple[Path, Path, dict[str, str]]:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     # An intentionally restricted PATH: no uv, python3, node, npm, or setsid.
-    for name in ("bash", "sh", "dirname", "readlink", "sleep"):
+    for name in ("bash", "sh", "dirname", "readlink", "sleep", "uname"):
         (bin_dir / name).symlink_to(shutil.which(name))
     env = {
         "HOME": str(home),
@@ -125,6 +125,46 @@ def test_launcher_finds_uv_outside_path_and_preserves_cwd_args_status(machine) -
         "a b",
         "--json",
     ]
+
+
+def test_launcher_setup_runs_without_uv_from_another_directory(machine) -> None:
+    repo, _, env = machine
+    executable(
+        repo / "scripts/setup.sh",
+        '#!/bin/bash\nprintf \'%s\\n\' "$PWD" > "$CALLS"\n',
+    )
+    caller = repo.parent
+    result = run(repo / "faultline", env, "setup", cwd=caller)
+    assert result.returncode == 0, result.stderr
+    assert Path(env["CALLS"]).read_text().strip() == str(caller)
+
+
+@pytest.mark.parametrize("override", [None, "/custom/developer"])
+def test_launcher_test_all_runs_full_suite_with_macos_toolchain(machine, override) -> None:
+    repo, bin_dir, env = machine
+    executable(Path(env["HOME"]) / ".local/bin/uv", TOOL)
+    executable(bin_dir / "uname", "#!/bin/sh\nprintf 'Darwin\\n'\n")
+    executable(
+        bin_dir / "make",
+        f"#!{sys.executable}\n"
+        "import json, os, sys\n"
+        "with open(os.environ['CALLS'], 'w') as log:\n"
+        "    json.dump({'args': sys.argv[1:], 'developer_dir': "
+        "os.environ.get('DEVELOPER_DIR'), 'path': os.environ['PATH']}, log)\n",
+    )
+    if override:
+        env["DEVELOPER_DIR"] = override
+    result = run(repo / "faultline", env, "test-all", cwd=repo.parent)
+    assert result.returncode == 0, result.stderr
+    call = json.loads(Path(env["CALLS"]).read_text())
+    assert call["args"] == ["-C", str(repo), "check", "browser"]
+    expected_developer_dir = override or (
+        "/Library/Developer/CommandLineTools"
+        if Path("/Library/Developer/CommandLineTools").is_dir()
+        else None
+    )
+    assert call["developer_dir"] == expected_developer_dir
+    assert str(Path(env["HOME"]) / ".local/bin") in call["path"].split(os.pathsep)
 
 
 def test_setup_installs_missing_uv_and_managed_python_before_locked_sync(machine) -> None:
@@ -192,7 +232,7 @@ def test_launcher_without_uv_explains_setup(machine) -> None:
     repo, _, env = machine
     result = run(repo / "faultline", env, "--help", cwd=repo)
     assert result.returncode == 1
-    assert "make setup" in result.stderr
+    assert "./faultline setup" in result.stderr
     assert "command not found" not in result.stderr
 
 
