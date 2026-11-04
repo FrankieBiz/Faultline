@@ -2,7 +2,6 @@
 
 import { useId, useRef, useState, type FormEvent } from "react";
 import { ApiError } from "@/lib/faultline-api";
-import { CtaIcon } from "@/components/CtaIcon";
 
 const parse = (url: string | null) => {
   try {
@@ -13,9 +12,9 @@ const parse = (url: string | null) => {
 };
 
 /**
- * Hero paste arena: paste a URL, press Enter, and the autonomous agent does the rest. The
- * Playwright crawler clicks, fills, and submits everything on the page until a request fails;
- * nothing asks for an expected status or error. The quiet ping sends a GET from two fresh sessions.
+ * Hero paste arena: paste a URL and press Enter. The Playwright crawler walks the page within its
+ * action budget, skipping destructive controls, and stops at the first failing request; nothing asks
+ * for an expected status or error. The quiet ping sends a GET from two fresh sessions instead.
  */
 export default function HeroArena(props: {
   storefrontUrl: string;
@@ -27,8 +26,6 @@ export default function HeroArena(props: {
   onPing: (url: string) => Promise<void>;
   /** The engine that writes repairs, as readiness reports it. */
   repairCore: { tone: "ok" | "warn" | "bad" | "idle"; text: string };
-  /** Overall engine readiness, the same tone the header's Engine Status shows. */
-  engineTone: "ok" | "warn" | "bad" | "active";
 }) {
   const { storefrontUrl, busy, hunting, pinging, onHunt, onPing } = props;
   const ids = useId();
@@ -91,29 +88,25 @@ export default function HeroArena(props: {
   return (
     <section className="hero" aria-labelledby={`${ids}-h`}>
       <div className="shell hero-inner">
-        <p className="tag hero-kicker"><span className="hero-live" data-tone={props.engineTone} aria-hidden="true" />The autonomous immune system for AI coding agents and web apps</p>
-        <h1 id={`${ids}-h`}>FaultLine Autonomous Immune System</h1>
+        <h1 id={`${ids}-h`}>Make every AI fix <span className="nowrap">prove itself.</span></h1>
         <p className="hero-sub">
-          Paste any local or web URL. The agent clicks every button, fills every form, and <strong>catches silent regressions before code goes live</strong>.
-          Then a sandboxed repair has to pass independent checks before it counts.
+          Paste a local or preview URL. A real browser walks it within a fixed action budget, skips destructive controls,
+          and stops at the first crash. Then a sandboxed repair has to <strong>pass independent checks before it counts</strong>.
         </p>
-        <div className="hero-paths">
-          <p className="hero-core" data-tone={props.repairCore.tone}>
-            <span className="hero-core-dot" aria-hidden="true" /><span className="hero-core-k">Repair core</span>{props.repairCore.text}
+        {props.repairCore.tone === "bad" && (
+          <p className="hero-offline">
+            The engine is offline, so crawls, checks and repairs are paused. Start the local stack
+            with <code>./faultline demo</code>, then reload this page.
           </p>
-          <a className="hero-demo" href="#demo">
-            <span className="hero-demo-k">New here?</span>Guided 3-minute demo<span className="hero-demo-arrow" aria-hidden="true">↓</span>
-          </a>
-        </div>
-        <form className="arena" onSubmit={submit} noValidate aria-label="Autonomous bug hunt" data-hunting={hunting || undefined}>
+        )}
+        <form className="arena" onSubmit={submit} noValidate aria-label="Crawl a URL" data-hunting={hunting || undefined}>
           <label className="sr-only" htmlFor={`${ids}-u`}>Target URL</label>
           <div className="arena-field">
-            <span className="arena-prompt" aria-hidden="true">›</span>
             <input ref={inputRef} id={`${ids}-u`} type="url" inputMode="url" autoComplete="off" spellCheck={false}
               placeholder="http://localhost:3000/..." value={url} onChange={(e) => setUrl(e.target.value)}
               aria-invalid={error ? true : undefined} aria-describedby={error ? `${ids}-e` : `${ids}-k`} />
             <button type="submit" className="btn primary arena-go" disabled={busy}>
-              {hunting ? "Scanning preview…" : "Run Autonomous Exploration"}<CtaIcon />
+              {hunting ? "Crawling…" : "Crawl this URL"}
             </button>
           </div>
           {error && <p id={`${ids}-e`} className="arena-error" role="alert">{error}</p>}
@@ -127,17 +120,25 @@ export default function HeroArena(props: {
                 </li>
               ))}
               <li>
-                <button type="button" className="preset" onClick={() => fill("http://localhost:")}>Custom Localhost</button>
+                <button type="button" className="preset" onClick={() => fill("http://localhost:")}>Custom localhost</button>
               </li>
             </ul>
             <p id={`${ids}-k`} className="arena-hint">
-              <kbd>Enter</kbd> to unleash ·{" "}
+              <kbd>Enter</kbd> starts the crawl, or send a{" "}
               <button type="button" className="btn quiet inline-btn" disabled={busy} onClick={() => void run(onPing)}>
-                {pinging ? "Pinging…" : "Quick HTTP Ping"}
-              </button>
+                {pinging ? "Pinging…" : "Quick HTTP ping"}
+              </button>{" "}from two fresh sessions.
             </p>
           </div>
         </form>
+        <div className="hero-paths">
+          <p className="hero-core" data-tone={props.repairCore.tone}>
+            <span className="hero-core-dot" aria-hidden="true" /><span className="hero-core-k">Repair core</span>{props.repairCore.text}
+          </p>
+          <a className="hero-demo" href="#demo">
+            <span className="hero-demo-k">New here?</span>Guided 3-minute demo<span className="hero-demo-arrow" aria-hidden="true">↓</span>
+          </a>
+        </div>
       </div>
     </section>
   );

@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import type { CheckRecord, StoreStatus, Tone } from "@/lib/faultline-api";
 import { checkVerdict } from "@/lib/faultline-api";
 import ConfirmButton from "@/components/ConfirmButton";
-import { CtaIcon } from "@/components/CtaIcon";
 
 function headline(store: StoreStatus): { tone: Tone; text: string } {
   if (store.state === "seeded") return { tone: "bad", text: "Checkout is broken: the seeded defect is live" };
@@ -85,7 +84,7 @@ export default function GuidedFlow(props: {
   const canApply = store?.state === "seeded" && verifiedJobId !== null && !busy;
   const canRevert = store !== null && store.state !== "seeded" && store.state !== "missing" && !busy;
 
-  const step1: StepStatus = hunt.running ? { tone: "active", text: "Playwright hunting for bugs…" }
+  const step1: StepStatus = hunt.running ? { tone: "active", text: "Playwright is crawling the store…" }
     : breaking || (checking && store?.state === "seeded" && !confirming) ? { tone: "active", text: "Sending a real checkout…" }
     : caught ? { tone: "bad", text: `Bug caught on ${hunt.caughtOn}!` }
     : store?.state === "seeded" && liveCheck ? { tone: live?.tone ?? "idle", text: `HTTP ${status ?? "no response"} · ${failingLive ? "checkout crashes" : live?.title.toLowerCase()}` }
@@ -178,7 +177,6 @@ export default function GuidedFlow(props: {
                     <span id={`flow-${step.n}-d`} className="flow-detail">{step.detail}</span>
                     <span id={`flow-${step.n}-s`} className="flow-status" data-tone={step.status.tone}>{step.status.text}</span>
                   </span>
-                  {phase === "current" && step.enabled && <CtaIcon className="flow-go" />}
                 </button>
               </li>
             );

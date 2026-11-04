@@ -14,7 +14,7 @@ const STEPS: { title: string; commands: string[]; terminal: string; dashboard: s
     title: "Check readiness",
     commands: ["faultline doctor"],
     terminal: "Checks Bubblewrap, cgroup v2, uv, Node.js, and META_API_KEY, and whether the orchestrator (port 9000) and store (port 8000) answer.",
-    dashboard: "Engine Status in the header. Containment and environment reset sit in the setup panel under past runs.",
+    dashboard: "Engine status in the header. Containment and environment reset sit in the setup panel under past runs.",
   },
   {
     title: "Gate live invariants",

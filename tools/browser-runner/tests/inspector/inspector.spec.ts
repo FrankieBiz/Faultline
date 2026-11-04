@@ -419,7 +419,7 @@ test("the guided demo advances Break it, repair, and Apply fix on recorded evide
   // Status lines are button descriptions, read only on focus, so a polite live region announces each change.
   const announced = page.locator("#demo").getByRole("status");
   await expect(steps).toHaveCount(3);
-  await expect(page.locator(".readiness")).toHaveText("Engine Status: Ready");
+  await expect(page.locator(".readiness")).toHaveText("Engine status: Ready");
   await expect(announced).toHaveAttribute("aria-live", "polite");
   await expect(announced).toHaveAttribute("aria-atomic", "true");
   await expect(steps.nth(0)).toHaveAttribute("aria-current", "step");
@@ -478,7 +478,7 @@ test("one h1 and one main lead to the guided demo, and Space runs its highlighte
   await page.route("**/api/faultline/jobs?*", (route) => route.fulfill({ json: { jobs: [] } }));
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("FaultLine Autonomous Immune System");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Make every AI fix prove itself.");
   await expect(page.getByRole("main")).toHaveCount(1);
   await expect(page.getByRole("main").getByRole("list", { name: "Guided demo" })).toBeVisible();
   await expect(page.getByRole("link", { name: /Guided 3-minute demo/ })).toHaveAttribute("href", "#demo");
@@ -544,7 +544,7 @@ test("landmarks: one banner, one main, one contentinfo, and the mission HUD is c
   await expect(page.getByRole("complementary")).toHaveCount(0);
 
   await page.getByRole("textbox", { name: "Target URL" }).fill("http://127.0.0.1:3000");
-  await page.getByRole("button", { name: "Run Autonomous Exploration" }).click();
+  await page.getByRole("button", { name: "Crawl this URL" }).click();
   const hud = page.getByRole("main").getByRole("complementary", { name: "Live Agent Mission · Playwright" });
   await expect(hud).toBeVisible();
   await expect(page.getByRole("complementary")).toHaveCount(1);
@@ -562,7 +562,7 @@ test("the mission HUD's log and journey ribbon take Tab and Arrow keys without d
   ] }) });
   await page.goto("/");
   await page.getByRole("textbox", { name: "Target URL" }).fill("http://127.0.0.1:3000");
-  await page.getByRole("button", { name: "Run Autonomous Exploration" }).click();
+  await page.getByRole("button", { name: "Crawl this URL" }).click();
   const hud = page.getByRole("complementary", { name: "Live Agent Mission · Playwright" });
   await expect(hud.getByRole("status")).toHaveText("Defect caught");
 
@@ -613,7 +613,7 @@ test("the repair step says Meta only for the Meta Model API and explains a block
   await page.unrouteAll({ behavior: "ignoreErrors" });
   await mock(page, { readiness: { ...ready, status: "blocked", runtime_ready: false, reason: "isolated_runtime_unavailable" } });
   await page.reload();
-  await expect(page.locator(".readiness")).toHaveText("Engine Status: Needs attention");
+  await expect(page.locator(".readiness")).toHaveText("Engine status: Needs attention");
   await expect(flow.getByRole("button", { name: /Auto-repair/ })).toBeDisabled();
   await expect(flow.getByRole("button", { name: /Auto-repair/ })).toHaveAccessibleDescription(/Engine needs attention/);
 });
@@ -624,13 +624,13 @@ test("the header tests any URL without asking for an expected status, reusing it
     register: (body) => String(body.url).includes("full") ? { status: 409, json: { error: { code: "too_many_probes" } } } : undefined,
   });
   await page.goto("/");
-  const quick = page.getByRole("form", { name: "Autonomous bug hunt" });
+  const quick = page.getByRole("form", { name: "Crawl a URL" });
   const field = page.getByRole("textbox", { name: "Target URL" });
   const ping = quick.getByRole("button", { name: "Quick HTTP Ping" });
   await expect(field).toHaveAttribute("placeholder", "http://localhost:3000/...");
-  await expect(page.getByRole("heading", { name: /FaultLine Autonomous Immune System/, level: 1 })).toBeVisible();
-  await expect(quick.getByRole("button", { name: "Run Autonomous Exploration" })).toBeVisible();
-  // Presets fill the field; nothing runs until the agent is unleashed.
+  await expect(page.getByRole("heading", { name: /Make every AI fix prove itself\./, level: 1 })).toBeVisible();
+  await expect(quick.getByRole("button", { name: "Crawl this URL" })).toBeVisible();
+  // Presets fill the field; nothing runs until the crawl is started.
   await quick.getByRole("button", { name: "Storefront (port 3000)" }).click();
   await expect(field).toHaveValue("http://127.0.0.1:3000");
   await quick.getByRole("button", { name: "Backend API (port 8000)" }).click();
@@ -678,7 +678,7 @@ test("the header tests any URL without asking for an expected status, reusing it
   await expect(hud).toContainText('Sending "GET http://localhost:5000/health" directly');
   await expect(hud.getByRole("status")).toHaveText("Clean");
   await expect(hud).toContainText("Passing: Both fresh sessions met every expectation.");
-  await expect(hud).toContainText("✅ Clean. 0 defects found in 2 fresh sessions.");
+  await expect(hud.locator(".hud-shield")).toHaveText("Clean. 0 defects found in 2 fresh sessions.");
   expect(calls.crawls).toEqual([{ url: "http://localhost:5000/health", max_steps: 25 }]);
   expect(calls.checks).toHaveLength(3);
   await hud.getByRole("button", { name: "Close the mission" }).click();
@@ -714,11 +714,11 @@ test("the chaos crawler streams its scan and steps, intercepts the defect, and r
     "[Scan] Discovered 9 interactive elements (6 buttons, 3 links) and 1 form",
     '[Step 1] Clicked "Trail Mug" (OK) on /',
     '[Step 2] Clicked "Add to Cart" (OK) on /products/trail-mug',
-    '[Step 3] Clicked "Place order" on /checkout → 💥 CAUGHT DEFECT: HTTP 500 on POST /api/checkout',
+    '[Step 3] Clicked "Place order" on /checkout → Defect caught: HTTP 500 on POST /api/checkout',
   ]);
   await expect(hud.getByRole("status")).toHaveText("Defect caught");
   const telemetry = hud.locator(".hud-telemetry");
-  await expect(telemetry).toContainText("Screens Explored3");
+  await expect(telemetry).toContainText("Screens explored3");
   await expect(telemetry).toContainText("Actions3");
   await expect(telemetry).toContainText("Defects1");
   const banner = hud.getByRole("alert");
@@ -732,7 +732,7 @@ test("the chaos crawler streams its scan and steps, intercepts the defect, and r
   await expect(steps.nth(1)).toHaveAttribute("aria-current", "step");
   await expect(flow.getByRole("button", { name: "Repair with Meta" })).toBeEnabled();
 
-  await banner.getByRole("button", { name: "Repair with Meta Muse Spark (Sandbox Verified)" }).click();
+  await banner.getByRole("button", { name: "Repair with Meta Muse Spark (sandbox verified)", exact: true }).click();
   await expect.poll(() => calls.jobBodies).toEqual([expect.objectContaining({ scenario_id: pack.id, mode: "repair" })]);
 });
 
@@ -764,7 +764,7 @@ test("the mission HUD traces a seismograph, clocks the agent, and maps the journ
   await page.route("**/api/faultline/crawl", async (route) => { await held; await route.fallback(); });
   await page.goto("/");
   await page.getByRole("textbox", { name: "Target URL" }).fill("http://127.0.0.1:3000");
-  await page.getByRole("button", { name: "Run Autonomous Exploration" }).click();
+  await page.getByRole("button", { name: "Crawl this URL" }).click();
   const hud = page.getByRole("complementary", { name: "Live Agent Mission · Playwright" });
   const clock = hud.locator(".hud-telemetry .hud-clock dd");
   await expect(hud).toHaveAttribute("data-seismic", "hunt");
@@ -780,7 +780,12 @@ test("the mission HUD traces a seismograph, clocks the agent, and maps the journ
   await expect(clock).toHaveText(stopped!);
 
   const ribbon = hud.getByRole("alert").getByRole("list", { name: "User journey" });
-  await expect(ribbon.getByRole("button")).toHaveText(["🌐/", "🖱️Trail Mug", "🛒Add to Cart", "📋Place order", "💥POST /api/checkout 500"]);
+  await expect(ribbon.getByRole("button")).toHaveText(["/", "Trail Mug", "Add to Cart", "Place order", "POST /api/checkout 500"]);
+  // Each badge wears one hidden line glyph for its kind of step, ending on the rupture that broke.
+  expect(await ribbon.getByRole("button").evaluateAll((badges) => badges.map((badge) => {
+    const glyphs = badge.querySelectorAll("svg[aria-hidden='true']");
+    return glyphs.length === 1 ? glyphs.item(0).getAttribute("data-glyph") : `${glyphs.length} glyphs`;
+  }))).toEqual(["visit", "click", "cart", "order", "rupture"]);
   await expect(hud.getByRole("alert").getByRole("list", { name: "Click trail" }).getByRole("listitem")).toHaveText(["“Trail Mug”", "“Add to Cart”", "“Place order”"]);
   const log = hud.getByRole("log", { name: "Agent steps" }).getByRole("listitem");
   await ribbon.getByRole("button", { name: "Add to Cart" }).click();
@@ -805,7 +810,7 @@ test("the mission HUD copies the click trail and says so politely, outside the d
   ] }) });
   await page.goto("/");
   await page.getByRole("textbox", { name: "Target URL" }).fill("http://127.0.0.1:3000");
-  await page.getByRole("button", { name: "Run Autonomous Exploration" }).click();
+  await page.getByRole("button", { name: "Crawl this URL" }).click();
   const hud = page.getByRole("complementary", { name: "Live Agent Mission · Playwright" });
   const alert = hud.getByRole("alert");
   await expect(alert).toContainText("Defect intercepted");
@@ -853,7 +858,7 @@ test("a crawl defect no sandbox repair covers is detection only", async ({ page 
   ] } }) });
   await page.goto("/");
   await page.getByRole("textbox", { name: "Target URL" }).fill("localhost:5000/");
-  await page.getByRole("button", { name: "Run Autonomous Exploration" }).click();
+  await page.getByRole("button", { name: "Crawl this URL" }).click();
   const banner = page.getByRole("complementary", { name: "Live Agent Mission · Playwright" }).getByRole("alert");
   await expect(banner).toContainText("HTTP 500 on GET /api/export");
   await expect(banner.getByRole("button", { name: "Auto-repair" })).toBeDisabled();
@@ -880,7 +885,7 @@ test("a hunt that finds nothing ends on the clean shield", async ({ page }) => {
     '[Step 4] Clicked "Subscribe" (OK) on /',
   ]);
   await expect(hud.getByRole("status")).toHaveText("Clean");
-  await expect(hud).toContainText("✅ Exploration finished clean. 0 defects found across 1 screen and 3 actions. A smoke signal for the flows explored, not a business-logic check.");
+  await expect(hud.locator(".hud-shield")).toHaveText("Exploration finished clean. 0 defects found across 1 screen and 3 actions. A smoke signal for the flows explored, not a business-logic check.");
   await expect(hud.getByRole("alert")).toHaveCount(0);
 });
 
@@ -965,7 +970,7 @@ test("the pre-flight gate blocks with the CLI's exact fix prompt, clears a clean
   ] } });
   await page.goto("/");
   await page.getByRole("link", { name: "Pre-Flight Gate" }).click();
-  const gate = page.getByRole("region", { name: "Nothing ships until the gate clears it." });
+  const gate = page.getByRole("region", { name: "Exit 1 blocks the pipeline until the gate passes." });
   await expect(gate).toHaveAttribute("data-verdict", "idle");
   // AuraScale is an external app outside this repo, so there is no one-click pill for it.
   await expect(gate.getByRole("button", { name: /AuraScale/ })).toHaveCount(0);
@@ -977,7 +982,8 @@ test("the pre-flight gate blocks with the CLI's exact fix prompt, clears a clean
   expect(calls.crawls).toEqual([{ url: "http://127.0.0.1:5050", max_steps: 25 }]);
   await expect(page.locator(".hud")).toHaveCount(0);
   await expect(gate.locator(".seis")).toHaveAttribute("data-mode", "rupture");
-  await expect(gate.locator(".gate-badge")).toHaveText("🛡️ Verdict: Deployment blocked");
+  await expect(gate.locator(".gate-badge")).toHaveText("Verdict: Deployment blocked");
+  await expect(gate.locator(".gate-badge svg[aria-hidden='true']")).toHaveAttribute("data-glyph", "rupture");
   await expect(gate).toContainText("Defect intercepted before going live");
   await expect(gate.getByRole("list", { name: "Reproduction trail" }).getByRole("listitem")).toHaveText([
     "01Open /",
@@ -1018,7 +1024,8 @@ test("the pre-flight gate blocks with the CLI's exact fix prompt, clears a clean
   await gate.getByRole("button", { name: "Run Pre-Flight Gate" }).click();
   await expect(gate).toHaveAttribute("data-verdict", "safe");
   await expect(page.locator(".hud")).toHaveCount(0);
-  await expect(gate.locator(".gate-badge")).toHaveText("✅ Verdict: Safe to deploy");
+  await expect(gate.locator(".gate-badge")).toHaveText("Verdict: Safe to deploy");
+  await expect(gate.locator(".gate-badge svg[aria-hidden='true']")).toHaveAttribute("data-glyph", "check");
   await expect(gate.locator(".gate-stats")).toContainText("Elements7");
   await expect(gate.locator(".gate-stats")).toContainText("Defects0");
   await expect(gate).toContainText(`${GATE_EXHAUSTED.summary} faultline gate exits 0: a smoke signal for the flows it explored, not proof the business logic is right.`);
@@ -1056,7 +1063,7 @@ test("the gate never clears an unfinished crawl or a direct check, and says so i
     onCheck: (invariantId) => check(invariantId, "no_failure"),
   });
   await page.goto("/");
-  const gate = page.getByRole("region", { name: "Nothing ships until the gate clears it." });
+  const gate = page.getByRole("region", { name: "Exit 1 blocks the pipeline until the gate passes." });
   const run = async () => {
     await gate.getByRole("textbox", { name: "Target preview URL" }).fill("localhost:4321/");
     await gate.getByRole("button", { name: "Run Pre-Flight Gate" }).click();
@@ -1070,7 +1077,8 @@ test("the gate never clears an unfinished crawl or a direct check, and says so i
   // The action budget ran out before exploration finished: blocked, inconclusive, no defect.
   await run();
   await expect(gate).toHaveAttribute("data-verdict", "inconclusive");
-  await expect(gate.locator(".gate-badge")).toHaveText("🛡️ Verdict: Inconclusive · deployment blocked");
+  await expect(gate.locator(".gate-badge")).toHaveText("Verdict: Inconclusive · deployment blocked");
+  await expect(gate.locator(".gate-badge svg[aria-hidden='true']")).toHaveAttribute("data-glyph", "held");
   await expect(gate.locator(".seis")).toHaveAttribute("data-mode", "still");
   await expect(gate.locator(".gate-stats")).toContainText("Stopped bymax_actions");
   await expect(gate.locator(".gate-stats")).not.toContainText("Defects");
@@ -1093,7 +1101,8 @@ test("the gate never clears an unfinished crawl or a direct check, and says so i
   telemetry = null;
   await run();
   await expect(gate).toHaveAttribute("data-verdict", "inconclusive");
-  await expect(gate.locator(".gate-badge")).toHaveText("🛡️ Verdict: Inconclusive · deployment blocked");
+  await expect(gate.locator(".gate-badge")).toHaveText("Verdict: Inconclusive · deployment blocked");
+  await expect(gate.locator(".gate-badge svg[aria-hidden='true']")).toHaveAttribute("data-glyph", "held");
   await expect(gate).toContainText("The gate could not finish, so it fails closed. The Playwright crawler did not run. A direct HTTP check passed, but one request is not a crawl of the preview. faultline gate exits 1 here too.");
   verdict = await copiedJson();
   expect(verdict).toMatchObject({ verdict: "DEPLOYMENT_BLOCKED", exit_code: 1, failure: null, actions_taken: 0, stop_reason: null, error: { code: "crawl_error" } });
@@ -1114,11 +1123,11 @@ test("the mission HUD repairs, verifies, and applies the fix it caught", async (
   // A verified record from an earlier session is not this mission's repair.
   await page.goto("/");
   await page.getByRole("textbox", { name: "Target URL" }).fill("http://127.0.0.1:3000");
-  await page.getByRole("button", { name: "Run Autonomous Exploration" }).click();
+  await page.getByRole("button", { name: "Crawl this URL" }).click();
   const hud = page.getByRole("complementary", { name: "Live Agent Mission · Playwright" });
   await expect(hud.getByRole("alert").getByRole("list", { name: "Click trail" }).getByRole("listitem")).toHaveText(["/", "“Place order”"]);
   await expect(hud).not.toContainText("Fix verified");
-  await hud.getByRole("button", { name: /Auto-repair \(Sandbox Verified\)/ }).click();
+  await hud.getByRole("button", { name: /Auto-repair \(sandbox verified\)/ }).click();
   await expect.poll(() => calls.jobBodies).toEqual([expect.objectContaining({ scenario_id: pack.id, mode: "repair" })]);
   await expect(hud).toContainText("Fix verified: 44/44 assertions passed in the Bubblewrap sandbox");
   await expect(hud.getByRole("status")).toHaveText("Fix verified");
@@ -1313,15 +1322,15 @@ test.describe("on a touch screen", () => {
       const header = page.getByRole("banner").first();
       const engine = header.locator(".readiness");
       const pill = page.getByRole("button", { name: "Runtime: Linux · cgroup v2" });
-      await expect(engine).toHaveText("Engine Status: Ready");
+      await expect(engine).toHaveText("Engine status: Ready");
       await expect(pill).toBeVisible();
       await page.getByRole("textbox", { name: "Target URL" }).fill("http://127.0.0.1:3000");
-      await page.getByRole("button", { name: "Run Autonomous Exploration" }).tap();
+      await page.getByRole("button", { name: "Crawl this URL" }).tap();
       const hud = page.getByRole("complementary", { name: "Live Agent Mission · Playwright" });
       await expect(hud.getByRole("status")).toHaveText("Defect caught");
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 
-      // Engine Status is a readout and the pill a control; each stays one line, whole, inside the screen.
+      // Engine status is a readout and the pill a control; each stays one line, whole, inside the screen.
       for (const capsule of [engine, pill, hud.locator(".seis")]) {
         const box = (await capsule.boundingBox())!;
         expect(box.x).toBeGreaterThanOrEqual(0);
@@ -1347,6 +1356,9 @@ test.describe("on a touch screen", () => {
       const box = (await panel.boundingBox())!;
       expect(box.x).toBeGreaterThanOrEqual(0);
       expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
+      const headerBox = (await header.boundingBox())!;
+      expect(box.y).toBeLessThanOrEqual(headerBox.y + headerBox.height + 8);
+      expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
     });
   }
 });
@@ -1354,7 +1366,7 @@ test.describe("on a touch screen", () => {
 /** Runs the caught crawl from the header and returns the mission HUD once it has ruptured. */
 async function rupturedMission(page: Page) {
   await page.getByRole("textbox", { name: "Target URL" }).fill("http://127.0.0.1:3000");
-  await page.getByRole("button", { name: "Run Autonomous Exploration" }).click();
+  await page.getByRole("button", { name: "Crawl this URL" }).click();
   const hud = page.getByRole("complementary", { name: "Live Agent Mission · Playwright" });
   await expect(hud).toHaveAttribute("data-seismic", "rupture");
   return hud;
@@ -1440,7 +1452,7 @@ test("a journey badge's focus ring is never clipped by the ribbon that scrolls i
   await mock(page, { crawl: caughtCrawl });
   await page.goto("/");
   await page.getByRole("textbox", { name: "Target URL" }).fill("http://127.0.0.1:3000");
-  await page.getByRole("button", { name: "Run Autonomous Exploration" }).click();
+  await page.getByRole("button", { name: "Crawl this URL" }).click();
   const hud = page.getByRole("complementary", { name: "Live Agent Mission · Playwright" });
   await expect(hud.getByRole("status")).toHaveText("Defect caught");
   const ribbon = hud.getByRole("list", { name: "User journey" });
@@ -1508,7 +1520,7 @@ for (const [mode, media, focus, live] of [
     // The URL field turns its own outline off, so its frame carries the focus ring.
     const arena = page.locator(".arena-field");
     expect([await css(arena, "outline-style"), await css(arena, "outline-color")]).toEqual(["solid", colors[focus]]);
-    await page.getByRole("button", { name: "Run Autonomous Exploration" }).click();
+    await page.getByRole("button", { name: "Crawl this URL" }).click();
     const hud = page.getByRole("complementary", { name: "Live Agent Mission · Playwright" });
 
     // While the agent launches, its status pulse is live.
@@ -1566,7 +1578,7 @@ for (const width of [320, 360, 414, 639]) {
     await page.goto("/");
     const url = "http://127.0.0.1:3000/collections/trail-gear?sort=price-ascending&utm_source=faultline-demo";
     await page.getByRole("textbox", { name: "Target URL" }).fill(url);
-    await page.getByRole("button", { name: "Run Autonomous Exploration" }).click();
+    await page.getByRole("button", { name: "Crawl this URL" }).click();
     const hud = page.getByRole("complementary", { name: "Live Agent Mission · Playwright" });
     await expect(hud.getByRole("status")).toHaveText("Defect caught");
     await expect(hud.locator(".hud-target")).toHaveText(url);
@@ -1586,11 +1598,11 @@ for (const width of [320, 360, 414, 639]) {
     const targets = async () => (await hitAreas(hud.getByRole("button"))).filter((area) => area.width < 44 || area.height < 44);
     expect(await layout()).toEqual({ overflow: 0, outside: [], clipped: [] });
     await expect(hud.getByRole("list", { name: "User journey" }).getByRole("button")).toHaveText(
-      ["🌐/", "🖱️Trail Mug Extra Large Ceramic Edition", "🛒Add to Cart", "📋Place order", "💥POST /api/checkout 500"]);
+      ["/", "Trail Mug Extra Large Ceramic Edition", "Add to Cart", "Place order", "POST /api/checkout 500"]);
     expect(await hud.getByRole("button").count()).toBe(8);
     expect(await targets()).toEqual([]);
 
-    await hud.getByRole("button", { name: /Auto-repair \(Sandbox Verified\)/ }).click();
+    await hud.getByRole("button", { name: /Auto-repair \(sandbox verified\)/ }).click();
     const apply = hud.getByRole("button", { name: "Apply Verified Fix to Demo Store" });
     await expect(apply).toBeEnabled();
     expect(await layout()).toEqual({ overflow: 0, outside: [], clipped: [] });

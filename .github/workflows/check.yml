@@ -29,8 +29,19 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y bubblewrap
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 2>/dev/null || true
-          sudo apparmor_parser -R /etc/apparmor.d/bwrap 2>/dev/null || true
-          sudo aa-complain /usr/bin/bwrap 2>/dev/null || true
+          # Ubuntu's bwrap-userns-restrict profile strips capabilities from
+          # children, preventing Chromium's nested user-namespace sandbox.
+          # Remove that host profile only on this disposable CI runner; keep
+          # Chromium sandboxing and every required containment test enabled.
+          for profile in /etc/apparmor.d/bwrap /etc/apparmor.d/bwrap-userns-restrict; do
+            if [ -f "$profile" ] && sudo grep -q '^bwrap ' /sys/kernel/security/apparmor/profiles; then
+              sudo apparmor_parser -R "$profile"
+            fi
+          done
+          if sudo grep -q '^bwrap ' /sys/kernel/security/apparmor/profiles; then
+            echo '::error::Bubblewrap host profile still prevents the nested Chromium sandbox.'
+            exit 1
+          fi
           test -f /sys/fs/cgroup/cgroup.controllers
           command -v systemd-run
       - run: npm --prefix apps/buggyshop-frontend ci

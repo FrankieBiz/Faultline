@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import EvaluationCorpus from "@/components/EvaluationCorpus";
 import { DOCS, META_LEDGER, RUBRIC, docUrl } from "@/lib/judge-evidence";
 import { limitsStatusLabel, type Readiness } from "@/lib/faultline-api";
@@ -123,7 +123,8 @@ export default function JudgeEvidence({ request, readiness, readinessError }: {
   const [open, setOpen] = useState(false);
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
-  useEffect(() => {
+  // A layout effect, so the panels mount in the same frame the sheet opens instead of painting it empty first.
+  useLayoutEffect(() => {
     const dialog = ref.current;
     if (!dialog || request === 0 || dialog.open) return;
     dialog.showModal();

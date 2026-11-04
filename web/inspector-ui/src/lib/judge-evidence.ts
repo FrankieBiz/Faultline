@@ -130,11 +130,11 @@ export const GAUNTLET: { id: string; title: string; kind: PatchKind; symptom: bo
 ];
 
 export const RUBRIC: { name: string; weight: number; evidence: string; doc: { label: string; path: string } }[] = [
-  { name: "Impact", weight: 30, evidence: "A firsthand checkout incident where a 200 OK hid nearly five hours of margin loss, and a measured gauntlet showing a symptom check accepts 5 of 6 wrong repairs.",
+  { name: "Impact", weight: 30, evidence: "A fix can return 201 and still be wrong. Over 11 authored patches for the seeded checkout defect, a status-only check accepted 5 of 6 wrong fixes; FaultLine accepted none and still accepted both correct ones.",
     doc: { label: "Impact evidence", path: "docs/IMPACT_EVIDENCE.md" } },
   { name: "Use of Meta AI tooling", weight: 25, evidence: "muse-spark-1.3 writes the patch from the business contract and failure evidence, never the bug's name, then independent gates decide it.",
     doc: { label: "Meta trial ledger", path: "docs/evidence/2026-10-31-controller-ledger-meta.md" } },
-  { name: "Technical depth", weight: 20, evidence: "Bubblewrap namespaces under kernel-verified cgroup v2 limits, an AST patch policy, 44 browser and business assertions, and a hash-pinned corpus.",
+  { name: "Technical depth", weight: 20, evidence: "Bubblewrap namespaces under kernel-verified cgroup v2 limits, an AST patch policy, 44 checks (16 browser checkout, 27 HTTP business, 1 confirmation), and a hash-pinned corpus.",
     doc: { label: "Evaluation method", path: "docs/EVALUATION.md" } },
   { name: "Demo", weight: 25, evidence: "This Inspector: break the store, repair it in the sandbox, apply the verified fix, and gate a deploy, each step on recorded evidence.",
     doc: { label: "Submission", path: "docs/DEVPOST_SUBMISSION.md" } },
@@ -153,6 +153,6 @@ export const META_LEDGER = {
 
 export const DOCS: { label: string; path: string; note: string }[] = [
   { label: "Devpost submission", path: "docs/DEVPOST_SUBMISSION.md", note: "Every claim beside the record behind it" },
-  { label: "Impact evidence", path: "docs/IMPACT_EVIDENCE.md", note: "The incident, the gauntlet, and the live Meta trials" },
+  { label: "Impact evidence", path: "docs/IMPACT_EVIDENCE.md", note: "The authored-patch gauntlet and the three Meta trials" },
   { label: "Evaluation", path: "docs/EVALUATION.md", note: "Corpus, method, results, and how to reproduce them" },
 ];

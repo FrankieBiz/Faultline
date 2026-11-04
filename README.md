@@ -2,7 +2,7 @@
 
 [![Meta Global AI Hackathon](https://img.shields.io/badge/Meta_Global_AI_Hackathon-2026-0668E1?style=flat-square&logo=meta&logoColor=white)](https://dev.meta.ai/events/global-hackathon)
 [![Live Showcase](https://img.shields.io/badge/Live_Showcase-frankiebiz.github.io%2FFaultline-success?style=flat-square&logo=githubpages&logoColor=white)](https://frankiebiz.github.io/Faultline/)
-[![Automated Tests](https://img.shields.io/badge/tests-2%2C775%20passing-brightgreen?style=flat-square)](https://github.com/FrankieBiz/Faultline/actions)
+[![Automated Tests](https://img.shields.io/badge/tests-2%2C958%20passing-brightgreen?style=flat-square)](https://github.com/FrankieBiz/Faultline/actions)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.13-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![Node.js](https://img.shields.io/badge/node-24%2B-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org/)
@@ -10,7 +10,7 @@
 
 **A real browser finds the failure. Meta's `muse-spark-1.3` proposes a patch. Independently authored business checks decide whether it works, while an isolated Linux kernel sandbox (Bubblewrap + cgroup v2) confines the candidate.**
 
-> 🧭 **Judges Start Here:** Open the [**FaultLine Judge Showcase**](https://frankiebiz.github.io/Faultline/). It needs **zero installation** and works in any desktop or mobile browser: play the recorded Meta repair, plant a bug yourself, and try to fool the gates. Follow [the 3-minute tour](#the-3-minute-judging-tour).
+> 🧭 **Judges Start Here:** Open the [**FaultLine Judge Showcase**](https://frankiebiz.github.io/Faultline/). It needs **zero installation**: play the recorded Meta repair and try to fool the gates. The optional live bug-planting panel reports when its service is unavailable. Follow [the 3-minute tour](#the-3-minute-judging-tour).
 
 ---
 
@@ -39,7 +39,7 @@
 - [📊 Evidence and Evaluation](#evidence-and-evaluation)
   - [Live Meta Trial Series (3 of 3 Verified)](#live-meta-trial-series-3-of-3-verified)
   - [10-Defect Evaluation Corpus](#10-defect-evaluation-corpus)
-  - [Automated Test Scorecard (2,949 tests)](#test-scorecard)
+  - [Automated Test Scorecard](#test-scorecard)
 - [🗺️ Repository Map & Submission Dossier](#repository-map)
 
 ---
@@ -58,7 +58,7 @@ Pick the row that fits your time and your machine.
 
 | Surface | Address | What it is |
 | :--- | :--- | :--- |
-| **Judge page** | [frankiebiz.github.io/Faultline](https://frankiebiz.github.io/Faultline/) | The static hackathon showcase: the recorded Meta repair, the gate replays, the patch explorer, live bug planting, and checksummed evidence replays. [Details below](#what-judges-can-do-on-the-hosted-page). |
+| **Judge page** | [frankiebiz.github.io/Faultline](https://frankiebiz.github.io/Faultline/) | The static hackathon showcase: the recorded Meta repair, gate replays, patch explorer, and checksummed evidence replays. Live bug planting needs its separately hosted service. [Details below](#what-judges-can-do-on-the-hosted-page). |
 | **Inspector studio** | `http://127.0.0.1:4000` via `./faultline demo` | The local web studio for engineers and SREs. A headless Playwright crawler explores a `localhost` app (the bundled store on `:3000`, or any URL you paste). The repair orchestrator on `:9000` calls the Meta Model API when a key is set and otherwise uses the labeled deterministic fallback. Candidate diffs run inside Bubblewrap namespaces under 512 MiB / 64 task / 1 CPU cgroup limits. A verified fix is applied only to the bundled demo store; project repairs stay in the sandbox and never touch your working source. Full repair on Linux; macOS and Windows run it without repair. |
 | **Demo store (BuggyShop)** | `http://127.0.0.1:3000` (API `:8000`) | A real Next.js + FastAPI shop, started by `./faultline demo`, with a seeded coupon discount exception that makes checkout return HTTP 500. |
 | **AuraScale Cloud** *(historical, not in this repo)* | was `http://127.0.0.1:5050` | An external scratch app, used once on November 1 for the recorded blocked-gate replay on the judge page. Nothing here starts it, and no filming or test depends on it. |
@@ -69,9 +69,9 @@ If you have 3 minutes to evaluate FaultLine, follow this sequence on the **[judg
 
 1. **Watch the recorded Meta repair (top of the page).**
    Click **Play the recorded Meta repair**. The retained job replays at its recorded timing (13.0 s): the checkout rupture, Meta's `muse-spark-1.3` single-file diff, the policy check, the sandboxed run, and 44 authored checks turning green. Nothing is merged or deployed.
-2. **Replay the Pre-Flight Agent Gate (section 01).**
-   Click **Test Broken Site**. The recorded verdict is `DEPLOYMENT_BLOCKED` with the click-by-click reproduction trail and the fix prompt an agent would receive. **Test Clean Site** replays a pass recorded under the earlier contract, before the gate reported whether exploration finished; it is captioned as such.
-3. **Try to fool the gates (section 05).**
+2. **Replay the deploy gate (the "Deploy gate" section).**
+   Click **Test Broken Site (AuraScale, outside this repo)**. The recorded verdict is `DEPLOYMENT_BLOCKED` with the click-by-click reproduction trail and the fix prompt an agent would receive. **Test Clean Site** replays a pass recorded under the earlier contract, before the gate reported whether exploration finished; it is captioned as such.
+3. **Try to fool the gates (directly below the Meta repair).**
    Pick wrong patches from the authored corpus. A naive "returns HTTP 201" check accepts 5 of 6; FaultLine's business assertions reject all six. The sandbox confines each run; the assertions are what catch the regression.
 
 ---
@@ -108,13 +108,13 @@ The [judge page](https://frankiebiz.github.io/Faultline/) is static and works wi
 
 - **Play the recorded Meta repair.** A retained `muse-spark-1.3` controller job replays at its recorded timing (13.0 s for that job), from the crashing checkout to 44 of 44 passing checks. The [Oct 31 ledger](docs/evidence/2026-10-31-controller-ledger-meta.md) adds 3 of 3 live trials verified on the first attempt (median 10.5 s, one scenario); they took 10.4 to 12.6 s.
 - **Replay the Pre-Flight Agent Gate.** Two recorded `faultline gate --json` verdicts, each with the agent fix prompt: a blocked run against AuraScale (a scratch app outside this repo) and a clean storefront run from the earlier contract.
-- **Break it yourself.** Plant one of ten corpus bugs and watch the model repair it live in the isolated runtime, under the same gates. The model is never told which bug you picked. When the live service is offline, the page says so and offers the recording instead.
+- **Break it yourself, when the live service is enabled.** Plant one of ten corpus bugs and watch the model propose a repair in the isolated runtime, checked against 27 independent HTTP business checks. This evaluator is separate from the recorded 44-check browser repair. The model is never told which bug you picked. When the live service is offline, the page says so and offers the recording instead.
 - **Try to fool the gates.** Compare eleven recorded candidate patches under a naive "did it return 201?" check and under FaultLine. The naive check accepts 5 of 6 wrong fixes; FaultLine's authored business assertions reject all six.
 - **Read the raw record.** The [replays](https://frankiebiz.github.io/Faultline/replay/3573b32b-09bd-4f14-897d-cf6dccf9b118/) are static, script-free, and SHA-256 checksummed.
 
-![Inspector after a local run: the failed baseline, the five recorded steps, and 44 of 44 candidate checks passing; this capture's patch source is labeled as the deterministic fallback](docs/assets/inspector.png)
+![Inspector captured November 4: crawl a preview URL, inspect kernel-enforced runtime limits, or start the guided demo; the repair source is explicitly labeled deterministic fallback, with no model call](docs/assets/inspector.png)
 
-*The same 44-check gate verified Meta's `muse-spark-1.3` patch in 3 of 3 live trials, each on the first attempt at 44/44 ([Oct 31 ledger](docs/evidence/2026-10-31-controller-ledger-meta.md)). This capture is a local run of that pipeline; its patch source is labeled as the deterministic fallback.*
+*The same 44-check gate verified Meta's `muse-spark-1.3` patch in 3 of 3 live trials, each on the first attempt at 44/44 ([Oct 31 ledger](docs/evidence/2026-10-31-controller-ledger-meta.md)). This screenshot shows the local Inspector ready to run, configured with the deterministic fallback.*
 
 ---
 
@@ -384,7 +384,7 @@ others as inconclusive. `scan` and `crawl` are exploratory: exit 0 can mean an
 incomplete run found no defect (or `scan` verified a sandbox repair). Both warn
 when a clean run is incomplete; JSON mode keeps the warning on stderr.
 Use `faultline gate` for mandatory CI/deployment gates: incomplete exploration
-returns exit 1. The Inspector's **Run Autonomous Exploration** button
+returns exit 1. The Inspector's **Crawl this URL** button
 streams it live through `POST /api/faultline/crawl`, whose closing `done` event
 carries the same telemetry.
 
@@ -447,7 +447,7 @@ Static AST inspection and Git worktrees are policy and source-management tools; 
 
 | Command | What it does |
 | --- | --- |
-| `faultline demo` | Starts or connects to the local demo stack and opens the Inspector (Linux; macOS without repair) |
+| `faultline demo` | Starts or connects to the local demo stack and opens the Inspector (Linux; macOS and Windows without repair) |
 | `faultline init` | Detects the stack and writes a reviewable `faultline.toml` |
 | `faultline check` | Gates a running service on declared HTTP invariants, each measured in two fresh sessions; `--repair` asks for a sandbox-verified candidate without touching source (Linux) |
 | `faultline scan URL` | Paste a URL: explores same-origin screens within an action and time budget, fills forms, catches the first defect, prints its reproduction journey, and offers to propose and verify a patch in the sandbox (Linux; `--no-repair` reports only); alias `faultline auto` |
@@ -463,8 +463,8 @@ Static AST inspection and Git worktrees are policy and source-management tools; 
 ### Web Inspector studio (`localhost:4000`)
 
 - **1-2-3 guided demo.** The Demo Playground (sample store) runs **Break it** (the Playwright chaos crawler clicks through the store until checkout returns HTTP 500), the sandbox repair (labeled **Repair with Meta** only when the engine reports the Meta Model API), and **Apply fix** (hot-patch, then a live check confirms HTTP 201). Each step advances on recorded evidence, not clicks.
-- **Paste and go.** The hero arena at the top takes any URL (or a Storefront / Backend API / Custom Localhost preset); nothing asks for an expected status or error. **Run Autonomous Exploration** (or Enter) streams a chaos crawl (`POST /api/faultline/crawl`) into the Live Agent Mission HUD: agent status, screens explored, actions, and defects; a step ticker of the crawler's real actions; then the intercepted failing request with its click trail and a one-click sandbox repair that carries on to the verified assertion count and **Apply Verified Fix to Demo Store** (bundled store only). Until the engine serves a crawler endpoint, a real two-session HTTP check stands in and the HUD labels it as such. **Quick HTTP Ping** sends a GET from two fresh sessions. Bare `localhost:3000/path` means http.
-- **Scenario rail.** Repairable defects, project checks from `faultline.toml`, and your saved URLs, each with a status line: cyan while work is in flight, emerald only for evidence-verified repairs, red for failures.
+- **Paste and go.** The hero at the top takes any URL (or a Storefront / Backend API / Custom localhost preset); nothing asks for an expected status or error. **Crawl this URL** (or Enter) streams a crawl (`POST /api/faultline/crawl`) into the crawler's record: status, screens explored, actions, defects, and the failing request with its click trail. A registered failure can continue through sandbox repair, the verified assertion count, and **Apply verified fix to demo store** (bundled store only). Until the engine serves a crawler endpoint, a real two-session HTTP check stands in and is labeled as such. **Quick HTTP ping** sends a GET from two fresh sessions. Bare `localhost:3000/path` means http.
+- **Scenario rail.** Repairable defects, project checks from `faultline.toml`, and your saved URLs, each with a text status and a matching state mark. In-flight work stays neutral, verified repairs use green, and failures use red.
 - **Live invariant tester.** Runs `[[invariants.rule]]` and `[scenarios.*]` from `faultline.toml` against the running store, in two sessions each.
 - **Custom URL check dialog.** Any method, JSON body, and expected status, validated in place.
 - **Procedural Web Audio cues.** Synthesized from oscillators, off by default: an alarm for a failing check and a resolution chord for a verified repair.
@@ -508,6 +508,8 @@ These results describe an authored corpus for one checkout route, not arbitrary 
 
 ### Test scorecard
 
+Verified locally on November 4, 2026. Counts are passing test executions across the three commands; the integration target reruns its containment subset with skips disallowed.
+
 | Suite | Tests |
 | --- | ---: |
 | Backend, scripts, fixtures, and setup bootstrap (pytest) | 340 |
@@ -516,12 +518,12 @@ These results describe an authored corpus for one checkout route, not arbitrary 
 | **Fast automated total** (`make check`) | **2,775** |
 | Inspector browser tests (Playwright) | 78 |
 | Storefront browser tests (Playwright) | 2 |
-| Showcase browser tests (Playwright) | 17 |
-| **Browser total** (`make browser`) | **97** |
+| Showcase browser tests (Playwright) | 26 |
+| **Browser total** (`make browser`) | **106** |
 | Contained runtime integration tests (`make integration`) | 77 |
-| **All automated tests passing** | **2,949** |
+| **Total passing test executions** | **2,958** |
 
-The 21 PowerShell bootstrap tests skip on machines without `pwsh`, and 2 native Windows demo tests skip outside Windows (3 skipped on Linux in the orchestrator suite, 23 skipped in backend/setup). `make check` also runs Ruff lint and format checks, strict mypy (0 errors across 115 source files), fixture and corpus provenance, the storefront, runner, and Inspector builds, and both Python distribution builds. `make integration` exercises real isolated Chromium and cgroup enforcement, and `make evaluate` runs the corpus.
+The Linux `make check` run skipped 26 tests, excluded from the passing count: 21 PowerShell bootstrap tests because `pwsh` is unavailable, 2 native Windows demo tests, and 3 real Windows Job Object tests. `make integration` passed all 77 tests with zero skips. `make check` also passed Ruff lint and format checks, strict mypy (0 errors across 116 source files), fixture and corpus provenance, the storefront, runner, and Inspector builds, and both Python distribution builds. Native Apple and Windows isolation validation remains outstanding. `make integration` exercises real isolated Chromium and cgroup enforcement, and `make evaluate` runs the corpus.
 
 ---
 
@@ -563,8 +565,8 @@ The 21 PowerShell bootstrap tests skip on machines without `pwsh`, and 2 native 
 
 ## Hackathon materials
 
-[Event brief](docs/HACKATHON_BRIEF.md), [project status](docs/PROJECT_STATUS.md), [score assessment](docs/audits/HACKATHON_SCORE_ASSESSMENT.md), [evaluation](docs/EVALUATION.md), [impact evidence](docs/IMPACT_EVIDENCE.md), [submission draft](docs/DEVPOST_SUBMISSION.md), [video storyboard](docs/VIDEO_STORYBOARD.md), [technical dossier](docs/SUBMISSION.md).
+[Event brief](docs/HACKATHON_BRIEF.md), [project status](docs/PROJECT_STATUS.md), [score assessment](docs/audits/HACKATHON_SCORE_ASSESSMENT.md), [evaluation](docs/EVALUATION.md), [impact evidence](docs/IMPACT_EVIDENCE.md), [submission draft](docs/DEVPOST_SUBMISSION.md), [video storyboard](docs/VIDEO_STORYBOARD.md), [narration draft](docs/JUDGE_VIDEO_SCRIPT.md), [technical dossier](docs/SUBMISSION.md).
 
-The official event pages list submission on November 4, 2026 at 9 PM ET, subject to organizer changes ([Meta](https://dev.meta.ai/events/global-hackathon), [Cerebral Valley](https://events.cerebralvalley.ai/e/meta-ai-developer-hackathon); retrieved October 27, 2026). Preserved webinar materials in `meta-provided/` are immutable.
+The official event pages list submission on **November 4, 2026 at 9 PM ET** (November 5 at 02:00 UTC), subject to organizer changes ([Meta](https://dev.meta.ai/events/global-hackathon), [Cerebral Valley](https://events.cerebralvalley.ai/e/meta-ai-developer-hackathon); rechecked November 4, 2026). The [official rules](https://cerebralvalley.ai/e/meta-ai-developer-hackathon/waiver) direct submissions to the [Cerebral Valley portal](https://cerebralvalley.ai/e/meta-ai-developer-hackathon/hackathon/submit). FaultLine's entry is the **Indie Developer track**; the owner confirms the authenticated form, video URL and submitted revision using the [submission draft](docs/DEVPOST_SUBMISSION.md). Preserved webinar materials in `meta-provided/` are immutable.
 
 Built by Francis Bisignano ([`FrankieBiz`](https://github.com/FrankieBiz), <frankabisignano@gmail.com>) for the Meta Global AI Developer Hackathon.
